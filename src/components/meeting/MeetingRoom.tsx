@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Clock3, Users, Wifi, WifiOff } from "lucide-react";
+import { Clock3, LogOut, PhoneOff, ShieldAlert, Users, Wifi, WifiOff } from "lucide-react";
 
 import { Chat, CHAT_MAX_MESSAGE_LENGTH, type ChatViewMessage } from "@/components/meeting/Chat";
 import { Controls } from "@/components/meeting/Controls";
@@ -57,14 +58,30 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
   const [boardOpen, setBoardOpen] = useState(false);
   const [seenCount, setSeenCount] = useState(0);
   const [chatError, setChatError] = useState<string | null>(null);
+  /** Комната закрыта администратором или доступ отозван — показываем экран-заглушку. */
+  const [closure, setClosure] = useState<{
+    title: string;
+    message: string;
+    tone: "danger" | "info";
+  } | null>(null);
 
   // WebRTC-слой создаётся после сокета, поэтому колбэки сокета читают его через ref.
   const dropPeerRef = useRef<(socketId: string) => void>(() => undefined);
   const rejoinRef = useRef<(result: JoinRoomResult) => void>(() => undefined);
+  const hangUpRef = useRef<() => void>(() => undefined);
 
   const socket = useSocket({
     onUserLeft: (socketId) => dropPeerRef.current(socketId),
     onRejoin: (result) => rejoinRef.current(result),
+    onRoomClosed: (payload) => {
+      // Админ завершил урок: гасим медиа и показываем экран «урок завершён».
+      hangUpRef.current();
+      setClosure({ title: "Урок завершён администратором", message: payload.message, tone: "danger" });
+    },
+    onSessionRevoked: (payload) => {
+      hangUpRef.current();
+      setClosure({ title: "Доступ отозван", message: payload.message, tone: "info" });
+    },
   });
 
   const rtc = useWebRTC({ sendSignal: socket.sendSignal, onSignal: socket.onSignal });
@@ -100,6 +117,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
 
   useEffect(() => {
     dropPeerRef.current = dropPeer;
+    hangUpRef.current = hangUp;
     rejoinRef.current = (result) => {
       // Сервер забыл нас при разрыве связи: пересоздаём все соединения.
       dropAllPeers();
@@ -108,7 +126,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
         .map((participant) => participant.socketId);
       void connectToPeers(others);
     };
-  }, [connectToPeers, dropAllPeers, dropPeer]);
+  }, [connectToPeers, dropAllPeers, dropPeer, hangUp]);
 
   // Предпроверка: сразу запрашиваем камеру и микрофон.
   useEffect(() => {
@@ -243,6 +261,59 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
   const isLive = phase === "live";
 
   /* ---------------------------------- Разметка ------------------------------ */
+
+  /* Урок закрыт администратором или доступ отозван — вместо комнаты экран-заглушка. */
+  if (closure) {
+    const isDanger = closure.tone === "danger";
+
+    return (
+      <div className="relative flex h-dvh flex-col items-center justify-center overflow-hidden bg-ink-950 px-5">
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+          <div
+            className={`absolute left-1/2 top-0 h-[24rem] w-[24rem] -translate-x-1/2 rounded-full blur-[150px] ${
+              isDanger ? "bg-rose-500/15" : "bg-brand-600/20"
+            }`}
+          />
+        </div>
+
+        <div className="glass-strong animate-fade-up w-full max-w-lg rounded-3xl p-8 text-center">
+          <span
+            className={`mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl border ${
+              isDanger ? "border-rose-400/30 bg-rose-500/15" : "border-brand-400/30 bg-brand-500/15"
+            }`}
+          >
+            {isDanger ? (
+              <PhoneOff className="h-6 w-6 text-rose-300" />
+            ) : (
+              <ShieldAlert className="h-6 w-6 text-brand-200" />
+            )}
+          </span>
+
+          <h1 className="mt-5 text-xl font-semibold text-white">{closure.title}</h1>
+          <p className="mt-3 text-sm leading-relaxed text-slate-400">{closure.message}</p>
+          <p className="mt-2 text-xs text-slate-500">
+            Урок <span className="font-mono text-slate-300">{meetingCode}</span> · {title}
+          </p>
+
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02]"
+            >
+              <LogOut className="h-4 w-4" />
+              В кабинет
+            </Link>
+            <Link
+              href="/meeting"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/10"
+            >
+              Другие уроки
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-ink-950">
@@ -436,6 +507,10 @@ function describeJoinError(error: unknown): string {
       return "Сессия истекла. Войдите в систему заново.";
     case "FORBIDDEN_ORIGIN":
       return "Соединение заблокировано: откройте урок с адреса приложения SchoolMeet.";
+    case "ACCOUNT_BANNED":
+      return "Аккаунт заблокирован администратором. Доступ к урокам закрыт.";
+    case "RATE_LIMITED":
+      return "Слишком много попыток подключения. Подождите минуту и попробуйте снова.";
     case "TIMEOUT":
       return "Сервер не отвечает. Проверьте интернет и попробуйте ещё раз.";
     default:

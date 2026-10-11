@@ -16,7 +16,7 @@ export type ClientApiResult<T> =
     };
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   json?: unknown;
   form?: FormData;
 }

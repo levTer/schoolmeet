@@ -10,7 +10,9 @@ import {
   type ClientToServerEvents,
   type JoinRoomResult,
   type MediaState,
+  type RoomClosedPayload,
   type RoomParticipant,
+  type SessionRevokedPayload,
   type ServerToClientEvents,
   type SignalData,
   type WhiteboardClearPayload,
@@ -38,8 +40,11 @@ type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 type SignalHandler = (from: string, data: SignalData) => void;
 type WhiteboardHandler = (event: WhiteboardServerEvent) => void;
 
-/** Ошибки, при которых переподключаться бессмысленно (нет сессии / чужой origin). */
-const FATAL_CONNECT_ERRORS = new Set(["UNAUTHORIZED", "FORBIDDEN_ORIGIN"]);
+/**
+ * Ошибки, при которых переподключаться бессмысленно: нет сессии, чужой origin,
+ * заблокированный аккаунт или превышен лимит рукопожатий (этап 6).
+ */
+const FATAL_CONNECT_ERRORS = new Set(["UNAUTHORIZED", "FORBIDDEN_ORIGIN", "ACCOUNT_BANNED", "RATE_LIMITED"]);
 
 const MAX_CHAT_HISTORY = 200;
 
@@ -48,6 +53,10 @@ export interface UseSocketOptions {
   onUserLeft?: (socketId: string) => void;
   /** Сокет переподключился и снова вошёл в комнату — пересоздать пиры. */
   onRejoin?: (result: JoinRoomResult) => void;
+  /** Администратор завершил урок — комната закрыта, переподключаться нельзя. */
+  onRoomClosed?: (payload: RoomClosedPayload) => void;
+  /** Доступ отозван (блокировка аккаунта) — сокет будет разорван сервером. */
+  onSessionRevoked?: (payload: SessionRevokedPayload) => void;
 }
 
 export function useSocket(options: UseSocketOptions = {}) {
@@ -60,6 +69,8 @@ export function useSocket(options: UseSocketOptions = {}) {
   const socketRef = useRef<ClientSocket | null>(null);
   const roomRef = useRef<string | null>(null);
   const hasConnectedRef = useRef(false);
+  /** Комната закрыта администратором или доступ отозван — не переподключаемся. */
+  const terminatedRef = useRef(false);
   const signalHandlersRef = useRef(new Set<SignalHandler>());
   const whiteboardHandlersRef = useRef(new Set<WhiteboardHandler>());
   const optionsRef = useRef(options);
@@ -122,7 +133,7 @@ export function useSocket(options: UseSocketOptions = {}) {
     });
 
     socket.on("disconnect", (reason) => {
-      if (reason === "io client disconnect") {
+      if (reason === "io client disconnect" || terminatedRef.current) {
         setStatus("disconnected");
         return;
       }
@@ -130,6 +141,27 @@ export function useSocket(options: UseSocketOptions = {}) {
       // поэтому делаем это вручную. Если сессия истекла, connect_error вернёт UNAUTHORIZED.
       setStatus("reconnecting");
       if (reason === "io server disconnect") socket.connect();
+    });
+
+    /* Админ завершил урок: комната закрыта, участники выходят. */
+    socket.on("room-closed", (payload) => {
+      terminatedRef.current = true;
+      roomRef.current = null;
+      setParticipants([]);
+      setMessages([]);
+      setStatus("disconnected");
+      optionsRef.current.onRoomClosed?.(payload);
+    });
+
+    /* Аккаунт заблокирован: сервер сам разорвёт соединение. */
+    socket.on("session-revoked", (payload) => {
+      terminatedRef.current = true;
+      roomRef.current = null;
+      setParticipants([]);
+      setMessages([]);
+      setStatus("error");
+      setError(payload.message);
+      optionsRef.current.onSessionRevoked?.(payload);
     });
 
     socket.on("connect_error", (err) => {

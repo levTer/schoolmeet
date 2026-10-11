@@ -10,6 +10,7 @@ export const LOGIN_ERROR = {
   missingCredentials: "MISSING_CREDENTIALS",
   userNotFound: "USER_NOT_FOUND",
   invalidPassword: "INVALID_PASSWORD",
+  accountBanned: "ACCOUNT_BANNED",
 } as const;
 
 export type LoginErrorCode = (typeof LOGIN_ERROR)[keyof typeof LOGIN_ERROR];
@@ -28,6 +29,8 @@ export const LOGIN_ERROR_MESSAGES: Record<string, string> = {
   [LOGIN_ERROR.missingCredentials]: "Введите email и пароль",
   [LOGIN_ERROR.userNotFound]: "Пользователь с таким email не найден",
   [LOGIN_ERROR.invalidPassword]: "Неверный пароль",
+  [LOGIN_ERROR.accountBanned]:
+    "Аккаунт заблокирован администратором школы. Обратитесь к администрации.",
   ...NEXTAUTH_ERROR_MESSAGES,
 };
 

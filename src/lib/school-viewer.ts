@@ -8,16 +8,19 @@ export interface SchoolViewer {
   role: Role;
   /** Класс ученика; для учителей и администраторов — null. */
   grade: GradeCode | null;
+  /** Аккаунт заблокирован администратором (этап 6). */
+  isBanned: boolean;
 }
 
 /**
- * Загружает класс пользователя из БД. Берём его из базы, а не из сессии,
- * чтобы смена класса вступала в силу сразу, без перевыпуска JWT.
+ * Загружает роль, класс и признак блокировки из БД. Берём их из базы, а не из
+ * сессии, чтобы блокировка и смена класса вступали в силу сразу, без
+ * перевыпуска JWT.
  */
 export async function getSchoolViewer(userId: string): Promise<SchoolViewer | null> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true, grade: true },
+    select: { id: true, role: true, grade: true, isBanned: true },
   });
   if (!user) return null;
 
@@ -25,5 +28,6 @@ export async function getSchoolViewer(userId: string): Promise<SchoolViewer | nu
     id: user.id,
     role: user.role as Role,
     grade: (user.grade as GradeCode | null) ?? null,
+    isBanned: user.isBanned,
   };
 }

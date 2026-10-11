@@ -60,14 +60,30 @@ npm run db:studio  # веб-UI для просмотра данных
 ```
 prisma/schema.prisma               Enum Role + модели User / Meeting / Schedule / ChatMessage
 prisma/seed.mjs                    Демо-аккаунты ADMIN / TEACHER / STUDENT (npm run db:seed)
-src/middleware.ts                  Защита /dashboard, /meeting, /schedule, /admin + RBAC для /admin
+src/middleware.ts                  Rate-limit -> сессия -> RBAC для /admin -> бан: защита /dashboard,
+                                   /meeting, /schedule, /homework, /admin
 src/lib/auth.ts                    NextAuth: CredentialsProvider, JWT/session callbacks с id и role
 src/lib/password.ts                bcryptjs: hashPassword() / verifyPassword()
 src/lib/validation.ts              Валидация регистрации (общая для API и форм) + контракты ответов
 src/lib/auth-errors.ts             Коды ошибок входа → тексты для пользователя
 src/lib/prisma.ts                  Singleton PrismaClient
+src/lib/rate-limit.ts              Rate-limit (fixed window): 100/мин на IP, /api/auth - 20, /api/admin - 60
+src/lib/audit.ts                   Журнал действий: writeAuditLog / listAuditLogs, расшифровка details
+src/lib/admin-permissions.ts       Права админ-панели: что ADMIN и TEACHER могут делать с кем
+src/lib/admin-stats.ts             Метрики обзора: ученики, учителя, активные уроки, ДЗ, графики классов
+src/lib/admin-users.ts             Поиск/фильтры пользователей, создание, смена роли и класса, сброс пароля
+src/lib/admin-meetings.ts          Активные уроки и принудительное завершение (через Socket.IO)
+src/lib/attendance.ts              Посещаемость: вход/выход, длительность, «зависшие» записи
+src/lib/announcements.ts           Объявления школы: валидация, публикация, выборка для зрителя
+src/lib/realtime-control.ts        Мост «API <-> Socket.IO»: живые комнаты, закрытие урока, отключение сессий
 src/app/api/auth/[...nextauth]     Обработчик NextAuth (вход, выход, сессия, CSRF)
 src/app/api/auth/register          POST-регистрация: валидация → уникальность email → bcrypt → БД
+src/app/api/admin/stats|users|…    Админ-API: метрики, пользователи, уроки, посещаемость, объявления, аудит
+src/app/api/announcements          Активные объявления для баннера на /dashboard (с учётом класса)
+src/app/admin/*                    Админ-панель: обзор, пользователи, активные уроки, объявления, журнал
+src/app/banned/page.tsx            Экран «аккаунт заблокирован администратором» + выход из аккаунта
+src/components/admin/              Таблица пользователей, модалки, графики (SVG), доска активных уроков
+src/components/dashboard/announcement-banner.tsx Плавающий баннер объявлений школы
 src/app/login|register             Страницы входа и регистрации (формы в src/components/auth)
 src/app/dashboard|admin            Кабинет пользователя и админ-панель (ADMIN / TEACHER)
 server.ts                          Точка входа: один HTTP-сервер для Next.js и Socket.IO (dev и start)
@@ -112,6 +128,8 @@ src/types/next-auth.d.ts           Расширение типов сессии 
 | `/`, `/login`, `/register`    | Публично                                |
 | `/dashboard`, `/schedule`, `/meeting` | Любая авторизованная роль      |
 | `/admin`                      | Только `ADMIN` и `TEACHER`              |
+| `/banned`                     | Заблокированный аккаунт (остальным — `/dashboard`) |
+| `/api/admin/*`                | Только `ADMIN` и `TEACHER` (по правам роли) |
 
 - Сессия — подписанный JWT (30 дней); `id` и `role` кладутся в токен в `jwt`-callback
   и доступны как `session.user.id` / `session.user.role` на сервере и на клиенте.
@@ -121,6 +139,11 @@ src/types/next-auth.d.ts           Расширение типов сессии 
   выдать нельзя — только `STUDENT` или `TEACHER` (админа создаёт сид).
 - `POST /api/auth/register` отвечает `201` с созданным пользователем, `409` при занятом
   email, `422` с ошибками по полям и `500` при недоступной БД.
+- Блокировка (`isBanned`) проверяется на входе (пароль не принимается, код `ACCOUNT_BANNED`),
+  в middleware (страницы → `/banned`, API → `403 ACCOUNT_BANNED`) и при рукопожатии Socket.IO.
+  Смена роли и блокировка применяются к живой сессии в течение минуты (`jwt`-callback
+  перечитывает роль/бан из БД), а активное соединение разрывается сразу: сокет получает
+  `session-revoked`.
 
 Демо-аккаунты после `npm run db:seed` (пароль задаётся `SEED_PASSWORD`, по умолчанию
 `schoolmeet`): `admin@schoolmeet.dev`, `teacher@schoolmeet.dev`, `student@schoolmeet.dev`.
@@ -135,6 +158,13 @@ src/types/next-auth.d.ts           Расширение типов сессии 
 - **Schedule** — `id`, `title`, `subject`, `teacherId`, `dayOfWeek` (1–7 по ISO), `startTime`/`endTime`
   (`"HH:mm"`), `meetingId`.
 - **ChatMessage** — `id`, `meetingId`, `userId`, `content`, `encrypted`, `createdAt`.
+- **AttendanceRecord** — `id`, `meetingId`, `userId`, `joinedAt`, `leftAt`, `durationMinutes`:
+  вход в урок и выход из него (пишется Socket.IO-сервером, «зависшие» записи закрываются по таймауту).
+- **Announcement** — `id`, `title`, `content`, `targetGrade` (класс 5–11 или `null` — вся школа),
+  `authorId`, `isActive`, `createdAt`: общешкольные объявления для баннера на дашборде.
+- **AuditLog** — `id`, `userId`, `action`, `details` (JSON-строка), `ip`, `createdAt`: журнал
+  действий администрации (роли, баны, сброс пароля, завершение урока, объявления).
+- **User.isBanned** — блокировка аккаунта администратором: вход запрещён, сессии разрываются.
 
 Права ролей описаны в `ROLE_PERMISSIONS` (`src/types/index.ts`): учитель планирует расписание и
 ведёт доску, ученик только просматривает расписание и участвует в уроке.
@@ -156,6 +186,19 @@ src/types/next-auth.d.ts           Расширение типов сессии 
 - Доска: события рисования (`whiteboard-*`) проверяются на сервере — учитель решает, кто рисует
   («Рисуют все» / «Рисует учитель»), а перегрузка событиями ограничена рейт-лимитами.
 - Для работы в школьных сетях с симметричным NAT нужен TURN-сервер (см. `NEXT_PUBLIC_ICE_SERVERS`).
+- **Rate-limit** (`src/lib/rate-limit.ts`, `middleware.ts`): не более 100 запросов в минуту с одного IP,
+  для `/api/auth` — 20 (защита от подбора пароля), для `/api/admin` — 60, для рукопожатий Socket.IO — 40.
+  Превышение — `429` с `Retry-After` (страницы получают понятную HTML-заглушку), ответы несут заголовки
+  `X-RateLimit-*`. Хранилище — в памяти процесса: при нескольких инстансах нужен Redis.
+- **Админ-панель** (`/admin`) доступна только `ADMIN` и `TEACHER`, ученик получает редирект
+  `/dashboard?denied=...`; API проверяет права повторно (`requireCapability`) — интерфейс не является
+  защитой. Все изменения (роли, бан, пароль, завершение урока, объявления) пишутся в `AuditLog`
+  вместе с IP автора; журнал виден только администратору.
+- Заблокированный аккаунт немедленно теряет живое соединение (`session-revoked`), а его сокет-сессии
+  принудительно закрываются; вход и рукопожатие Socket.IO отклоняются с `ACCOUNT_BANNED`.
+- Принудительное завершение урока («Завершить урок» в `/admin/meetings`) рассылает участникам
+  `room-closed`, закрывает записи посещаемости и на 30 минут запрещает вход ученикам
+  (ведущий и администратор могут вернуться, чтобы не потерять урок).
 - Реальный `.env` в репозиторий не попадает (см. `.gitignore`), в git лежит только `.env.example`.
 
 ## Статус этапов
@@ -171,4 +214,9 @@ src/types/next-auth.d.ts           Расширение типов сессии 
   свои уроки), домашние задания (`/homework`), файлы в `UPLOAD_DIR`, виджеты дашборда. ИИ-черновик
   проверки (`MockAIProvider`, только TEACHER / ADMIN) виден только учителю; ученик получает оценку
   после «Утвердить и отправить». Тесты правил: `npm run test:rules`.
+- ✅ **Этап 6** — админ-панель `/admin`: обзор школы с метриками и SVG-графиками (активность по дням
+  недели, успеваемость 5–11 классов), управление пользователями (поиск, фильтры, создание и правка,
+  сброс пароля, бан с мгновенным разрывом сессий), активные уроки и посещаемость с принудительным
+  завершением через Socket.IO, общешкольные объявления с баннером на дашборде, журнал действий
+  (`AuditLog`) и rate-limit в middleware. Демо-данные: `npm run db:seed`.
 - ⏭ Следующий этап — подключение внешнего ИИ (GPT-4o Vision) в финале проекта.
