@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminMeetingsPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login?callbackUrl=/admin/meetings");
-  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=/admin/meetings");
+  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
 
   let meetings: ActiveMeetingsSummary | null = null;
   let attendance: { items: AttendanceRow[]; total: number } | null = null;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { AlertTriangle, CalendarPlus, X } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { SelectField } from "@/components/ui/form-controls";
@@ -14,6 +14,8 @@ import {
   type GradeCode,
   type ScheduleConflictInfo,
 } from "@/lib/schedule-rules";
+import { subjectTint } from "@/lib/subjects";
+import { cn } from "@/lib/utils";
 import { DAY_LABELS, type DayOfWeek, type Schedule, type Subject } from "@/types";
 
 interface LessonModalProps {
@@ -130,12 +132,20 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-950/70 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      {/* Затемняющий оверлей — слой ниже диалога (z-90 против z-100). */}
+      <div
+        aria-hidden
+        onClick={() => {
+          if (!submitting) onClose();
+        }}
+        className="absolute inset-0 z-[90] bg-black/60 backdrop-blur"
+      />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="lesson-modal-title"
-        className="ring-gradient glass-card animate-fade-up w-full max-w-lg bg-ink-900/95 p-6 shadow-glow"
+        className="ring-gradient glass-card animate-fade-up relative z-[100] max-h-[90vh] w-full max-w-lg overflow-y-auto bg-ink-900/95 p-6 shadow-glow"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -158,18 +168,12 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
 
         <form onSubmit={handleSubmit} noValidate className="mt-5 grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <SelectField
-              label="Предмет"
+            <SubjectPicker
+              subjects={subjects}
               value={form.subjectId}
-              onChange={(event) => update("subjectId", event.target.value)}
               error={errors.subjectId}
-            >
-              {subjects.map((subject) => (
-                <option key={subject.id} value={subject.id} className="bg-ink-900">
-                  {subject.emoji} {subject.name}
-                </option>
-              ))}
-            </SelectField>
+              onChange={(subjectId) => update("subjectId", subjectId)}
+            />
           </div>
 
           <SelectField
@@ -264,3 +268,97 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Выбор предмета                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Сетка карточек предметов: крупные кликабельные плитки с эмодзи и фирменным
+ * цветом предмета. Один клик надёжно фиксирует `subjectId` в форме (кнопки
+ * внутри `radiogroup`), поэтому урок всегда уходит в API с выбранным предметом.
+ */
+function SubjectPicker({
+  subjects,
+  value,
+  error,
+  onChange,
+}: {
+  subjects: Subject[];
+  value: string;
+  error?: string;
+  onChange: (subjectId: string) => void;
+}) {
+  const selected = subjects.find((subject) => subject.id === value) ?? null;
+
+  return (
+    <fieldset>
+      <legend className="mb-2 flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-wider text-slate-400">
+        Предмет
+        {selected ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] normal-case tracking-normal text-slate-200">
+            <span aria-hidden>{selected.emoji}</span>
+            {selected.name}
+          </span>
+        ) : null}
+      </legend>
+
+      {subjects.length === 0 ? (
+        <p className="rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-200">
+          Каталог предметов пуст. Обновите страницу — список создаётся автоматически; также можно
+          наполнить его командой <span className="font-mono">npm run db:seed</span>.
+        </p>
+      ) : (
+        <div
+          role="radiogroup"
+          aria-label="Предмет"
+          className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:max-h-64 sm:grid-cols-3"
+        >
+          {subjects.map((subject) => {
+            const isSelected = subject.id === value;
+
+            return (
+              <button
+                key={subject.id}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                onClick={() => onChange(subject.id)}
+                style={
+                  isSelected
+                    ? {
+                        borderColor: subject.color,
+                        background: subjectTint(subject.color, 0.22),
+                        boxShadow: `0 0 0 1px ${subjectTint(subject.color, 0.5)}`,
+                      }
+                    : { borderColor: subjectTint(subject.color, 0.35) }
+                }
+                className={cn(
+                  "flex items-center gap-2 rounded-2xl border px-2.5 py-2 text-left transition",
+                  isSelected
+                    ? "text-white"
+                    : "border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]",
+                )}
+              >
+                <span
+                  aria-hidden
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-base"
+                  style={{ background: subjectTint(subject.color, 0.24) }}
+                >
+                  {subject.emoji}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs font-semibold leading-tight">
+                  {subject.name}
+                </span>
+                {isSelected ? (
+                  <Check className="h-4 w-4 shrink-0" style={{ color: subject.color }} />
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {error ? <p className="mt-2 text-xs text-rose-300">{error}</p> : null}
+    </fieldset>
+  );
+}

@@ -470,6 +470,7 @@ export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProp
               role={self.role}
               meetingTitle={meetingTitle}
               onApplyDrawing={handleApplyDrawing}
+              captureBoard={wb.captureBoard}
               onClose={() => setAiOpen(false)}
             />
           </div>

@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminUsersPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login?callbackUrl=/admin/users");
-  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=/admin/users");
+  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
 
   let initial: ListUsersResult | null = null;
   try {

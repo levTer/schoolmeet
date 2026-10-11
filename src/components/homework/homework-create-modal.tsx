@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CalendarPlus, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { useHomeworkCreateModal } from "@/components/homework/homework-create-store";
 import { TextField } from "@/components/ui/field";
 import { SelectField, TextAreaField } from "@/components/ui/form-controls";
 import { apiRequest } from "@/lib/client-api";
@@ -46,7 +47,12 @@ function buildInitialForm(subjects: Subject[]): FormState {
 
 /** Кнопка и модалка выдачи задания классу (учитель). */
 export function HomeworkCreateButton({ subjects }: { subjects: Subject[] }) {
-  const [open, setOpen] = useState(false);
+  /* Состояние живёт в общем store: о модалке знает и пустышка списка заданий. */
+  const open = useHomeworkCreateModal((state) => state.open);
+  const setOpen = useHomeworkCreateModal((state) => state.setOpen);
+
+  // Уход со страницы с открытой модалкой не должен «замораживать» пустышку.
+  useEffect(() => () => setOpen(false), [setOpen]);
 
   return (
     <>
@@ -135,12 +141,20 @@ export function HomeworkCreateModal({ open, subjects, onClose }: HomeworkCreateM
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-950/70 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      {/* Оверлей — z-[90], диалог — z-[100]: ни фон, ни навбар не перекрывают модалку. */}
+      <div
+        aria-hidden
+        onClick={() => {
+          if (!submitting) onClose();
+        }}
+        className="absolute inset-0 z-[90] bg-black/60 backdrop-blur"
+      />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="homework-modal-title"
-        className="ring-gradient glass-card animate-fade-up max-h-[90vh] w-full max-w-2xl overflow-y-auto bg-ink-900/95 p-6 shadow-glow"
+        className="ring-gradient glass-card animate-fade-up relative z-[100] max-h-[90vh] w-full max-w-2xl overflow-y-auto bg-ink-900/95 p-6 shadow-glow"
       >
         <div className="flex items-start justify-between gap-4">
           <div>

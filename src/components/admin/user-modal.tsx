@@ -129,7 +129,7 @@ export function UserModal({ mode, user, actor, onClose, onSaved }: UserModalProp
       role="dialog"
       aria-modal="true"
       aria-label={isEdit ? "Редактирование пользователя" : "Новый пользователь"}
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-ink-950/80 p-4 backdrop-blur-md sm:items-center"
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur sm:items-center"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

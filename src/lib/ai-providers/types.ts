@@ -18,12 +18,27 @@
 /* Действия ИИ-помощника                                                       */
 /* -------------------------------------------------------------------------- */
 
-/** Действия ИИ-помощника учителя. */
-export type AIAction = "summary" | "solve" | "formulas" | "check" | "draw" | "formula";
+/**
+ * Действия ИИ-помощника учителя.
+ *
+ * `ask` — свободный вопрос учителя: любой текст, задача, уравнение или тема.
+ * Именно это действие отправляет панель ИИ-помощника по кнопке «Отправить»
+ * (дополнительно к снимку доски, если включён переключатель «Передать доску»).
+ */
+export type AIAction = "ask" | "summary" | "solve" | "formulas" | "check" | "draw" | "formula";
 
-export const AI_ACTIONS: readonly AIAction[] = ["summary", "solve", "formulas", "check", "draw", "formula"];
+export const AI_ACTIONS: readonly AIAction[] = [
+  "ask",
+  "summary",
+  "solve",
+  "formulas",
+  "check",
+  "draw",
+  "formula",
+];
 
 export const AI_ACTION_LABELS: Record<AIAction, string> = {
+  ask: "Спроси ИИ",
   summary: "Сделай конспект",
   solve: "Реши задачу",
   formulas: "Все формулы по теме",

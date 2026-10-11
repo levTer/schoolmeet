@@ -5,7 +5,6 @@ import { ScrollText } from "lucide-react";
 
 import { FormAlert } from "@/components/ui/form-alert";
 import { auditActionLabel, auditActionTone, formatAuditDetails, listAuditLogs, type AuditLogEntry } from "@/lib/audit";
-import { isAdmin } from "@/lib/admin-permissions";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -32,8 +31,8 @@ const TONE_BADGES = {
 export default async function AdminAuditPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login?callbackUrl=/admin/audit");
-  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=/admin/audit");
-  if (!isAdmin(session.user.role)) redirect("/admin");
+  // Раздел /admin (и его вложенные страницы) открыт строго роли ADMIN.
+  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
 
   let logs: { items: AuditLogEntry[]; total: number } | null = null;
   try {

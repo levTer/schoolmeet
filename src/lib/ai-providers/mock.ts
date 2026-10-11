@@ -389,6 +389,24 @@ export class MockAIProvider implements AIProvider {
     const title = request.context?.meetingTitle ? ` по уроку «${request.context.meetingTitle}»` : "";
 
     switch (request.action) {
+      case "ask": {
+        // Свободный вопрос: локальный резерв подбирает ближайший заготовленный
+        // материал — решение, если в вопросе есть вычисления, иначе конспект темы.
+        const looksLikeTask = /(=|\d\s*[+\-*/^]\s*\d|реши|найди|вычисли|докажи|упрости)/i.test(prompt);
+        const body = looksLikeTask ? SOLUTION_TEMPLATES[topic] : SUMMARY_TEMPLATES[topic];
+        return {
+          text: [
+            "## Ответ ИИ (локальный режим)",
+            "",
+            prompt ? `**Вопрос:** ${escapeMarkdown(prompt)}${title}` : `**Вопрос:** по теме урока${title}`,
+            "",
+            body,
+            "",
+            "> Локальный резерв отвечает по типовым материалам. Для точного ответа на ваш вопрос подключите Groq или Gemini — панель переключится автоматически.",
+          ].join("\n"),
+        };
+      }
+
       case "summary":
         return { text: SUMMARY_TEMPLATES[topic] };
 

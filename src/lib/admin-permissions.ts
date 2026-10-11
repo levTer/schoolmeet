@@ -1,17 +1,18 @@
 import type { Role } from "@/types";
 
 /**
- * Права внутри админ-панели (RBAC этапа 6).
+ * Права внутри админ-панели (RBAC).
  *
- * Раздел `/admin` открыт ролям ADMIN и TEACHER (см. `src/middleware.ts`), но
- * «опасные» действия ограничены:
+ * Раздел `/admin` — строго для суперадмина: `src/middleware.ts` и
+ * `src/app/admin/layout.tsx` пускают туда ТОЛЬКО роль ADMIN (учитель и ученик
+ * получают `/dashboard?denied=admin` + toast «Доступ открыт только
+ * Администратору школы»). Поэтому все права ниже выданы исключительно ADMIN;
+ * единственное ограничение — действия над самим собой (нельзя заблокировать или
+ * повысить собственную учётную запись).
  *
- *  - **ADMIN** — всё: роли, блокировки, сброс паролей, завершение любых уроков,
- *    объявления, журнал действий;
- *  - **TEACHER** — просмотр статистики/пользователей/уроков, объявления и
- *    модерация **только учеников** (сброс пароля, блокировка, смена класса).
- *    Менять роли нельзя (это путь к повышению привилегий), работать с другими
- *    TEACHER/ADMIN — тоже.
+ * Учителя при этом не теряют НИЧЕГО из своих функций: расписание, выдача и
+ * проверка ДЗ с ИИ, видеозвонки и ИИ-доска живут вне админ-панели и
+ * контролируются правами ролей (`ROLE_PERMISSIONS`, `src/types/index.ts`).
  *
  * Модуль чистый (без Prisma и Node API): его импортируют и серверные проверки,
  * и клиентские компоненты — UI просто прячет/выключает недоступные кнопки,
@@ -63,25 +64,6 @@ export interface AdminTarget {
   role?: Role;
 }
 
-/** Права TEACHER: модерация учеников, но не управление ролями и не аудит. */
-const TEACHER_BASE: readonly AdminCapability[] = [
-  "stats.view",
-  "users.view",
-  "meetings.view",
-  "meetings.end",
-  "attendance.view",
-  "announcements.view",
-  "announcements.manage",
-];
-
-/** Права TEACHER над учеником. */
-const TEACHER_ON_STUDENT: readonly AdminCapability[] = [
-  "users.edit",
-  "users.grade.change",
-  "users.password.reset",
-  "users.ban",
-];
-
 /** Действия, которые запрещено применять к самому себе. */
 const SELF_FORBIDDEN: readonly AdminCapability[] = ["users.ban", "users.role.change"];
 
@@ -90,28 +72,19 @@ export function isAdmin(role: Role): boolean {
 }
 
 /**
- * Разрешено ли действие.
+ * Разрешено ли действие в админ-панели.
  *
  * Если `target` не передан, проверяется «принципиальная» возможность роли
- * (используется UI для отрисовки кнопок).
+ * (используется UI для отрисовки кнопок). Раздел закрыт для всех, кроме ADMIN.
  */
 export function canAdmin(
   actor: AdminActor,
   capability: AdminCapability,
   target?: AdminTarget,
 ): boolean {
-  if (isAdmin(actor.role)) {
-    if (target?.id && target.id === actor.id && SELF_FORBIDDEN.includes(capability)) return false;
-    return true;
-  }
-
-  if (actor.role !== "TEACHER") return false;
-
+  if (!isAdmin(actor.role)) return false;
   if (target?.id && target.id === actor.id && SELF_FORBIDDEN.includes(capability)) return false;
-  if (TEACHER_BASE.includes(capability)) return true;
-  if (target?.role === "STUDENT" && TEACHER_ON_STUDENT.includes(capability)) return true;
-
-  return false;
+  return true;
 }
 
 /** Причина отказа — текст для toast/подсказки. `null` — действие разрешено. */
@@ -128,15 +101,7 @@ export function adminDenyReason(
       : "Нельзя менять собственную роль";
   }
 
-  if (actor.role === "TEACHER") {
-    if (capability === "users.role.change" || capability === "users.create") {
-      return "Менять роли может только администратор";
-    }
-    if (capability === "audit.view") return "Журнал действий доступен только администратору";
-    if (TEACHER_ON_STUDENT.includes(capability)) {
-      return "Учитель может модерировать только учеников";
-    }
-  }
+  if (!isAdmin(actor.role)) return "Доступ в админ-панель открыт только Администратору школы";
 
   return `Недостаточно прав: ${CAPABILITY_LABELS[capability].toLowerCase()}`;
 }
@@ -158,7 +123,8 @@ export function adminCapabilities(
 
 /**
  * Можно ли принудительно завершить урок.
- * Администратор — любой урок, учитель — только свой (он его и ведёт).
+ * Администратор — любой урок, учитель — только свой (он его и ведёт в комнате;
+ * в админ-панели эта кнопка доступна лишь суперадмину).
  */
 export function canEndMeeting(actor: AdminActor, meeting: { hostId: string }): boolean {
   if (isAdmin(actor.role)) return true;

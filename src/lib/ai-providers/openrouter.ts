@@ -124,7 +124,7 @@ export class OpenRouterProvider implements AIProvider {
           max_tokens: wantsJson ? 3000 : 4096,
           ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
           messages: [
-            { role: "system", content: buildSystemPrompt(request.action, request.context?.meetingTitle) },
+            { role: "system", content: buildSystemPrompt(request.action, request.context?.meetingTitle, Boolean(request.imageDataUrl)) },
             { role: "user", content: userContent },
           ],
         },

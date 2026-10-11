@@ -94,7 +94,7 @@ src/lib/auth-errors.ts             Коды ошибок входа → текс
 src/lib/prisma.ts                  Singleton PrismaClient
 src/lib/rate-limit.ts              Rate-limit (fixed window): 100/мин на IP, /api/auth - 20, /api/admin - 60
 src/lib/audit.ts                   Журнал действий: writeAuditLog / listAuditLogs, расшифровка details
-src/lib/admin-permissions.ts       Права админ-панели: что ADMIN и TEACHER могут делать с кем
+src/lib/admin-permissions.ts       Права админ-панели (раздел строго для ADMIN)
 src/lib/admin-stats.ts             Метрики обзора: ученики, учителя, активные уроки, ДЗ, графики классов
 src/lib/admin-users.ts             Поиск/фильтры пользователей, создание, смена роли и класса, сброс пароля
 src/lib/admin-meetings.ts          Активные уроки и принудительное завершение (через Socket.IO)
@@ -110,7 +110,7 @@ src/app/banned/page.tsx            Экран «аккаунт заблокир�
 src/components/admin/              Таблица пользователей, модалки, графики (SVG), доска активных уроков
 src/components/dashboard/announcement-banner.tsx Плавающий баннер объявлений школы
 src/app/login|register             Страницы входа и регистрации (формы в src/components/auth)
-src/app/dashboard|admin            Кабинет пользователя и админ-панель (ADMIN / TEACHER)
+src/app/dashboard|admin            Кабинет пользователя и админ-панель (только ADMIN)
 server.ts                          Точка входа: один HTTP-сервер для Next.js и Socket.IO (dev и start)
 src/server/realtime.ts             Socket.IO: авторизация по JWT-сессии, проверка Origin, комнаты,
                                    signal / raise-hand / chat-message, лимиты и история чата
@@ -161,14 +161,15 @@ src/types/next-auth.d.ts           Расширение типов сессии 
 | ----------------------------- | --------------------------------------- |
 | `/`, `/login`, `/register`    | Публично                                |
 | `/dashboard`, `/schedule`, `/meeting` | Любая авторизованная роль      |
-| `/admin`                      | Только `ADMIN` и `TEACHER`              |
+| `/admin`, `/admin/*`          | Только `ADMIN` (суперадмин)             |
 | `/banned`                     | Заблокированный аккаунт (остальным — `/dashboard`) |
-| `/api/admin/*`                | Только `ADMIN` и `TEACHER` (по правам роли) |
+| `/api/admin/*`                | Только `ADMIN` (суперадмин)             |
 
 - Сессия — подписанный JWT (30 дней); `id` и `role` кладутся в токен в `jwt`-callback
   и доступны как `session.user.id` / `session.user.role` на сервере и на клиенте.
 - `src/middleware.ts` проверяет cookie до рендера страницы: без сессии — редирект на
-  `/login?callbackUrl=...`, а ученика на `/admin` возвращает в `/dashboard?denied=/admin`.
+  `/login?callbackUrl=...` (для `/api/admin/*` — `401`), а учителя или ученика на `/admin`
+  возвращает в `/dashboard?denied=admin` с toast «Доступ открыт только Администратору школы».
 - Пароли хешируются bcrypt (10 раундов). Роль `ADMIN` через `POST /api/auth/register`
   выдать нельзя — только `STUDENT` или `TEACHER` (админа создаёт сид).
 - `POST /api/auth/register` отвечает `201` с созданным пользователем, `409` при занятом
@@ -227,9 +228,10 @@ src/types/next-auth.d.ts           Расширение типов сессии 
   для `/api/auth` — 20 (защита от подбора пароля), для `/api/admin` — 60, для рукопожатий Socket.IO — 40.
   Превышение — `429` с `Retry-After` (страницы получают понятную HTML-заглушку), ответы несут заголовки
   `X-RateLimit-*`. Хранилище — в памяти процесса: при нескольких инстансах нужен Redis.
-- **Админ-панель** (`/admin`) доступна только `ADMIN` и `TEACHER`, ученик получает редирект
-  `/dashboard?denied=...`; API проверяет права повторно (`requireCapability`) — интерфейс не является
-  защитой. Все изменения (роли, бан, пароль, завершение урока, объявления) пишутся в `AuditLog`
+- **Админ-панель** (`/admin`) доступна ИСКЛЮЧИТЕЛЬНО роли `ADMIN` (суперадмин): и страницы, и
+  `/api/admin/*` закрыты в middleware, TEACHER/STUDENT получают редирект `/dashboard?denied=admin`
+  (для API — `403`), ссылка «Админ-панель» в навбаре рендерится только для `ADMIN`; API проверяет
+  права повторно (`requireCapability`) — интерфейс не является защитой. Все изменения (роли, бан, пароль, завершение урока, объявления) пишутся в `AuditLog`
   вместе с IP автора; журнал виден только администратору.
 - Заблокированный аккаунт немедленно теряет живое соединение (`session-revoked`), а его сокет-сессии
   принудительно закрываются; вход и рукопожатие Socket.IO отклоняются с `ACCOUNT_BANNED`.
@@ -264,6 +266,11 @@ src/types/next-auth.d.ts           Расширение типов сессии 
   `AutoAIProvider` — waterfall-автопереключение без падения API; серверный прокси на Vercel —
   ИИ доступен в РФ без VPN; WebRTC: STUN-пул Google + `NEXT_PUBLIC_TURN_SERVERS`; `vercel.json`;
   руководство деплоя [DEPLOYMENT.md](DEPLOYMENT.md). Смоук-тесты движка: `npm run test:ai`.
+- ✅ **Этап 8+ (UI/безопасность)** — свободный ввод и голос в ИИ-панели (крупное текстовое поле,
+  «Отправить», 🎤 Web Speech API, шаблоны ниже как быстрые подсказки, переключатель «Передать доску»
+  со снимком доски в Gemini Vision), сетка карточек предметов в модалке расписания (каталог
+  `src/lib/subjects.ts`, автозаполнение пустой таблицы `subjects`), слои модалок `z-[100]`/`z-[90]`
+  и отступ `pt-24/28` на `/homework`, админ-панель строго для `ADMIN`.
 
 **Проект завершён.** Итоговая сборка: `npm run build`, запуск: `npm run start` (или деплой на
 Vercel — [DEPLOYMENT.md](DEPLOYMENT.md)).

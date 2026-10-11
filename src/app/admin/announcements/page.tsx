@@ -18,13 +18,14 @@ export const dynamic = "force-dynamic";
 /**
  * `/admin/announcements` — управление объявлениями.
  *
- * Создавать и снимать объявления могут ADMIN и TEACHER; активные объявления
+ * Создавать и снимать объявления может только ADMIN (раздел /admin закрыт для
+ * учителей и учеников); активные объявления
  * показываются плавающим баннером в `/dashboard`.
  */
 export default async function AdminAnnouncementsPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login?callbackUrl=/admin/announcements");
-  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=/admin/announcements");
+  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
 
   let announcements: AnnouncementDto[] | null = null;
   try {

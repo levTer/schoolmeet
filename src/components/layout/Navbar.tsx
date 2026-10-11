@@ -35,7 +35,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { href: "/schedule", label: "Расписание", icon: CalendarDays, roles: null },
   { href: "/homework", label: "ДЗ", icon: ClipboardList, roles: null },
   { href: "/meeting", label: "Урок", icon: Video, roles: null },
-  { href: "/admin", label: "Админ-панель", icon: ShieldCheck, roles: ["ADMIN", "TEACHER"] },
+  { href: "/admin", label: "Админ-панель", icon: ShieldCheck, roles: ["ADMIN"] },
 ];
 
 const ROLE_BADGES: Record<Role, string> = {
@@ -49,7 +49,8 @@ const ROLE_BADGES: Record<Role, string> = {
  *
  * Показывает профиль текущего пользователя (инициалы/аватар, имя, email),
  * его роль и кнопку «Выйти» (`signOut`). Пункты меню фильтруются по ролям:
- * «Админ-панель» видят только ADMIN и TEACHER.
+ * «Админ-панель» видит ТОЛЬКО ADMIN — учителя и ученики этой ссылки не получают
+ * (сам раздел /admin дополнительно закрыт middleware).
  *
  * `user` приходит из серверного `AppShell` (`getServerSession`), поэтому
  * профиль и роль уже есть в первом HTML-ответе — без мигания «загрузки».
@@ -63,7 +64,11 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
   const role: Role | null = user?.role ?? null;
   const isAuthenticated = Boolean(user && role);
 
-  const visibleItems = NAV_ITEMS.filter((item) => !item.roles || (role && item.roles.includes(role)));
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (!item.roles) return true;
+    if (item.href === "/admin") return role === "ADMIN";
+    return role !== null && item.roles.includes(role);
+  });
 
   /* Закрываем меню при переходе на другую страницу. */
   useEffect(() => {
