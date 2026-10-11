@@ -8,6 +8,12 @@ import {
   DEFAULT_MEDIA_STATE,
   SDP_MAX_LENGTH,
   SOCKET_PATH,
+  WHITEBOARD_CURSOR_RATE_LIMIT_PER_SECOND,
+  WHITEBOARD_DEFAULT_DRAW_POLICY,
+  WHITEBOARD_MAX_OBJECTS_PER_PAGE,
+  WHITEBOARD_MAX_OBJECT_JSON,
+  WHITEBOARD_MAX_PAGES,
+  WHITEBOARD_RATE_LIMIT_PER_SECOND,
   isValidRoomCode,
   type Ack,
   type ClientToServerEvents,
@@ -17,6 +23,12 @@ import {
   type ServerToClientEvents,
   type SignalData,
   type SocketUser,
+  type WhiteboardClearPayload,
+  type WhiteboardCursorPayload,
+  type WhiteboardDeletePayload,
+  type WhiteboardDrawPolicy,
+  type WhiteboardObjectPayload,
+  type WhiteboardState,
 } from "@/lib/realtime";
 import { findMeetingByCode, loadRecentMessages, saveChatMessage } from "@/lib/meetings";
 import type { Role } from "@/types";
@@ -41,6 +53,10 @@ interface SocketData {
   handRaised: boolean;
   chatWindowStart: number;
   chatCount: number;
+  wbWindowStart: number;
+  wbCount: number;
+  wbCursorWindowStart: number;
+  wbCursorCount: number;
 }
 
 type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
@@ -151,6 +167,8 @@ function leaveCurrentRoom(socket: RealtimeSocket): void {
   socket.data.meetingId = undefined;
   socket.data.media = { ...DEFAULT_MEDIA_STATE };
   socket.data.handRaised = false;
+
+  removeRoomMember(roomId);
 }
 
 function reply<T>(ack: unknown, result: Ack<T>): void {
@@ -159,13 +177,7 @@ function reply<T>(ack: unknown, result: Ack<T>): void {
 
 /** Простой лимит на частоту сообщений: не больше N сообщений в секунду. */
 function takeChatToken(socket: RealtimeSocket): boolean {
-  const now = Date.now();
-  if (now - socket.data.chatWindowStart >= 1000) {
-    socket.data.chatWindowStart = now;
-    socket.data.chatCount = 0;
-  }
-  socket.data.chatCount += 1;
-  return socket.data.chatCount <= CHAT_RATE_LIMIT_PER_SECOND;
+  return takeToken(socket, "chat", CHAT_RATE_LIMIT_PER_SECOND);
 }
 
 function isSignalData(value: unknown): value is SignalData {
@@ -185,6 +197,156 @@ function isMediaState(value: unknown): value is MediaState {
   if (typeof value !== "object" || value === null) return false;
   const media = value as Record<string, unknown>;
   return typeof media.audio === "boolean" && typeof media.video === "boolean" && typeof media.screen === "boolean";
+}
+
+/* -------------------------------------------------------------------------- */
+/* Доска: состояние комнат                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Состояние доски урока живёт в памяти процесса сервера (как и участники
+ * комнаты). Оно нужно, чтобы запоздавшие участники увидели уже нарисованное.
+ */
+interface WhiteboardRoomState {
+  drawPolicy: WhiteboardDrawPolicy;
+  /** Текущая общая страница (0-based). */
+  page: number;
+  /** `pages[i]` — Map<objectId, json объекта Fabric.js>. */
+  pages: Map<string, Record<string, unknown>>[];
+}
+
+const whiteboardRooms = new Map<string, WhiteboardRoomState>();
+
+function getWhiteboardState(roomId: string): WhiteboardRoomState {
+  let state = whiteboardRooms.get(roomId);
+  if (!state) {
+    state = {
+      drawPolicy: WHITEBOARD_DEFAULT_DRAW_POLICY,
+      page: 0,
+      pages: [new Map()],
+    };
+    whiteboardRooms.set(roomId, state);
+  }
+  return state;
+}
+
+function snapshotWhiteboard(state: WhiteboardRoomState): WhiteboardState {
+  return {
+    drawPolicy: state.drawPolicy,
+    page: state.page,
+    pages: state.pages.map((page) => ({ objects: Object.fromEntries(page) })),
+  };
+}
+
+/** Рисовать может TEACHER/ADMIN всегда; STUDENT — только при политике `everyone`. */
+function canDraw(socket: RealtimeSocket): boolean {
+  const { roomId } = socket.data;
+  const role = socket.data.user.role;
+  if (role === "TEACHER" || role === "ADMIN") return true;
+  if (!roomId) return false;
+  return getWhiteboardState(roomId).drawPolicy === "everyone";
+}
+
+function isModerator(role: Role): boolean {
+  return role === "TEACHER" || role === "ADMIN";
+}
+
+function isValidPage(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value < WHITEBOARD_MAX_PAGES;
+}
+
+function isWhiteboardObjectPayload(value: unknown): value is WhiteboardObjectPayload {
+  if (typeof value !== "object" || value === null) return false;
+  const payload = value as Record<string, unknown>;
+  if (typeof payload.id !== "string" || payload.id.length === 0 || payload.id.length > 64) return false;
+  if (!isValidPage(payload.page)) return false;
+  if (typeof payload.json !== "object" || payload.json === null || Array.isArray(payload.json)) return false;
+  const type = (payload.json as Record<string, unknown>).type;
+  if (typeof type !== "string" || type.length === 0) return false;
+  try {
+    return JSON.stringify(payload.json).length <= WHITEBOARD_MAX_OBJECT_JSON;
+  } catch {
+    return false;
+  }
+}
+
+function isWhiteboardDeletePayload(value: unknown): value is WhiteboardDeletePayload {
+  if (typeof value !== "object" || value === null) return false;
+  const payload = value as Record<string, unknown>;
+  if (!isValidPage(payload.page)) return false;
+  return (
+    Array.isArray(payload.objectIds) &&
+    payload.objectIds.length > 0 &&
+    payload.objectIds.length <= 100 &&
+    payload.objectIds.every((id) => typeof id === "string" && id.length > 0 && id.length <= 64)
+  );
+}
+
+function isWhiteboardClearPayload(value: unknown): value is WhiteboardClearPayload {
+  if (typeof value !== "object" || value === null) return false;
+  const payload = value as Record<string, unknown>;
+  return payload.page === "all" || isValidPage(payload.page);
+}
+
+function isWhiteboardCursorPayload(value: unknown): value is WhiteboardCursorPayload {
+  if (typeof value !== "object" || value === null) return false;
+  const payload = value as Record<string, unknown>;
+  return (
+    isValidPage(payload.page) &&
+    typeof payload.x === "number" &&
+    Number.isFinite(payload.x) &&
+    payload.x >= 0 &&
+    payload.x <= 1 &&
+    typeof payload.y === "number" &&
+    Number.isFinite(payload.y) &&
+    payload.y >= 0 &&
+    payload.y <= 1
+  );
+}
+
+/** Обеспечивает наличие страниц 0..page включительно. */
+function ensurePages(state: WhiteboardRoomState, page: number): void {
+  while (state.pages.length <= page) state.pages.push(new Map());
+}
+
+function countObjects(state: WhiteboardRoomState): number {
+  return state.pages.reduce((total, page) => total + page.size, 0);
+}
+
+/** Слоты частоты: чат, рисование и курсоры считаются отдельно. */
+type RateSlot = "chat" | "wb" | "wbCursor";
+
+function takeToken(socket: RealtimeSocket, slot: RateSlot, limit: number): boolean {
+  const now = Date.now();
+  const startKey = slot === "chat" ? "chatWindowStart" : slot === "wb" ? "wbWindowStart" : "wbCursorWindowStart";
+  const countKey = slot === "chat" ? "chatCount" : slot === "wb" ? "wbCount" : "wbCursorCount";
+
+  if (now - socket.data[startKey] >= 1000) {
+    socket.data[startKey] = now;
+    socket.data[countKey] = 0;
+  }
+  socket.data[countKey] += 1;
+  return socket.data[countKey] <= limit;
+}
+
+/**
+ * Счётчик участников в комнате: когда комната пустеет — забываем состояние
+ * доски, чтобы не копить память между уроками.
+ */
+const roomMemberCounts = new Map<string, number>();
+
+function addRoomMember(roomId: string): void {
+  roomMemberCounts.set(roomId, (roomMemberCounts.get(roomId) ?? 0) + 1);
+}
+
+function removeRoomMember(roomId: string): void {
+  const next = (roomMemberCounts.get(roomId) ?? 1) - 1;
+  if (next <= 0) {
+    roomMemberCounts.delete(roomId);
+    whiteboardRooms.delete(roomId);
+  } else {
+    roomMemberCounts.set(roomId, next);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -222,6 +384,10 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           handRaised: false,
           chatWindowStart: 0,
           chatCount: 0,
+          wbWindowStart: 0,
+          wbCount: 0,
+          wbCursorWindowStart: 0,
+          wbCursorCount: 0,
         };
         next();
       })
@@ -250,6 +416,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         socket.data.roomId = roomId;
         socket.data.meetingId = meeting.id;
         await socket.join(roomKey(roomId));
+        addRoomMember(roomId);
 
         socket.to(roomKey(roomId)).emit("user-joined", toParticipant(socket));
 
@@ -331,6 +498,196 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         console.error("[realtime] chat-message:", error);
         reply(ack, { ok: false, code: "SAVE_FAILED", error: "Не удалось отправить сообщение" });
       }
+    });
+
+    /* ------------------------------- Доска -------------------------------- */
+
+    socket.on("whiteboard-add", (payload, ack) => {
+      const { roomId } = socket.data;
+      if (!roomId) {
+        reply(ack, { ok: false, code: "NOT_IN_ROOM", error: "Сначала войдите в урок" });
+        return;
+      }
+      if (!canDraw(socket)) {
+        reply(ack, { ok: false, code: "FORBIDDEN", error: "Учитель ограничил рисование на доске" });
+        return;
+      }
+      if (!takeToken(socket, "wb", WHITEBOARD_RATE_LIMIT_PER_SECOND)) {
+        reply(ack, { ok: false, code: "RATE_LIMIT", error: "Слишком много изменений доски" });
+        return;
+      }
+      if (!isWhiteboardObjectPayload(payload)) {
+        reply(ack, { ok: false, code: "BAD_PAYLOAD", error: "Некорректный объект доски" });
+        return;
+      }
+
+      const state = getWhiteboardState(roomId);
+      ensurePages(state, payload.page);
+      const page = state.pages[payload.page];
+      if (!page.has(payload.id) && countObjects(state) >= WHITEBOARD_MAX_OBJECTS_PER_PAGE) {
+        reply(ack, { ok: false, code: "LIMIT", error: "На доске слишком много объектов" });
+        return;
+      }
+
+      page.set(payload.id, payload.json);
+      socket.to(roomKey(roomId)).emit("whiteboard-add", payload);
+      reply(ack, { ok: true, data: undefined });
+    });
+
+    socket.on("whiteboard-modify", (payload, ack) => {
+      const { roomId } = socket.data;
+      if (!roomId) {
+        reply(ack, { ok: false, code: "NOT_IN_ROOM", error: "Сначала войдите в урок" });
+        return;
+      }
+      if (!canDraw(socket)) {
+        reply(ack, { ok: false, code: "FORBIDDEN", error: "Учитель ограничил рисование на доске" });
+        return;
+      }
+      if (!takeToken(socket, "wb", WHITEBOARD_RATE_LIMIT_PER_SECOND)) {
+        reply(ack, { ok: false, code: "RATE_LIMIT", error: "Слишком много изменений доски" });
+        return;
+      }
+      if (!isWhiteboardObjectPayload(payload)) {
+        reply(ack, { ok: false, code: "BAD_PAYLOAD", error: "Некорректный объект доски" });
+        return;
+      }
+
+      const state = getWhiteboardState(roomId);
+      ensurePages(state, payload.page);
+      state.pages[payload.page].set(payload.id, payload.json);
+      socket.to(roomKey(roomId)).emit("whiteboard-modify", payload);
+      reply(ack, { ok: true, data: undefined });
+    });
+
+    socket.on("whiteboard-delete", (payload, ack) => {
+      const { roomId } = socket.data;
+      if (!roomId) {
+        reply(ack, { ok: false, code: "NOT_IN_ROOM", error: "Сначала войдите в урок" });
+        return;
+      }
+      if (!canDraw(socket)) {
+        reply(ack, { ok: false, code: "FORBIDDEN", error: "Учитель ограничил рисование на доске" });
+        return;
+      }
+      if (!takeToken(socket, "wb", WHITEBOARD_RATE_LIMIT_PER_SECOND)) {
+        reply(ack, { ok: false, code: "RATE_LIMIT", error: "Слишком много изменений доски" });
+        return;
+      }
+      if (!isWhiteboardDeletePayload(payload)) {
+        reply(ack, { ok: false, code: "BAD_PAYLOAD", error: "Некорректное удаление" });
+        return;
+      }
+
+      const state = getWhiteboardState(roomId);
+      if (isValidPage(payload.page) && payload.page < state.pages.length) {
+        const page = state.pages[payload.page];
+        for (const id of payload.objectIds) page.delete(id);
+      }
+      socket.to(roomKey(roomId)).emit("whiteboard-delete", payload);
+      reply(ack, { ok: true, data: undefined });
+    });
+
+    socket.on("whiteboard-clear", (payload, ack) => {
+      const { roomId } = socket.data;
+      if (!roomId) {
+        reply(ack, { ok: false, code: "NOT_IN_ROOM", error: "Сначала войдите в урок" });
+        return;
+      }
+      if (!canDraw(socket)) {
+        reply(ack, { ok: false, code: "FORBIDDEN", error: "Учитель ограничил рисование на доске" });
+        return;
+      }
+      if (!takeToken(socket, "wb", WHITEBOARD_RATE_LIMIT_PER_SECOND)) {
+        reply(ack, { ok: false, code: "RATE_LIMIT", error: "Слишком много изменений доски" });
+        return;
+      }
+      if (!isWhiteboardClearPayload(payload)) {
+        reply(ack, { ok: false, code: "BAD_PAYLOAD", error: "Некорректная очистка" });
+        return;
+      }
+
+      const state = getWhiteboardState(roomId);
+      if (payload.page === "all") {
+        state.pages = [new Map()];
+        state.page = 0;
+      } else if (payload.page < state.pages.length) {
+        state.pages[payload.page] = new Map();
+      }
+      socket.to(roomKey(roomId)).emit("whiteboard-clear", payload);
+      reply(ack, { ok: true, data: undefined });
+    });
+
+    socket.on("whiteboard-cursor", (payload) => {
+      const { roomId } = socket.data;
+      if (!roomId || !isWhiteboardCursorPayload(payload)) return;
+      if (!takeToken(socket, "wbCursor", WHITEBOARD_CURSOR_RATE_LIMIT_PER_SECOND)) return;
+
+      socket.to(roomKey(roomId)).emit("whiteboard-cursor", {
+        socketId: socket.id,
+        name: socket.data.user.name,
+        page: payload.page,
+        x: payload.x,
+        y: payload.y,
+      });
+    });
+
+    socket.on("whiteboard-access", (payload, ack) => {
+      const { roomId } = socket.data;
+      if (!roomId) {
+        reply(ack, { ok: false, code: "NOT_IN_ROOM", error: "Сначала войдите в урок" });
+        return;
+      }
+      if (!isModerator(socket.data.user.role)) {
+        reply(ack, { ok: false, code: "FORBIDDEN", error: "Менять права доски может только учитель" });
+        return;
+      }
+
+      const drawPolicy = payload?.drawPolicy;
+      if (drawPolicy !== "moderators" && drawPolicy !== "everyone") {
+        reply(ack, { ok: false, code: "BAD_PAYLOAD", error: "Некорректная политика доступа" });
+        return;
+      }
+
+      const state = getWhiteboardState(roomId);
+      state.drawPolicy = drawPolicy;
+      // Политика рассылается всем, включая инициатора, — UI остаётся единым.
+      io.in(roomKey(roomId)).emit("whiteboard-access", { drawPolicy });
+      reply(ack, { ok: true, data: undefined });
+    });
+
+    socket.on("whiteboard-page", (payload, ack) => {
+      const { roomId } = socket.data;
+      if (!roomId) {
+        reply(ack, { ok: false, code: "NOT_IN_ROOM", error: "Сначала войдите в урок" });
+        return;
+      }
+      if (!canDraw(socket)) {
+        reply(ack, { ok: false, code: "FORBIDDEN", error: "Учитель ограничил управление доской" });
+        return;
+      }
+      if (!payload || !isValidPage(payload.page)) {
+        reply(ack, { ok: false, code: "BAD_PAYLOAD", error: "Некорректная страница" });
+        return;
+      }
+
+      const state = getWhiteboardState(roomId);
+      ensurePages(state, payload.page);
+      state.page = payload.page;
+      io.in(roomKey(roomId)).emit("whiteboard-page", { page: payload.page });
+      reply(ack, { ok: true, data: undefined });
+    });
+
+    socket.on("whiteboard-sync", (_payload, ack) => {
+      const { roomId } = socket.data;
+      if (!roomId) {
+        reply<WhiteboardState>(ack, { ok: false, code: "NOT_IN_ROOM", error: "Сначала войдите в урок" });
+        return;
+      }
+      reply<WhiteboardState>(ack, {
+        ok: true,
+        data: snapshotWhiteboard(getWhiteboardState(roomId)),
+      });
     });
 
     socket.on("disconnect", () => {
