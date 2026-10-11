@@ -1,0 +1,248 @@
+/**
+ * SchoolMeet — общие типы домена.
+ *
+ * Модели зеркалят `prisma/schema.prisma`. Поля, приходящие из БД как `Date`,
+ * описаны как `Date | string`, потому что на границе API (JSON / Server
+ * Components) даты сериализуются в строку.
+ */
+
+/* -------------------------------------------------------------------------- */
+/* Роли                                                                        */
+/* -------------------------------------------------------------------------- */
+
+/** Роль пользователя в системе. Зеркалит Prisma `enum Role`. */
+export type Role = "ADMIN" | "TEACHER" | "STUDENT";
+
+export const ROLES = ["ADMIN", "TEACHER", "STUDENT"] as const satisfies readonly Role[];
+
+/** Человекочитаемые подписи ролей (ru). */
+export const ROLE_LABELS: Record<Role, string> = {
+  ADMIN: "Администратор",
+  TEACHER: "Учитель",
+  STUDENT: "Ученик",
+};
+
+/** Что роль может делать — используется для ограничений UI и API. */
+export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
+  ADMIN: [
+    "meeting:create",
+    "meeting:delete",
+    "schedule:write",
+    "board:write",
+    "chat:write",
+    "admin:panel",
+  ],
+  TEACHER: ["meeting:create", "schedule:write", "board:write", "chat:write"],
+  STUDENT: ["meeting:join", "schedule:read", "board:view", "chat:write"],
+};
+
+export function hasPermission(role: Role, permission: string): boolean {
+  return ROLE_PERMISSIONS[role].includes(permission);
+}
+
+/* -------------------------------------------------------------------------- */
+/* User                                                                        */
+/* -------------------------------------------------------------------------- */
+
+/** Полная модель пользователя (как в БД). */
+export interface User {
+  id: string;
+  email: string;
+  /** bcrypt-хеш пароля. Никогда не отдаётся наружу — см. `SafeUser`. */
+  password: string;
+  name: string;
+  role: Role;
+  avatar: string | null;
+  createdAt: Date | string;
+  updatedAt?: Date | string;
+}
+
+/** Пользователь без чувствительных полей — то, что можно отдавать клиенту. */
+export type SafeUser = Omit<User, "password">;
+
+/** Данные для регистрации. */
+export interface RegisterInput {
+  email: string;
+  password: string;
+  name: string;
+  role?: Role;
+  avatar?: string | null;
+}
+
+/** Данные для входа. */
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Meeting                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export interface Meeting {
+  id: string;
+  title: string;
+  meetingCode: string;
+  hostId: string;
+  startTime: Date | string;
+  endTime: Date | string | null;
+  isActive: boolean;
+  /** Ключ комнаты для AES-256 шифрования чата. */
+  encryptionKey: string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+
+  // Развёрнутые связи (опционально подключаются через `include`)
+  host?: SafeUser;
+  messages?: ChatMessage[];
+  schedule?: Schedule | null;
+}
+
+export interface CreateMeetingInput {
+  title: string;
+  hostId: string;
+  startTime?: Date | string;
+  endTime?: Date | string | null;
+  encryptionKey?: string;
+}
+
+/** Что приходит с клиента при входе в комнату по коду. */
+export interface JoinMeetingInput {
+  meetingCode: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Schedule                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** Дни недели по ISO-8601: 1 — понедельник, 7 — воскресенье. */
+export type DayOfWeek = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+export const DAY_LABELS: Record<DayOfWeek, string> = {
+  1: "Понедельник",
+  2: "Вторник",
+  3: "Среда",
+  4: "Четверг",
+  5: "Пятница",
+  6: "Суббота",
+  7: "Воскресенье",
+};
+
+export const DAY_SHORT_LABELS: Record<DayOfWeek, string> = {
+  1: "Пн",
+  2: "Вт",
+  3: "Ср",
+  4: "Чт",
+  5: "Пт",
+  6: "Сб",
+  7: "Вс",
+};
+
+export interface Schedule {
+  id: string;
+  title: string;
+  subject: string;
+  teacherId: string;
+  dayOfWeek: DayOfWeek;
+  /** Время начала в формате "HH:mm", например "09:00". */
+  startTime: string;
+  /** Время окончания в формате "HH:mm", например "09:45". */
+  endTime: string;
+  meetingId: string | null;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+
+  // Развёрнутые связи
+  teacher?: SafeUser;
+  meeting?: Meeting | null;
+}
+
+export interface CreateScheduleInput {
+  title: string;
+  subject: string;
+  teacherId: string;
+  dayOfWeek: DayOfWeek;
+  startTime: string;
+  endTime: string;
+  meetingId?: string | null;
+}
+
+/** Слот расписания, сгруппированный по дню недели (для отображения сеткой). */
+export interface ScheduleDay {
+  dayOfWeek: DayOfWeek;
+  lessons: Schedule[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* ChatMessage                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export interface ChatMessage {
+  id: string;
+  meetingId: string;
+  userId: string;
+  /** Зашифрованный AES-256 (base64) или открытый текст сообщения. */
+  content: string;
+  encrypted: boolean;
+  createdAt: Date | string;
+
+  // Развёрнутые связи
+  user?: Pick<SafeUser, "id" | "name" | "avatar" | "role">;
+  meeting?: Meeting;
+}
+
+export interface SendMessageInput {
+  meetingId: string;
+  content: string;
+  encrypted?: boolean;
+}
+
+/** Сообщение, уже расшифрованное на клиенте и готовое к отрисовке. */
+export interface DecryptedChatMessage extends Omit<ChatMessage, "content"> {
+  content: string;
+  decrypted: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Прочее                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/** Участник видеозвонка (WebRTC / PeerJS) в оперативной памяти комнаты. */
+export interface Participant {
+  id: string;
+  userId: string;
+  name: string;
+  avatar?: string | null;
+  role: Role;
+  /** PeerJS-идентификатор для P2P-соединения. */
+  peerId?: string;
+  isAudioEnabled: boolean;
+  isVideoEnabled: boolean;
+  isScreenSharing: boolean;
+  /** «Поднятая рука» — запрос слова. */
+  isHandRaised: boolean;
+  joinedAt: Date | string;
+}
+
+/** События Socket.IO, общие для клиента и сервера. */
+export interface ServerToClientEvents {
+  "participant:joined": (participant: Participant) => void;
+  "participant:left": (payload: { userId: string }) => void;
+  "participant:updated": (participant: Participant) => void;
+  "chat:message": (message: ChatMessage) => void;
+  "board:update": (payload: { meetingId: string; data: string }) => void;
+  "hand:raised": (payload: { userId: string; isHandRaised: boolean }) => void;
+}
+
+export interface ClientToServerEvents {
+  "meeting:join": (payload: { meetingId: string; participant: Participant }) => void;
+  "meeting:leave": (payload: { meetingId: string }) => void;
+  "chat:send": (message: SendMessageInput) => void;
+  "board:update": (payload: { meetingId: string; data: string }) => void;
+  "hand:raise": (payload: { userId: string; isHandRaised: boolean }) => void;
+}
+
+/** Универсальный результат API-обработчика. */
+export type ApiResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; code?: string };
