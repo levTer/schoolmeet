@@ -8,11 +8,13 @@
     "start": "NODE_ENV=production tsx server.ts",
     "lint": "next lint",
     "test:ai": "tsx scripts/smoke-ai.ts",
+    "test:rules": "tsx --test scripts/rules.test.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev --name init",
-    "db:seed": "node prisma/seed.mjs",
-    "db:studio": "prisma studio"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "test": "npm run test:ai && npm run test:rules"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -21,6 +23,7 @@
     "crypto-js": "^4.2.0",
     "date-fns": "^4.4.0",
     "fabric": "^7.4.0",
+    "katex": "^0.16.47",
     "lucide-react": "^1.55.0",
     "next": "14.2.35",
     "next-auth": "^4.24.15",
@@ -28,8 +31,12 @@
     "peerjs": "^1.5.5",
     "react": "^18",
     "react-dom": "^18",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0",
     "socket.io": "^4.8.4",
     "socket.io-client": "^4.8.4",
+    "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0",
     "tsx": "^4.23.15",
     "zustand": "^5.0.15"
@@ -49,5 +56,8 @@
   },
   "overrides": {
     "postcss": "$postcss"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }

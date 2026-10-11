@@ -1,0 +1,268 @@
+/**
+ * Тесты чистых правил расписания и домашних заданий.
+ * Запуск: `npm run test:rules`. База данных и сеть не нужны.
+ */
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+
+import {
+  formatSchoolLocalInput,
+  schoolLocalToDate,
+  findLiveLesson,
+  findNextLesson,
+  formatMinutes,
+  getLessonStatus,
+  getSchoolClock,
+  parseTime,
+  slotsOverlap,
+  validateCreateLesson,
+  validateLessonTimes,
+  type SchoolClock,
+} from "../src/lib/schedule-rules";
+import {
+  findAllowedFileType,
+  formatTimeLeft,
+  getDeadlineIndicator,
+  matchesFileSignature,
+  parseGrade,
+  sanitizeFileName,
+  validateAnswer,
+  validateCreateHomework,
+} from "../src/lib/homework-rules";
+import { MockAIProvider } from "../src/lib/ai-provider";
+
+const lesson = (dayOfWeek: number, startTime: string, endTime: string, id = `${dayOfWeek}-${startTime}`) => ({
+  id,
+  dayOfWeek,
+  startTime,
+  endTime,
+});
+
+const clock = (dayOfWeek: number, time: string): SchoolClock => ({ dayOfWeek: dayOfWeek as SchoolClock["dayOfWeek"], minutes: parseTime(time)! });
+
+describe("время и пересечения", () => {
+  it("разбирает HH:mm и отвергает некорректные строки", () => {
+    assert.equal(parseTime("09:45"), 585);
+    assert.equal(parseTime("9:45"), null);
+    assert.equal(parseTime("24:00"), null);
+    assert.equal(parseTime("12:60"), null);
+    assert.equal(formatMinutes(585), "09:45");
+  });
+
+  it("считает соседние уроки без пересечения, а перекрывающиеся — пересекающимися", () => {
+    assert.equal(slotsOverlap(lesson(1, "09:00", "09:45"), lesson(1, "09:45", "10:30")), false);
+    assert.equal(slotsOverlap(lesson(1, "09:00", "09:45"), lesson(1, "09:30", "10:15")), true);
+    assert.equal(slotsOverlap(lesson(1, "09:00", "09:45"), lesson(2, "09:00", "09:45")), false);
+  });
+
+  it("проверяет длительность и границы учебного дня", () => {
+    assert.equal(validateLessonTimes("09:00", "09:45"), null);
+    assert.match(validateLessonTimes("09:00", "08:00")!, /позже/);
+    assert.match(validateLessonTimes("09:00", "09:05")!, /не меньше/);
+    assert.match(validateLessonTimes("06:00", "07:00")!, /Уроки проводятся/);
+    assert.match(validateLessonTimes("20:30", "21:30")!, /Уроки проводятся/);
+  });
+});
+
+describe("статусы уроков и «до следующего урока»", () => {
+  const lessons = [lesson(1, "09:00", "09:45"), lesson(1, "10:00", "10:45"), lesson(3, "08:30", "09:15")];
+
+  it("«Скоро» за 15 минут до начала, «ИДЁТ СЕЙЧАС» внутри урока, «Завершён» после", () => {
+    assert.equal(getLessonStatus(lesson(1, "09:00", "09:45"), clock(1, "08:50")), "soon");
+    assert.equal(getLessonStatus(lesson(1, "09:00", "09:45"), clock(1, "08:30")), null);
+    assert.equal(getLessonStatus(lesson(1, "09:00", "09:45"), clock(1, "09:20")), "live");
+    assert.equal(getLessonStatus(lesson(1, "09:00", "09:45"), clock(1, "09:45")), "finished");
+  });
+
+  it("уроки прошедших дней недели — завершены, будущих — без статуса", () => {
+    assert.equal(getLessonStatus(lesson(1, "09:00", "09:45"), clock(3, "12:00")), "finished");
+    assert.equal(getLessonStatus(lesson(5, "09:00", "09:45"), clock(3, "12:00")), null);
+  });
+
+  it("ищет следующий урок сегодня и переходит на следующие дни", () => {
+    const next = findNextLesson(lessons, clock(1, "09:50"));
+    assert.equal(next?.lesson.startTime, "10:00");
+    assert.equal(next?.minutesUntil, 10);
+
+    const afterToday = findNextLesson(lessons, clock(1, "11:00"));
+    assert.equal(afterToday?.lesson.dayOfWeek, 3);
+    assert.equal(afterToday?.minutesUntil, 2 * 24 * 60 + 8 * 60 + 30 - 11 * 60);
+  });
+
+  it("если урок того же дня уже начался, следующим будет тот же слот через неделю", () => {
+    const next = findNextLesson([lesson(1, "09:00", "09:45")], clock(1, "09:30"));
+    assert.equal(next?.minutesUntil, 7 * 24 * 60 - 30);
+  });
+
+  it("возвращает null, когда уроков нет, и находит идущий урок", () => {
+    assert.equal(findNextLesson([], clock(1, "09:00")), null);
+    assert.equal(findLiveLesson(lessons, clock(1, "09:10"))?.startTime, "09:00");
+    assert.equal(findLiveLesson(lessons, clock(1, "09:50")), null);
+  });
+
+  it("часы школы считают день недели и время в заданном часовом поясе", () => {
+    // 2026-10-11 00:30 UTC — воскресенье, 03:30 по Москве (понедельник 12-го по UTC+3 не наступил — это ещё воскресенье 11-го)
+    const date = new Date("2026-10-11T00:30:00Z");
+    assert.deepEqual(getSchoolClock(date, "Europe/Moscow"), { dayOfWeek: 7, minutes: 3 * 60 + 30 });
+    assert.deepEqual(getSchoolClock(date, "UTC"), { dayOfWeek: 7, minutes: 30 });
+  });
+});
+
+describe("валидация создания урока", () => {
+  const valid = {
+    subjectId: "subj-1",
+    grade: "GRADE_8",
+    dayOfWeek: 2,
+    startTime: "09:00",
+    endTime: "09:45",
+    room: "  каб. 204 ",
+  };
+
+  it("принимает корректный урок и обрезает комнату", () => {
+    const result = validateCreateLesson(valid);
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.data.room, "каб. 204");
+  });
+
+  it("возвращает ошибки по полям", () => {
+    const result = validateCreateLesson({ ...valid, grade: "GRADE_12", dayOfWeek: 9, subjectId: "" });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.ok(result.fields?.grade);
+      assert.ok(result.fields?.dayOfWeek);
+      assert.ok(result.fields?.subjectId);
+    }
+  });
+
+  it("пустая комната допустима и становится null", () => {
+    const result = validateCreateLesson({ ...valid, room: "" });
+    assert.equal(result.ok && result.data.room, null);
+  });
+});
+
+describe("локальное время школы", () => {
+  it("переводит время школы в UTC (Москва = UTC+3, без перехода на летнее время)", () => {
+    assert.equal(schoolLocalToDate("2026-10-13T18:00", "Europe/Moscow")?.toISOString(), "2026-10-13T15:00:00.000Z");
+    assert.equal(schoolLocalToDate("2026-10-13T18:00", "UTC")?.toISOString(), "2026-10-13T18:00:00.000Z");
+    assert.equal(schoolLocalToDate("13.10.2026 18:00", "UTC"), null);
+  });
+
+  it("обратное преобразование даёт то же локальное значение", () => {
+    const date = new Date("2026-10-13T15:00:00Z");
+    assert.equal(formatSchoolLocalInput(date, "Europe/Moscow"), "2026-10-13T18:00");
+  });
+});
+
+describe("индикаторы дедлайна", () => {
+  const now = new Date("2026-10-11T12:00:00Z");
+  const after = (minutes: number) => new Date(now.getTime() + minutes * 60_000);
+
+  it("🟢 больше 24 ч, 🟡 меньше 24 ч, 🔴 меньше 1 ч, ⚫ просрочено", () => {
+    assert.equal(getDeadlineIndicator(after(25 * 60), now).emoji, "🟢");
+    assert.equal(getDeadlineIndicator(after(23 * 60), now).emoji, "🟡");
+    assert.equal(getDeadlineIndicator(after(59), now).emoji, "🔴");
+    assert.equal(getDeadlineIndicator(after(-1), now).emoji, "⚫");
+  });
+
+  it("граница 24 часа относится к жёлтому, а не к зелёному", () => {
+    assert.equal(getDeadlineIndicator(after(24 * 60), now).tone, "soon");
+    assert.equal(getDeadlineIndicator(after(60), now).tone, "soon");
+  });
+
+  it("формирует понятную подпись оставшегося времени", () => {
+    assert.equal(formatTimeLeft(45), "осталось 45 мин");
+    assert.equal(formatTimeLeft(135), "осталось 2 ч 15 мин");
+    assert.equal(formatTimeLeft(-90), "просрочено на 1 ч 30 мин");
+  });
+});
+
+describe("валидация домашних заданий", () => {
+  const now = new Date("2026-10-11T12:00:00Z");
+  const valid = {
+    title: "Квадратные уравнения",
+    description: "Решите уравнение x^2 = 4 и опишите шаги.",
+    subjectId: "subj-1",
+    grade: "GRADE_8",
+    deadline: "2026-10-13T12:00:00Z",
+  };
+
+  it("принимает корректное задание и ставит 5 баллов по умолчанию", () => {
+    const result = validateCreateHomework(valid, now);
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.data.maxScore, 5);
+  });
+
+  it("отвергает дедлайн в прошлом и слишком короткое условие", () => {
+    const result = validateCreateHomework({ ...valid, description: "коротко", deadline: "2026-10-10T12:00:00Z" }, now);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.ok(result.fields?.description);
+      assert.ok(result.fields?.deadline);
+    }
+  });
+
+  it("оценка — целое число в пределах максимума", () => {
+    assert.equal(parseGrade(4, 5), 4);
+    assert.equal(parseGrade("3", 5), 3);
+    assert.equal(parseGrade(6, 5), null);
+    assert.equal(parseGrade(3.5, 5), null);
+    assert.equal(parseGrade(0, 5), null);
+  });
+
+  it("ограничивает длину ответа", () => {
+    assert.equal(validateAnswer("ок").ok, true);
+    assert.equal(validateAnswer("а".repeat(20_001)).ok, false);
+    assert.equal(validateAnswer(42).ok, false);
+  });
+});
+
+describe("файлы домашних заданий", () => {
+  it("разрешает только известные форматы и проверяет сигнатуру", () => {
+    const pdf = findAllowedFileType("Работа.PDF");
+    assert.ok(pdf);
+    assert.equal(matchesFileSignature(pdf, new TextEncoder().encode("%PDF-1.7 ...")), true);
+    // Исполняемый файл, переименованный в PDF, не проходит проверку.
+    assert.equal(matchesFileSignature(pdf, new Uint8Array([0x7f, 0x45, 0x4c, 0x46])), false);
+
+    assert.equal(findAllowedFileType("script.exe"), null);
+    assert.equal(findAllowedFileType("noextension"), null);
+  });
+
+  it("текстовые файлы не должны содержать NUL-байтов", () => {
+    const txt = findAllowedFileType("ответ.txt");
+    assert.ok(txt);
+    assert.equal(matchesFileSignature(txt, new TextEncoder().encode("Ответ: 42")), true);
+    assert.equal(matchesFileSignature(txt, new Uint8Array([0x41, 0x00, 0x42])), false);
+  });
+
+  it("очищает имя файла от путей и опасных символов", () => {
+    assert.equal(sanitizeFileName("../../etc/passwd"), "passwd");
+    assert.equal(sanitizeFileName('my "file".pdf'), "my _file_.pdf");
+  });
+});
+
+describe("ИИ-черновик проверки (MockAIProvider)", () => {
+  const provider = new MockAIProvider();
+  const base = { description: "Задание", maxScore: 5, isLate: false };
+
+  it("пустой ответ без файлов получает 1 и просьбу связаться с учеником", async () => {
+    const draft = await provider.reviewHomework({ ...base, answer: "   ", attachmentCount: 0 });
+    assert.equal(draft.suggestedGrade, 1);
+    assert.match(draft.draftComment, /не содержит/);
+  });
+
+  it("оценка всегда в пределах шкалы и детерминирована", async () => {
+    const long = Array.from({ length: 120 }, (_, i) => `слово${i}`).join(" ") + " x = 2 + 2";
+    const first = await provider.reviewHomework({ ...base, answer: long, attachmentCount: 2 });
+    const second = await provider.reviewHomework({ ...base, answer: long, attachmentCount: 2 });
+    assert.ok(first.suggestedGrade >= 1 && first.suggestedGrade <= 5);
+    assert.equal(first.suggestedGrade, second.suggestedGrade);
+    assert.equal(first.draftComment, second.draftComment);
+  });
+
+  it("отмечает опоздание и помечает текст как черновик", async () => {
+    const draft = await provider.reviewHomework({ ...base, answer: "Ответ 42", attachmentCount: 0, isLate: true });
+    assert.match(draft.draftComment, /после дедлайна/);
+    assert.match(draft.draftComment, /Это черновик ИИ/);
+  });
+});

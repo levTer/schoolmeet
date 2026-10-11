@@ -1,6 +1,7 @@
 "use client";
 
 import { SessionProvider } from "next-auth/react";
+import { Toaster } from "sonner";
 
 /**
  * Клиентские провайдеры приложения.
@@ -8,5 +9,10 @@ import { SessionProvider } from "next-auth/react";
  * навбар, кнопка «Выйти» и формы авторизации.
  */
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <SessionProvider>{children}</SessionProvider>;
+  return (
+    <SessionProvider>
+      {children}
+      <Toaster theme="dark" position="top-right" richColors closeButton />
+    </SessionProvider>
+  );
 }

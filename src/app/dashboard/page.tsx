@@ -13,10 +13,15 @@ import {
   Video,
 } from "lucide-react";
 
+import { NextLessonWidget, ReviewQueueWidget, UrgentHomeworkWidget } from "@/components/dashboard/widgets";
 import { AppShell } from "@/components/layout/app-shell";
 import { FormAlert } from "@/components/ui/form-alert";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
-import { ROLE_LABELS, getPermissionLabels, type Role } from "@/types";
+import { getReviewQueue, getUrgentHomework } from "@/lib/homework";
+import { findLiveLesson, findNextLesson, getSchoolClock } from "@/lib/schedule-rules";
+import { listLessonsForViewer } from "@/lib/schedule";
+import { getSchoolViewer } from "@/lib/school-viewer";
+import { ROLE_LABELS, getPermissionLabels, type Role, type Schedule } from "@/types";
 
 export const metadata: Metadata = {
   title: "Кабинет",
@@ -45,6 +50,19 @@ export default async function DashboardPage({
   const { id, name, email, role } = session.user;
   const canOpenAdmin = canAccessAdminArea(role);
   const permissions = getPermissionLabels(role);
+
+  const now = new Date();
+  const viewer = await getSchoolViewer(id);
+  const [lessons, urgent, review] = viewer
+    ? await Promise.all([
+        listLessonsForViewer(viewer),
+        getUrgentHomework(viewer, now),
+        getReviewQueue(viewer),
+      ])
+    : [[] as Schedule[], [], { count: 0, items: [] }];
+  const clock = getSchoolClock(now);
+  const live = findLiveLesson(lessons, clock);
+  const next = findNextLesson(lessons, clock);
 
   const quickLinks = [
     {
@@ -105,6 +123,13 @@ export default async function DashboardPage({
           </FormAlert>
         </div>
       )}
+
+      {/* Виджеты: следующий урок, срочные ДЗ и очередь проверки */}
+      <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <NextLessonWidget next={next} live={live} />
+        <UrgentHomeworkWidget items={urgent} role={role} />
+        <ReviewQueueWidget queue={review} role={role} />
+      </div>
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,20rem)_1fr]">
         {/* Профиль */}
@@ -178,11 +203,12 @@ export default async function DashboardPage({
           <section className="glass-card p-6">
             <h2 className="text-lg font-semibold text-white">Что дальше</h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-400">
-              Этап 3 добавил видеозвонки WebRTC с сигналингом через Socket.IO и чат с шифрованием
-              AES-256. ИИ-доска на Fabric.js и GPT-4o Vision — следующий шаг.
+              Этап 5 добавил расписание 5–11 классов и домашние задания: дедлайны, загрузку файлов и
+              проверку учителем. ИИ формирует только черновик проверки — оценку видит ученик после
+              утверждения учителем.
             </p>
             <div className="mt-5 flex flex-wrap gap-2 text-xs">
-              {["JWT-сессия", "WebRTC", "Socket.IO", "AES-256", "Prisma"].map((chip) => (
+              {["JWT-сессия", "WebRTC", "Socket.IO", "AES-256", "Prisma", "Файлы", "ДЗ"].map((chip) => (
                 <span
                   key={chip}
                   className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-slate-300"

@@ -1,3 +1,5 @@
+import type { GradeCode } from "@/lib/schedule-rules";
+
 /**
  * SchoolMeet — общие типы домена.
  *
@@ -28,14 +30,25 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "meeting:create",
     "meeting:delete",
     "schedule:write",
+    "homework:write",
+    "homework:review",
     "board:write",
     "board:manage",
     "ai:use",
     "chat:write",
     "admin:panel",
   ],
-  TEACHER: ["meeting:create", "schedule:write", "board:write", "board:manage", "ai:use", "chat:write"],
-  STUDENT: ["meeting:join", "schedule:read", "board:view", "chat:write"],
+  TEACHER: [
+    "meeting:create",
+    "schedule:write",
+    "homework:write",
+    "homework:review",
+    "board:write",
+    "board:manage",
+    "ai:use",
+    "chat:write",
+  ],
+  STUDENT: ["meeting:join", "schedule:read", "homework:submit", "board:view", "chat:write"],
 };
 
 export function hasPermission(role: Role, permission: string): boolean {
@@ -49,6 +62,9 @@ export const PERMISSION_LABELS: Record<string, string> = {
   "meeting:join": "Вход в урок",
   "schedule:read": "Просмотр расписания",
   "schedule:write": "Планирование расписания",
+  "homework:write": "Выдача домашних заданий",
+  "homework:review": "Проверка домашних заданий",
+  "homework:submit": "Сдача домашних заданий",
   "board:view": "Просмотр доски",
   "board:write": "Работа на доске",
   "board:manage": "Управление доской",
@@ -160,33 +176,35 @@ export const DAY_SHORT_LABELS: Record<DayOfWeek, string> = {
   7: "Вс",
 };
 
+export interface Subject {
+  id: string;
+  name: string;
+  /** Фирменный цвет в HEX, например "#a855f7". */
+  color: string;
+  emoji: string;
+}
+
+/** Урок в расписании (слот + предмет + учитель + комната). */
 export interface Schedule {
   id: string;
-  title: string;
-  subject: string;
+  subjectId: string;
   teacherId: string;
+  /** Класс обучения (зеркалит Prisma `enum ClassGrade`): GRADE_5 … GRADE_11. */
+  grade: GradeCode;
   dayOfWeek: DayOfWeek;
   /** Время начала в формате "HH:mm", например "09:00". */
   startTime: string;
   /** Время окончания в формате "HH:mm", например "09:45". */
   endTime: string;
-  meetingId: string | null;
+  room: string | null;
+  /** Код комнаты урока (Meeting.meetingCode). */
+  meetingCode: string;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 
   // Развёрнутые связи
-  teacher?: SafeUser;
-  meeting?: Meeting | null;
-}
-
-export interface CreateScheduleInput {
-  title: string;
-  subject: string;
-  teacherId: string;
-  dayOfWeek: DayOfWeek;
-  startTime: string;
-  endTime: string;
-  meetingId?: string | null;
+  subject?: Subject;
+  teacher?: Pick<SafeUser, "id" | "name">;
 }
 
 /** Слот расписания, сгруппированный по дню недели (для отображения сеткой). */
@@ -194,6 +212,98 @@ export interface ScheduleDay {
   dayOfWeek: DayOfWeek;
   lessons: Schedule[];
 }
+
+/* -------------------------------------------------------------------------- */
+/* Homework                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export type HomeworkSubmissionStatus = "DRAFT" | "SUBMITTED" | "GRADED";
+
+export const SUBMISSION_STATUS_LABELS: Record<HomeworkSubmissionStatus, string> = {
+  DRAFT: "Черновик",
+  SUBMITTED: "На проверке",
+  GRADED: "Оценено",
+};
+
+export interface HomeworkAttachmentInfo {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+}
+
+/** Сводка ДЗ в списке. `mySubmission` — только для ученика, `stats` — только для учителя. */
+export interface HomeworkListItem {
+  id: string;
+  title: string;
+  subject: Subject;
+  grade: GradeCode;
+  /** ISO-дата дедлайна. */
+  deadline: string;
+  maxScore: number;
+  teacher: { id: string; name: string };
+  mySubmission?: { status: HomeworkSubmissionStatus; submittedAt: string | null; grade: number | null } | null;
+  stats?: { total: number; submitted: number; graded: number };
+}
+
+export interface HomeworkDetailInfo {
+  id: string;
+  title: string;
+  /** Условие в Markdown с LaTeX. */
+  description: string;
+  subject: Subject;
+  grade: GradeCode;
+  deadline: string;
+  maxScore: number;
+  teacher: { id: string; name: string };
+}
+
+/**
+ * Ответ ученика. В нём НЕТ черновика ИИ: ученик видит оценку и комментарий
+ * только после утверждения учителем (`approvedAt` не пуст).
+ */
+export interface StudentSubmissionInfo {
+  id: string;
+  status: HomeworkSubmissionStatus;
+  answer: string;
+  draftSavedAt: string | null;
+  submittedAt: string | null;
+  attachments: HomeworkAttachmentInfo[];
+  grade: number | null;
+  comment: string | null;
+  approvedAt: string | null;
+}
+
+/** Проверка учителя: здесь же лежит черновик ИИ (виден только учителю). */
+export interface TeacherReviewInfo {
+  aiSuggestedGrade: number | null;
+  aiDraftComment: string | null;
+  aiDraftedAt: string | null;
+  grade: number | null;
+  comment: string | null;
+  approvedAt: string | null;
+}
+
+export interface TeacherSubmissionInfo {
+  id: string;
+  student: { id: string; name: string };
+  status: HomeworkSubmissionStatus;
+  answer: string;
+  draftSavedAt: string | null;
+  submittedAt: string | null;
+  attachments: HomeworkAttachmentInfo[];
+  review: TeacherReviewInfo | null;
+}
+
+export type HomeworkDetailView =
+  | { view: "student"; homework: HomeworkDetailInfo; submission: StudentSubmissionInfo | null }
+  | {
+      view: "teacher";
+      homework: HomeworkDetailInfo;
+      submissions: TeacherSubmissionInfo[];
+      /** Ученики класса, которые ещё не сдали работу (черновик не в счёт). */
+      missingStudents: { id: string; name: string }[];
+    };
 
 /* -------------------------------------------------------------------------- */
 /* ChatMessage                                                                 */

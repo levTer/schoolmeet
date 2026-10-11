@@ -6,7 +6,7 @@ import type { Role } from "@/types";
 /**
  * Защита приватных разделов платформы.
  *
- * - `/dashboard`, `/meeting`, `/schedule`, `/admin` доступны только с сессией;
+ * - `/dashboard`, `/meeting`, `/schedule`, `/homework`, `/admin` доступны только с сессией;
  * - `/admin` — только роли ADMIN или TEACHER (ученика вернём в кабинет);
  * - остальные страницы (лендинг, `/login`, `/register`) проходят насквозь.
  *
@@ -15,7 +15,7 @@ import type { Role } from "@/types";
  */
 
 /** Разделы, требующие авторизации. */
-const PROTECTED_PREFIXES = ["/dashboard", "/meeting", "/schedule", "/admin"] as const;
+const PROTECTED_PREFIXES = ["/dashboard", "/meeting", "/schedule", "/homework", "/admin"] as const;
 
 /** Разделы, доступные только персоналу школы. */
 const STAFF_PREFIXES = ["/admin"] as const;
