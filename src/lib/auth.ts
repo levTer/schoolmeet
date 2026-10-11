@@ -10,6 +10,16 @@ import type { Role } from "@/types";
 /** Сессия живёт 30 дней и продлевается при активности пользователя. */
 export const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
 
+/**
+ * Как часто сверять роль и блокировку с БД.
+ *
+ * JWT хранит роль на момент входа, поэтому бан или смена роли должны
+ * «догонять» активную сессию. Раз в минуту токен обновляется из БД — это
+ * компромисс между мгновенной реакцией и лишними запросами (почти все
+ * действия через API и так проверяются по БД, см. `requireViewer`).
+ */
+export const SESSION_REFRESH_MS = 60_000;
+
 /** Роли, которым открыт раздел `/admin` (см. также `src/middleware.ts`). */
 export const ADMIN_AREA_ROLES: readonly Role[] = ["ADMIN", "TEACHER"];
 
@@ -66,6 +76,11 @@ export const authOptions: NextAuthOptions = {
           throw new Error(LOGIN_ERROR.invalidPassword);
         }
 
+        // Заблокированный аккаунт не может войти: даже с верным паролем.
+        if (user.isBanned) {
+          throw new Error(LOGIN_ERROR.accountBanned);
+        }
+
         // Пароль-хеш наружу не отдаём: в сессию уходят только id/role/имя.
         return {
           id: user.id,
@@ -90,22 +105,39 @@ export const authOptions: NextAuthOptions = {
         token.name = user.name ?? token.name;
         token.email = user.email ?? token.email;
         token.picture = user.image ?? null;
+        token.banned = false;
+        token.syncedAt = Date.now();
         return token;
       }
 
-      // Страховка для cookie, выпущенных до появления поля role.
-      if (!token.role && token.sub) {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.sub },
-          select: { role: true, name: true, avatar: true },
-        });
+      const userId = typeof token.id === "string" && token.id ? token.id : token.sub;
+      const needsSync =
+        !token.role || Date.now() - (typeof token.syncedAt === "number" ? token.syncedAt : 0) > SESSION_REFRESH_MS;
 
-        if (dbUser) {
-          token.id = token.sub;
-          token.role = dbUser.role as Role;
-          token.name = dbUser.name;
-          token.picture = dbUser.avatar ?? null;
+      /**
+       * Сверка с БД: смена роли, имени и блокировка применяются к уже вошедшим
+       * пользователям (не чаще одного раза в минуту). Страховка для cookie,
+       * выпущенных до появления поля role, работает на этом же запросе.
+       */
+      if (userId && needsSync) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { role: true, name: true, avatar: true, isBanned: true },
+          });
+
+          if (dbUser) {
+            token.id = userId;
+            token.role = dbUser.role as Role;
+            token.name = dbUser.name;
+            token.picture = dbUser.avatar ?? null;
+            token.banned = dbUser.isBanned;
+          }
+        } catch (error) {
+          // БД недоступна — не ломаем сессию, просто не обновляем данные.
+          console.error("[auth] Не удалось обновить данные сессии:", error);
         }
+        token.syncedAt = Date.now();
       }
 
       return token;
@@ -116,6 +148,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = (token.id as string | undefined) ?? token.sub ?? "";
         session.user.role = (token.role as Role | undefined) ?? "STUDENT";
+        session.user.banned = token.banned === true;
 
         if (typeof token.name === "string") session.user.name = token.name;
         if (typeof token.email === "string") session.user.email = token.email;

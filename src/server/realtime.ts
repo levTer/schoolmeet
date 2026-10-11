@@ -30,7 +30,17 @@ import {
   type WhiteboardObjectPayload,
   type WhiteboardState,
 } from "@/lib/realtime";
+import { closeAttendance, openAttendance } from "@/lib/attendance";
 import { findMeetingByCode, loadRecentMessages, saveChatMessage } from "@/lib/meetings";
+import { prisma } from "@/lib/prisma";
+import { consumeRateLimitForIp, getClientIpFromNodeHeaders } from "@/lib/rate-limit";
+import {
+  registerRealtimeControl,
+  type LiveParticipant,
+  type LiveRoom,
+  type RealtimeControl,
+} from "@/lib/realtime-control";
+import type { GradeCode } from "@/lib/schedule-rules";
 import type { Role } from "@/types";
 
 /**
@@ -39,16 +49,33 @@ import type { Role } from "@/types";
  *
  * Безопасность:
  *  - рукопожатие принимается только с действующей JWT-сессией NextAuth (cookie);
+ *  - роль и признак блокировки берутся из БД, а не из токена: забаненный
+ *    пользователь не может подключиться, а смена роли действует сразу;
+ *  - частые рукопожатия с одного IP ограничены rate-limit'ом;
  *  - Origin браузера должен совпадать с хостом приложения (защита от
  *    cross-site WebSocket hijacking — cookie уходят с любым WebSocket-запросом);
- *  - вход в комнату проверяет, что урок с таким кодом существует в БД;
+ *  - вход в комнату проверяет, что урок с таким кодом существует в БД и не
+ *    закрыт администратором;
  *  - сообщения чата приходят уже зашифрованными, сервер их не расшифровывает.
+ *
+ * Дополнительно сервер ведёт посещаемость (`AttendanceRecord`) и публикует
+ * управляющий интерфейс (`RealtimeControl`) для админ-панели: принудительное
+ * завершение урока и мгновенный разрыв сессий заблокированного аккаунта.
  */
+
+/** Пока урок закрыт администратором, повторный вход запрещён (кроме ведущего). */
+const CLOSED_ROOM_COOLDOWN_MS = 30 * 60_000;
 
 interface SocketData {
   user: SocketUser;
   roomId?: string;
   meetingId?: string;
+  /** Открытая запись посещаемости текущей комнаты. */
+  attendanceId?: string;
+  /** Время входа в комнату (ms) — для метрик «урок идёт с…». */
+  joinedAt?: number;
+  /** Заголовок урока — показываем в админ-панели. */
+  meetingTitle?: string;
   media: MediaState;
   handRaised: boolean;
   chatWindowStart: number;
@@ -99,6 +126,8 @@ export async function authenticateHandshake(headers: IncomingHttpHeaders): Promi
     id,
     name: typeof token.name === "string" && token.name ? token.name : "Участник",
     role: (token.role as Role | undefined) ?? "STUDENT",
+    // Класс уточняется из БД на рукопожатии (см. `io.use`).
+    grade: null,
   };
 }
 
@@ -163,8 +192,16 @@ function leaveCurrentRoom(socket: RealtimeSocket): void {
   void socket.leave(roomKey(roomId));
   socket.to(roomKey(roomId)).emit("user-left", { socketId: socket.id });
 
+  // Закрываем запись посещаемости: фиксируем выход и считаем минуты.
+  if (socket.data.attendanceId) {
+    void closeAttendance(socket.data.attendanceId);
+  }
+
   socket.data.roomId = undefined;
   socket.data.meetingId = undefined;
+  socket.data.meetingTitle = undefined;
+  socket.data.attendanceId = undefined;
+  socket.data.joinedAt = undefined;
   socket.data.media = { ...DEFAULT_MEDIA_STATE };
   socket.data.handRaised = false;
 
@@ -313,6 +350,125 @@ function countObjects(state: WhiteboardRoomState): number {
   return state.pages.reduce((total, page) => total + page.size, 0);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Админ-контроль: живые комнаты, принудительное завершение, блокировка         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Урок считается закрытым, если у него есть `endTime` и прошло меньше
+ * `CLOSED_ROOM_COOLDOWN_MS`. Через полчаса комнату можно снова использовать —
+ * учителю не нужен новый код урока, чтобы перезапустить занятие.
+ */
+function isRoomClosed(meeting: { endTime: Date | null; startTime: Date }): boolean {
+  if (!meeting.endTime) return false;
+  return Date.now() - meeting.endTime.getTime() < CLOSED_ROOM_COOLDOWN_MS;
+}
+
+function toLiveParticipant(socket: RealtimeSocket): LiveParticipant {
+  return {
+    socketId: socket.id,
+    userId: socket.data.user.id,
+    name: socket.data.user.name,
+    role: socket.data.user.role,
+    grade: socket.data.user.grade,
+    joinedAt: new Date(socket.data.joinedAt ?? Date.now()).toISOString(),
+  };
+}
+
+/** Публикует для API админ-панели управление живыми сессиями. */
+function buildRealtimeControl(io: RealtimeServer): RealtimeControl {
+  const socketsInRoom = (roomId: string): RealtimeSocket[] => {
+    const ids = io.sockets.adapter.rooms.get(roomKey(roomId));
+    if (!ids) return [];
+
+    const sockets: RealtimeSocket[] = [];
+    ids.forEach((id) => {
+      const socket = io.sockets.sockets.get(id);
+      if (socket) sockets.push(socket);
+    });
+    return sockets;
+  };
+
+  return {
+    listLiveRooms() {
+      const rooms = new Map<string, { meetingId: string | null; participants: LiveParticipant[] }>();
+
+      io.sockets.sockets.forEach((socket) => {
+        const roomId = socket.data.roomId;
+        if (!roomId) return;
+
+        const entry = rooms.get(roomId) ?? { meetingId: socket.data.meetingId ?? null, participants: [] };
+        entry.participants.push(toLiveParticipant(socket));
+        rooms.set(roomId, entry);
+      });
+
+      const result: LiveRoom[] = [];
+      rooms.forEach((entry, roomId) => {
+        const joinedTimes = entry.participants.map((participant) => Date.parse(participant.joinedAt));
+        const oldest = joinedTimes.length > 0 ? Math.min(...joinedTimes) : null;
+
+        result.push({
+          roomId,
+          meetingId: entry.meetingId,
+          participants: entry.participants,
+          startedAt: oldest !== null && Number.isFinite(oldest) ? new Date(oldest).toISOString() : null,
+        });
+      });
+
+      return result;
+    },
+
+    countParticipants(roomId) {
+      return socketsInRoom(roomId).length;
+    },
+
+    closeMeeting(meetingId, options) {
+      const roomIds: string[] = [];
+      let closedSockets = 0;
+
+      io.sockets.sockets.forEach((socket) => {
+        if (socket.data.meetingId !== meetingId) return;
+
+        const roomId = socket.data.roomId;
+        if (roomId) {
+          if (!roomIds.includes(roomId)) roomIds.push(roomId);
+          socket.emit("room-closed", { reason: options.reason, message: options.message });
+        }
+
+        // Выходим из комнаты: закрывается запись посещаемости, остальные
+        // участники получают user-left и сбрасывают WebRTC-соединение.
+        leaveCurrentRoom(socket);
+        closedSockets += 1;
+      });
+
+      return { closedSockets, roomIds };
+    },
+
+    disconnectUser(userId, options) {
+      let disconnected = 0;
+
+      io.sockets.sockets.forEach((socket) => {
+        if (socket.data.user.id !== userId) return;
+
+        socket.emit("session-revoked", { reason: options.reason, message: options.message });
+        // Небольшая пауза, чтобы сообщение успело уйти до закрытия транспорта.
+        setTimeout(() => socket.disconnect(true), 200);
+        disconnected += 1;
+      });
+
+      return disconnected;
+    },
+
+    isUserOnline(userId) {
+      let online = false;
+      io.sockets.sockets.forEach((socket) => {
+        if (socket.data.user.id === userId) online = true;
+      });
+      return online;
+    },
+  };
+}
+
 /** Слоты частоты: чат, рисование и курсоры считаются отдельно. */
 type RateSlot = "chat" | "wb" | "wbCursor";
 
@@ -372,14 +528,43 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       return;
     }
 
+    // Ограничиваем частоту попыток подключения с одного IP (анти-флуд).
+    const ip = getClientIpFromNodeHeaders(socket.handshake.headers);
+    if (!consumeRateLimitForIp("socket", ip, "handshake").ok) {
+      next(new Error("RATE_LIMITED"));
+      return;
+    }
+
     authenticateHandshake(socket.handshake.headers)
-      .then((user) => {
+      .then(async (user) => {
         if (!user) {
           next(new Error("UNAUTHORIZED"));
           return;
         }
+
+        // Роль и блокировка — из БД: забаненный аккаунт не подключается вовсе,
+        // а смена роли применяется со следующего соединения, без ожидания JWT.
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { name: true, role: true, grade: true, isBanned: true },
+        });
+
+        if (!dbUser) {
+          next(new Error("UNAUTHORIZED"));
+          return;
+        }
+        if (dbUser.isBanned) {
+          next(new Error("ACCOUNT_BANNED"));
+          return;
+        }
+
         socket.data = {
-          user,
+          user: {
+            id: user.id,
+            name: dbUser.name || user.name,
+            role: dbUser.role as Role,
+            grade: (dbUser.grade as GradeCode | null) ?? null,
+          },
           media: { ...DEFAULT_MEDIA_STATE },
           handRaised: false,
           chatWindowStart: 0,
@@ -409,14 +594,36 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           return;
         }
 
+        // Урок закрыт администратором: пускаем только ведущего и администратора,
+        // и только в течение «карантина» — иначе комната снова станет открытой.
+        if (isRoomClosed(meeting)) {
+          const isHost = meeting.hostId === socket.data.user.id;
+          const isAdmin = socket.data.user.role === "ADMIN";
+          if (!isHost && !isAdmin) {
+            reply<JoinRoomResult>(ack, {
+              ok: false,
+              code: "ROOM_CLOSED",
+              error: "Урок завершён администратором. Обновите страницу позже.",
+            });
+            return;
+          }
+        }
+
         // Повторный вход (в ту же или другую комнату) — сначала выходим, чтобы
         // остальные получили user-left и не держали старый peer.
         leaveCurrentRoom(socket);
 
         socket.data.roomId = roomId;
         socket.data.meetingId = meeting.id;
+        socket.data.meetingTitle = meeting.title;
+        socket.data.joinedAt = Date.now();
         await socket.join(roomKey(roomId));
         addRoomMember(roomId);
+
+        // Посещаемость: открываем запись входа (переиспользуем свежую при
+        // переподключении). Не блокируем вход, если БД не ответила.
+        socket.data.attendanceId =
+          (await openAttendance({ meetingId: meeting.id, userId: socket.data.user.id })) ?? undefined;
 
         socket.to(roomKey(roomId)).emit("user-joined", toParticipant(socket));
 
@@ -694,6 +901,9 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       leaveCurrentRoom(socket);
     });
   });
+
+  // Публикуем управление для админ-панели (завершение уроков, блокировка).
+  registerRealtimeControl(buildRealtimeControl(io));
 
   return io;
 }

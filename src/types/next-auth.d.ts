@@ -11,6 +11,8 @@ declare module "next-auth" {
     user: {
       id: string;
       role: Role;
+      /** Аккаунт заблокирован администратором (этап 6). */
+      banned: boolean;
     } & DefaultSession["user"];
   }
 
@@ -23,5 +25,9 @@ declare module "next-auth/jwt" {
   interface JWT {
     id: string;
     role: Role;
+    /** Кешированный признак блокировки (обновляется раз в минуту). */
+    banned?: boolean;
+    /** Когда роль и блокировка последний раз сверялись с БД. */
+    syncedAt?: number;
   }
 }

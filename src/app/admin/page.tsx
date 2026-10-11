@@ -1,169 +1,259 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { CalendarDays, ShieldCheck, UserRound, Users } from "lucide-react";
+import {
+  ArrowRight,
+  Ban,
+  BarChart3,
+  CalendarClock,
+  ClipboardCheck,
+  GraduationCap,
+  History,
+  ScrollText,
+  ShieldCheck,
+  UserRound,
+  Users,
+  Video,
+} from "lucide-react";
 
-import { AppShell } from "@/components/layout/app-shell";
-import { prisma } from "@/lib/prisma";
+import { AnnouncementModalButton } from "@/components/admin/announcement-modal";
+import { AdminBarChart } from "@/components/admin/charts";
+import { StatCard } from "@/components/admin/stat-card";
+import { FormAlert } from "@/components/ui/form-alert";
+import { auditActionLabel, auditActionTone, formatAuditDetails } from "@/lib/audit";
+import { getAdminOverview, getAdminSecondaryMetrics, type AdminOverview } from "@/lib/admin-stats";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
-import { ROLE_LABELS, type Role } from "@/types";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
-  title: "Админ-панель",
-  description: "Управление пользователями SchoolMeet: роли ADMIN, TEACHER, STUDENT.",
+  title: "Обзор школы",
+  description: "Метрики SchoolMeet: ученики, учителя, активные уроки и успеваемость по классам.",
 };
 
 export const dynamic = "force-dynamic";
 
-const ROLE_BADGES: Record<Role, string> = {
-  ADMIN: "border-rose-400/30 bg-rose-500/15 text-rose-200",
-  TEACHER: "border-brand-400/30 bg-brand-500/15 text-brand-100",
-  STUDENT: "border-accent-400/30 bg-accent-500/15 text-accent-300",
-};
+const METRIC_ICONS = {
+  students: UserRound,
+  teachers: GraduationCap,
+  live: Video,
+  homework: ClipboardCheck,
+} as const;
+
+const METRIC_TONES = {
+  students: "accent",
+  teachers: "brand",
+  live: "danger",
+  homework: "success",
+} as const;
+
+const TONE_BADGES = {
+  danger: "border-rose-400/25 bg-rose-500/10 text-rose-200",
+  success: "border-emerald-400/25 bg-emerald-500/10 text-emerald-200",
+  brand: "border-brand-400/25 bg-brand-500/10 text-brand-100",
+  neutral: "border-white/10 bg-white/[0.04] text-slate-300",
+} as const;
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 /**
- * Раздел `/admin`: доступен только ADMIN и TEACHER.
- *
- * Первый барьер — middleware (редирект до рендера), второй — эта проверка
- * внутри страницы: даже если matcher изменят, данные не утекут.
+ * Обзор (`/admin`): метрики школы, графики активности и успеваемости,
+ * быстрая кнопка «Создать объявление» и последние действия администрации.
  */
 export default async function AdminPage() {
   const session = await getServerSession(authOptions);
+  if (!session?.user) redirect("/login?callbackUrl=/admin");
+  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=/admin");
 
-  if (!session?.user) {
-    redirect("/login?callbackUrl=/admin");
-  }
-  if (!canAccessAdminArea(session.user.role)) {
-    redirect("/dashboard?denied=/admin");
-  }
-
-  let users: {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    createdAt: Date;
-  }[] = [];
+  let overview: AdminOverview | null = null;
+  let secondary: { pendingReview: number; banned: number; todayJoins: number } | null = null;
   let databaseError = false;
 
   try {
-    users = await prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 50,
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
-    });
+    [overview, secondary] = await Promise.all([getAdminOverview(), getAdminSecondaryMetrics()]);
   } catch (error) {
-    // База недоступна — показываем понятное сообщение вместо 500-й ошибки.
-    console.error("[admin] Не удалось загрузить пользователей:", error);
+    // База недоступна (или миграции не применены) — показываем понятный экран.
+    console.error("[admin] Не удалось загрузить метрики:", error);
     databaseError = true;
   }
 
-  const counters = {
-    total: users.length,
-    admins: users.filter((user) => user.role === "ADMIN").length,
-    teachers: users.filter((user) => user.role === "TEACHER").length,
-    students: users.filter((user) => user.role === "STUDENT").length,
-  };
+  if (databaseError || !overview || !secondary) {
+    return (
+      <div className="space-y-6">
+        <FormAlert variant="error">
+          Не удалось загрузить статистику. Проверьте, что база данных доступна и миграции применены
+          (<span className="font-mono text-xs">npm run db:push</span>).
+        </FormAlert>
+      </div>
+    );
+  }
 
   return (
-    <AppShell>
-      <header className="animate-fade-up flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">
-            Управление школой
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Админ-панель</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-            Раздел открыт для ролей ADMIN и TEACHER. Ниже — последние зарегистрированные
-            пользователи платформы (до 50 записей).
-          </p>
-        </div>
-
-        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-medium text-emerald-200">
-          <ShieldCheck className="h-3.5 w-3.5" />
-          Доступ подтверждён: {ROLE_LABELS[session.user.role]}
-        </span>
-      </header>
-
-      {/* Счётчики */}
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: "Всего пользователей", value: counters.total, icon: Users },
-          { label: "Администраторы", value: counters.admins, icon: ShieldCheck },
-          { label: "Учителя", value: counters.teachers, icon: CalendarDays },
-          { label: "Ученики", value: counters.students, icon: UserRound },
-        ].map(({ label, value, icon: Icon }, index) => (
-          <div
-            key={label}
-            style={{ animationDelay: `${80 + index * 70}ms` }}
-            className="ring-gradient animate-fade-up rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl"
-          >
-            <Icon className="h-5 w-5 text-brand-300" />
-            <p className="mt-4 text-3xl font-semibold text-white">{value}</p>
-            <p className="mt-1 text-xs uppercase tracking-wider text-slate-500">{label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Таблица пользователей */}
-      <section className="animate-fade-up glass-card mt-8 overflow-hidden">
-        <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-            Пользователи
-          </h2>
-          <span className="text-xs text-slate-500">до 50 записей</span>
-        </div>
-
-        {databaseError ? (
-          <p className="px-6 py-10 text-center text-sm text-rose-200">
-            Не удалось подключиться к базе данных. Проверьте переменную окружения{" "}
-            <span className="font-mono text-xs">DATABASE_URL</span> и запустите{" "}
-            <span className="font-mono text-xs">npx prisma migrate dev</span>.
-          </p>
-        ) : users.length === 0 ? (
-          <p className="px-6 py-10 text-center text-sm text-slate-400">
-            Пользователей пока нет — зарегистрируйте первый аккаунт на странице «Регистрация».
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[42rem] text-left text-sm">
-              <thead className="text-xs uppercase tracking-wider text-slate-500">
-                <tr className="border-b border-white/5">
-                  <th className="px-6 py-3 font-medium">Имя</th>
-                  <th className="px-6 py-3 font-medium">Email</th>
-                  <th className="px-6 py-3 font-medium">Роль</th>
-                  <th className="px-6 py-3 font-medium">Создан</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr
-                    key={user.id}
-                    className="border-b border-white/5 transition last:border-0 hover:bg-white/[0.03]"
-                  >
-                    <td className="px-6 py-3.5 text-white">{user.name}</td>
-                    <td className="px-6 py-3.5 text-slate-400">{user.email}</td>
-                    <td className="px-6 py-3.5">
-                      <span
-                        className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${ROLE_BADGES[user.role as Role]}`}
-                      >
-                        {user.role}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3.5 text-slate-500">
-                      {user.createdAt.toLocaleDateString("ru-RU", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                      })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+    <div className="space-y-8">
+      {/* Метрики */}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {overview.metrics.map((metric, index) => {
+          const key = metric.key as keyof typeof METRIC_ICONS;
+          return (
+            <StatCard
+              key={metric.key}
+              label={metric.label}
+              value={metric.value}
+              hint={metric.hint}
+              icon={METRIC_ICONS[key] ?? BarChart3}
+              tone={METRIC_TONES[key] ?? "brand"}
+              index={index}
+            />
+          );
+        })}
       </section>
-    </AppShell>
+
+      {/* Вторичные метрики + быстрые действия */}
+      <section className="animate-fade-up grid gap-4 lg:grid-cols-3">
+        <div className="glass-card flex flex-col justify-between gap-4 p-5 lg:col-span-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-slate-300">
+              <Ban className="h-3.5 w-3.5 text-rose-300" />
+              Заблокировано: {secondary.banned}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-slate-300">
+              <ClipboardCheck className="h-3.5 w-3.5 text-amber-300" />
+              Ждут проверки: {secondary.pendingReview}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-slate-300">
+              <Users className="h-3.5 w-3.5 text-accent-300" />
+              Входов в уроки сегодня: {secondary.todayJoins}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-medium text-emerald-200">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Всего аккаунтов: {overview.totals.users}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <AnnouncementModalButton />
+            <Link
+              href="/admin/users"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+            >
+              <Users className="h-4 w-4" />
+              Пользователи
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+            <Link
+              href="/admin/meetings"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+            >
+              <CalendarClock className="h-4 w-4" />
+              Активные уроки
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+
+        <div className="ring-gradient glass-card p-5">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-brand-300" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">Последние действия</h2>
+          </div>
+
+          {overview.recentAudit.length === 0 ? (
+            <p className="mt-4 text-xs text-slate-500">
+              Журнал пуст. Здесь появятся смена ролей, блокировки и завершения уроков.
+            </p>
+          ) : (
+            <ul className="mt-4 space-y-3">
+              {overview.recentAudit.slice(0, 4).map((entry) => (
+                <li key={entry.id} className="text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                        TONE_BADGES[auditActionTone(entry.action)],
+                      )}
+                    >
+                      {auditActionLabel(entry.action)}
+                    </span>
+                    <span className="shrink-0 text-slate-500">{formatDateTime(entry.createdAt)}</span>
+                  </div>
+                  <p className="mt-1 truncate text-slate-400">
+                    {entry.actor?.name ?? "Система"}
+                    {formatAuditDetails(entry.details) && ` · ${formatAuditDetails(entry.details)}`}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <Link
+            href="/admin/audit"
+            className="mt-4 inline-flex items-center gap-1.5 text-xs text-accent-300 transition hover:text-accent-200"
+          >
+            <ScrollText className="h-3.5 w-3.5" />
+            Весь журнал
+          </Link>
+        </div>
+      </section>
+
+      {/* Графики */}
+      <section className="grid gap-4 xl:grid-cols-2">
+        <div className="animate-fade-up glass-card p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
+                Активность звонков
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Входы в видеоуроки по дням недели за последние 28 дней
+              </p>
+            </div>
+            <BarChart3 className="h-4 w-4 text-brand-300" />
+          </div>
+
+          <div className="mt-4">
+            <AdminBarChart
+              points={overview.callActivity}
+              ariaLabel="Входы в видеоуроки по дням недели"
+              emptyText="Пока никто не заходил в уроки — запустите занятие, и график оживёт."
+            />
+          </div>
+        </div>
+
+        <div className="animate-fade-up glass-card p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
+                Успеваемость по классам
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">Средний балл за проверенные домашние задания</p>
+            </div>
+            <GraduationCap className="h-4 w-4 text-accent-300" />
+          </div>
+
+          <div className="mt-4">
+            <AdminBarChart
+              points={overview.grades}
+              max={5}
+              tone="accent"
+              formatValue={(value) => value.toFixed(1)}
+              ariaLabel="Средняя оценка по классам с 5 по 11"
+              emptyText="Оценок пока нет — проверьте домашние задания, и график заполнится."
+            />
+          </div>
+        </div>
+      </section>
+
+      <p className="text-center text-[11px] text-slate-600">
+        Данные обновляются автоматически · собрано{" "}
+        {new Date(overview.generatedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+      </p>
+    </div>
   );
 }

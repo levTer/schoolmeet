@@ -21,6 +21,8 @@ export interface MeetingWithHost {
   hostId: string;
   isActive: boolean;
   startTime: Date;
+  /** Заполняется при завершении урока (в том числе принудительном). */
+  endTime: Date | null;
   host: { id: string; name: string; role: Role };
 }
 

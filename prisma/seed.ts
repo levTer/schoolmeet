@@ -26,7 +26,14 @@ const ACCOUNTS: ReadonlyArray<{ email: string; name: string; role: Role; grade: 
   { email: "teacher@schoolmeet.dev", name: "Пётр Кузнецов", role: "TEACHER", grade: null },
   { email: "teacher2@schoolmeet.dev", name: "Ольга Морозова", role: "TEACHER", grade: null },
   { email: "student@schoolmeet.dev", name: "Иван Петров", role: "STUDENT", grade: "GRADE_8" },
+  { email: "student8b@schoolmeet.dev", name: "Дарья Волкова", role: "STUDENT", grade: "GRADE_8" },
   { email: "student9@schoolmeet.dev", name: "Мария Соколова", role: "STUDENT", grade: "GRADE_9" },
+  { email: "student9b@schoolmeet.dev", name: "Артём Лебедев", role: "STUDENT", grade: "GRADE_9" },
+  { email: "student5@schoolmeet.dev", name: "Никита Егоров", role: "STUDENT", grade: "GRADE_5" },
+  { email: "student6@schoolmeet.dev", name: "София Ковалёва", role: "STUDENT", grade: "GRADE_6" },
+  { email: "student7@schoolmeet.dev", name: "Егор Новиков", role: "STUDENT", grade: "GRADE_7" },
+  { email: "student10@schoolmeet.dev", name: "Полина Захарова", role: "STUDENT", grade: "GRADE_10" },
+  { email: "student11@schoolmeet.dev", name: "Роман Фёдоров", role: "STUDENT", grade: "GRADE_11" },
 ];
 
 const SUBJECTS = [
@@ -213,6 +220,190 @@ async function seedHomework(subjectIds: Map<string, string>, teacherIds: Map<Tea
   console.log("• Демо-задания созданы");
 }
 
+/**
+ * Детерминированный генератор «случайных» чисел: демо-данные должны
+ * выглядеть живыми, но повторный запуск сида обязан давать то же самое.
+ */
+function createRandom(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    return state / 2147483648;
+  };
+}
+
+/** Демо-объявления: одно для всей школы и два — для отдельных классов. */
+async function seedAnnouncements(adminId: string): Promise<void> {
+  if ((await prisma.announcement.count()) > 0) {
+    console.log("• Объявления уже есть — пропускаем");
+    return;
+  }
+
+  const items: ReadonlyArray<{ title: string; content: string; targetGrade: ClassGrade | null }> = [
+    {
+      title: "Родительское собрание в пятницу",
+      content:
+        "В пятницу в 18:00 в актовом зале состоится общешкольное родительское собрание.\nПриходите с вопросами — расскажем про новый формат домашних заданий с ИИ-проверкой.",
+      targetGrade: null,
+    },
+    {
+      title: "Пробный экзамен по математике",
+      content:
+        "В среду на первом уроке пишем пробный вариант ОГЭ. Возьмите с собой черновики и линейку.\nРазбор ошибок — в пятницу на консультации.",
+      targetGrade: "GRADE_9",
+    },
+    {
+      title: "Экскурсия в планетарий",
+      content:
+        "В субботу едем в планетарий: сбор у школы в 10:30, возвращаемся к 15:00.\nЗапишитесь у классного руководителя до четверга.",
+      targetGrade: "GRADE_8",
+    },
+  ];
+
+  for (const item of items) {
+    await prisma.announcement.create({ data: { ...item, authorId: adminId } });
+  }
+  console.log("• Демо-объявления созданы (вся школа, 8 и 9 классы)");
+}
+
+/**
+ * Демо-оценки за домашние задания: без них график «Успеваемость по классам»
+ * в админ-панели выглядел бы пустым.
+ */
+async function seedGradedHomework(): Promise<void> {
+  if ((await prisma.homeworkSubmission.count()) > 0) {
+    console.log("• Ответы на ДЗ уже есть — пропускаем");
+    return;
+  }
+
+  const random = createRandom(20261011);
+  const homeworks = await prisma.homework.findMany({
+    select: { id: true, grade: true, deadline: true, maxScore: true },
+  });
+  const students = await prisma.user.findMany({
+    where: { role: "STUDENT", grade: { not: null } },
+    select: { id: true, grade: true },
+  });
+
+  let created = 0;
+
+  for (const homework of homeworks) {
+    const classmates = students.filter((student) => student.grade === homework.grade);
+    for (const student of classmates) {
+      const grade = 3 + Math.floor(random() * 3); // 3, 4 или 5 — детерминированно
+      const submittedAt = new Date(homework.deadline.getTime() - 90 * 60 * 1000);
+      const approvedAt = new Date(homework.deadline.getTime() + 60 * 60 * 1000);
+
+      const submission = await prisma.homeworkSubmission.create({
+        data: {
+          homeworkId: homework.id,
+          studentId: student.id,
+          answer: "Решение приложено: использовал формулы из конспекта урока.",
+          status: "GRADED",
+          draftSavedAt: new Date(submittedAt.getTime() - 3600 * 1000),
+          submittedAt,
+        },
+      });
+
+      await prisma.homeworkReview.create({
+        data: {
+          submissionId: submission.id,
+          reviewerId: (await prisma.homework.findUnique({
+            where: { id: homework.id },
+            select: { teacherId: true },
+          }))?.teacherId ?? student.id,
+          grade: Math.min(grade, homework.maxScore),
+          comment: "Аккуратно оформлено, есть небольшие замечания по пояснениям.",
+          approvedAt,
+        },
+      });
+
+      created += 1;
+    }
+  }
+
+  console.log(`• Демо-оценки за ДЗ созданы (${created})`);
+}
+
+/**
+ * Демо-посещаемость за последние три недели.
+ * Используется графиком «Активность звонков по дням недели».
+ */
+async function seedAttendance(): Promise<void> {
+  if ((await prisma.attendanceRecord.count()) > 0) {
+    console.log("• Записи посещаемости уже есть — пропускаем");
+    return;
+  }
+
+  const random = createRandom(42);
+  const lessons = await prisma.schedule.findMany({
+    where: { grade: { in: ["GRADE_8", "GRADE_9"] } },
+    select: { grade: true, startTime: true, meetingCode: true },
+    orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+  });
+  const meetings = await prisma.meeting.findMany({
+    where: { meetingCode: { in: lessons.map((lesson) => lesson.meetingCode) } },
+    select: { id: true, meetingCode: true },
+  });
+  const meetingByCode = new Map(meetings.map((meeting) => [meeting.meetingCode, meeting.id]));
+
+  const students = await prisma.user.findMany({
+    where: { role: "STUDENT", grade: { in: ["GRADE_8", "GRADE_9"] } },
+    select: { id: true, grade: true },
+  });
+
+  const records: {
+    meetingId: string;
+    userId: string;
+    joinedAt: Date;
+    leftAt: Date;
+    durationMinutes: number;
+  }[] = [];
+
+  for (let dayOffset = 20; dayOffset >= 0; dayOffset -= 1) {
+    const day = new Date();
+    day.setDate(day.getDate() - dayOffset);
+    day.setHours(0, 0, 0, 0);
+
+    const weekday = day.getDay();
+    if (weekday === 0 || weekday === 6) continue; // занятия только по будням
+
+    for (const lesson of lessons) {
+      const meetingId = meetingByCode.get(lesson.meetingCode);
+      if (!meetingId) continue;
+
+      const [hours, minutes] = lesson.startTime.split(":").map(Number);
+      const joinedAt = new Date(day);
+      joinedAt.setHours(hours, minutes + Math.floor(random() * 4), 0, 0);
+
+      // Не показываем «будущие» входы в сегодняшний день.
+      if (joinedAt.getTime() > Date.now()) continue;
+
+      for (const student of students) {
+        if (student.grade !== lesson.grade) continue;
+        if (random() > 0.75) continue; // кто-то иногда пропускает урок
+
+        const durationMinutes = 20 + Math.floor(random() * 40);
+        const leftAt = new Date(joinedAt.getTime() + durationMinutes * 60 * 1000);
+
+        records.push({
+          meetingId,
+          userId: student.id,
+          joinedAt,
+          leftAt: leftAt.getTime() > Date.now() ? new Date() : leftAt,
+          durationMinutes,
+        });
+      }
+    }
+  }
+
+  if (records.length > 0) {
+    await prisma.attendanceRecord.createMany({ data: records });
+  }
+
+  console.log(`• Демо-посещаемость создана (${records.length} записей)`);
+}
+
 async function main(): Promise<void> {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
 
@@ -231,7 +422,16 @@ async function main(): Promise<void> {
   await seedSchedule(subjectIds, teacherIds);
   await seedHomework(subjectIds, teacherIds);
 
-  console.log("\nДемо-данные готовы. Админ-панель доступна ролям ADMIN и TEACHER.");
+  const admin = await prisma.user.findUnique({
+    where: { email: "admin@schoolmeet.dev" },
+    select: { id: true },
+  });
+
+  await seedAnnouncements(admin?.id ?? teacherIds.get("teacher") ?? "");
+  await seedGradedHomework();
+  await seedAttendance();
+
+  console.log("\nДемо-данные готовы. Админ-панель: /admin (ADMIN и TEACHER).");
 }
 
 main()

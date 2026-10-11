@@ -1,4 +1,5 @@
 import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
 
 import { Navbar } from "@/components/layout/Navbar";
 import { authOptions } from "@/lib/auth";
@@ -19,6 +20,12 @@ interface AppShellProps {
 export async function AppShell({ children, className }: AppShellProps) {
   const session = await getServerSession(authOptions);
 
+  // Заблокированный аккаунт не должен видеть внутренние разделы даже с живой
+  // JWT-cookie: middleware проверяет токен, а здесь данные сессии уже сверены с БД.
+  if (session?.user?.banned) {
+    redirect("/banned");
+  }
+
   return (
     <div className="relative flex min-h-screen flex-col overflow-x-hidden">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
@@ -33,7 +40,7 @@ export async function AppShell({ children, className }: AppShellProps) {
       </main>
 
       <footer className="border-t border-white/5 px-5 py-6 text-center text-xs text-slate-500 sm:px-8">
-        SchoolMeet · Этап 3 — видеозвонки, чат и realtime
+        SchoolMeet · Этап 6 — админ-панель, объявления и защита платформы
       </footer>
     </div>
   );

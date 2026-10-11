@@ -50,6 +50,9 @@ model User {
   /// Класс ученика. Для учителей и администраторов — null.
   grade     ClassGrade?
   avatar    String?
+  /// Блокировка аккаунта администратором: вход запрещён, живые сокет-сессии
+  /// разрываются (см. `src/lib/realtime-control.ts`).
+  isBanned  Boolean     @default(false)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
@@ -60,9 +63,13 @@ model User {
   submissions    HomeworkSubmission[] @relation("SubmissionStudent")
   reviews        HomeworkReview[]     @relation("HomeworkReviewer")
   messages       ChatMessage[]
+  announcements  Announcement[]
+  attendance     AttendanceRecord[]
+  auditLogs      AuditLog[]
 
   @@index([role])
   @@index([grade])
+  @@index([isBanned])
   @@map("users")
 }
 
@@ -77,9 +84,10 @@ model Meeting {
   encryptionKey String // ключ комнаты для AES-256 шифрования чата
 
   // Связи
-  host     User          @relation("MeetingHost", fields: [hostId], references: [id], onDelete: Cascade)
+  host     User              @relation("MeetingHost", fields: [hostId], references: [id], onDelete: Cascade)
   messages ChatMessage[]
   schedule Schedule?
+  attendance AttendanceRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -236,4 +244,70 @@ model ChatMessage {
   @@index([meetingId])
   @@index([userId])
   @@map("chat_messages")
+}
+
+/// Посещение виде урока. Одна запись — один вход участника в комнату:
+/// создаётся при `join-room`, закрывается (leftAt + durationMinutes) при выходе,
+/// разрыве соединения или принудительном завершении урока администратором.
+model AttendanceRecord {
+  id              String    @id @default(cuid())
+  meetingId       String
+  userId          String
+  joinedAt        DateTime  @default(now())
+  /// null — участник ещё в комнате (или сессию закрыл администратор).
+  leftAt          DateTime?
+  /// Сколько минут участник провёл в уроке; заполняется при закрытии записи.
+  durationMinutes Int       @default(0)
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([userId, joinedAt])
+  @@map("attendance_records")
+}
+
+/// Общешкольное объявление. `targetGrade = null` — объявление для всей школы,
+/// иначе его видят только ученики и учителя указанного класса.
+model Announcement {
+  id          String      @id @default(cuid())
+  title       String
+  /// Текст объявления (Markdown с LaTeX-формулами, рендерит Markdown-компонент).
+  content     String
+  targetGrade ClassGrade?
+  authorId    String
+  /// Черновик/архив (false) не показывается в баннере кабинета.
+  isActive    Boolean     @default(true)
+
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, createdAt])
+  @@index([targetGrade])
+  @@map("announcements")
+}
+
+/// Журнал действий администрации: смена ролей, блокировки, завершение уроков,
+/// управление объявлениями. Пишется из API-роутов (`src/lib/audit.ts`).
+model AuditLog {
+  id      String @id @default(cuid())
+  /// Автор действия. null — системное событие; при удалении автора лог остаётся.
+  userId  String?
+  /// Машинный код действия, например "user.ban" (см. AUDIT_ACTIONS).
+  action  String
+  /// Человекочитаемые детали (короткий JSON), например { "target": "..." }.
+  details String?
+  /// IP автора действия (x-forwarded-for / x-real-ip).
+  ip      String?
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

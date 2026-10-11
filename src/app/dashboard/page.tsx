@@ -13,9 +13,11 @@ import {
   Video,
 } from "lucide-react";
 
+import { AnnouncementBanner } from "@/components/dashboard/announcement-banner";
 import { NextLessonWidget, ReviewQueueWidget, UrgentHomeworkWidget } from "@/components/dashboard/widgets";
 import { AppShell } from "@/components/layout/app-shell";
 import { FormAlert } from "@/components/ui/form-alert";
+import { listActiveAnnouncementsForViewer, type AnnouncementDto } from "@/lib/announcements";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
 import { getReviewQueue, getUrgentHomework } from "@/lib/homework";
 import { findLiveLesson, findNextLesson, getSchoolClock } from "@/lib/schedule-rules";
@@ -64,6 +66,18 @@ export default async function DashboardPage({
   const live = findLiveLesson(lessons, clock);
   const next = findNextLesson(lessons, clock);
 
+  /* Объявления школы: ученик видит свою школу и свой класс, персонал — все. */
+  let announcements: AnnouncementDto[] = [];
+  try {
+    announcements = await listActiveAnnouncementsForViewer({
+      id,
+      role,
+      grade: viewer?.grade ?? null,
+    });
+  } catch (error) {
+    console.error("[dashboard] Не удалось загрузить объявления:", error);
+  }
+
   const quickLinks = [
     {
       href: "/schedule",
@@ -91,6 +105,8 @@ export default async function DashboardPage({
 
   return (
     <AppShell>
+      <AnnouncementBanner announcements={announcements} />
+
       {/* Приветствие */}
       <header className="animate-fade-up flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>

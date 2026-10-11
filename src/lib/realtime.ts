@@ -4,6 +4,7 @@
  * клиентские хуки, и серверный модуль realtime.
  */
 
+import type { GradeCode } from "@/lib/schedule-rules";
 import type { Role } from "@/types";
 
 /* -------------------------------------------------------------------------- */
@@ -135,11 +136,30 @@ export interface ClientToServerEvents {
   "whiteboard-sync": (payload: Record<string, never> | undefined, ack: (result: Ack<WhiteboardState>) => void) => void;
 }
 
+/**
+ * Причина принудительного закрытия комнаты администратором: клиент показывает
+ * экран «Урок завершён» вместо бесконечного переподключения.
+ */
+export interface RoomClosedPayload {
+  reason: "admin_force_end" | string;
+  message: string;
+}
+
+/** Причина разрыва сессии сервером (например, блокировка аккаунта). */
+export interface SessionRevokedPayload {
+  reason: "account_banned" | string;
+  message: string;
+}
+
 export interface ServerToClientEvents {
   /** Другой участник вошёл в комнату. */
   "user-joined": (participant: RoomParticipant) => void;
   /** Участник вышел или отключился. */
   "user-left": (payload: { socketId: string }) => void;
+  /** Администратор принудительно завершил урок — комната закрыта для всех. */
+  "room-closed": (payload: RoomClosedPayload) => void;
+  /** Доступ отозван на уровне аккаунта (блокировка) — сокет будет разорван. */
+  "session-revoked": (payload: SessionRevokedPayload) => void;
   /** Входящий сигнал от пира `from`. */
   signal: (payload: { from: string; data: SignalData }) => void;
   "raise-hand": (payload: { socketId: string; raised: boolean }) => void;
@@ -158,11 +178,16 @@ export interface ServerToClientEvents {
   "whiteboard-page": (payload: { page: number }) => void;
 }
 
-/** Данные, которые сервер хранит в сокете после аутентификации. */
+/**
+ * Данные, которые сервер хранит в сокете после аутентификации.
+ * `grade` нужен админ-панели: по классу участников она определяет, какой
+ * класс учится в комнате, когда урок создан вручную (без расписания).
+ */
 export interface SocketUser {
   id: string;
   name: string;
   role: Role;
+  grade: GradeCode | null;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -34,6 +34,20 @@ export function jsonError(status: number, code: string, error: string, extra?: R
   return NextResponse.json({ ok: false, error, code, ...extra }, { status });
 }
 
+/**
+ * Безопасно читает числовой query-параметр.
+ *
+ * `Number(null)` и `Number("abc")` дают NaN, а NaN, попав в Prisma (`skip`,
+ * `take`), превращается в непонятную ошибку валидации — поэтому приводим
+ * значение к целому и зажимаем в границы.
+ */
+export function parseIntParam(value: string | null, fallback: number, min = 0, max = 1000): number {
+  if (value === null || value.trim() === "") return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
+
 /** Превращает любое исключение в понятный ответ. Внутренности наружу не отдаём. */
 export function handleRouteError(error: unknown, scope: string): NextResponse {
   if (error instanceof DomainError) {

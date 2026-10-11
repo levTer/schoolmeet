@@ -1,0 +1,50 @@
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+
+import { AnnouncementsManager } from "@/components/admin/announcements-manager";
+import { FormAlert } from "@/components/ui/form-alert";
+import { canAdmin } from "@/lib/admin-permissions";
+import { listAnnouncements, type AnnouncementDto } from "@/lib/announcements";
+import { authOptions, canAccessAdminArea } from "@/lib/auth";
+
+export const metadata: Metadata = {
+  title: "Объявления",
+  description: "Общешкольные объявления SchoolMeet: публикация для всей школы или отдельного класса.",
+};
+
+export const dynamic = "force-dynamic";
+
+/**
+ * `/admin/announcements` — управление объявлениями.
+ *
+ * Создавать и снимать объявления могут ADMIN и TEACHER; активные объявления
+ * показываются плавающим баннером в `/dashboard`.
+ */
+export default async function AdminAnnouncementsPage() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) redirect("/login?callbackUrl=/admin/announcements");
+  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=/admin/announcements");
+
+  let announcements: AnnouncementDto[] | null = null;
+  try {
+    announcements = await listAnnouncements({ take: 100 });
+  } catch (error) {
+    console.error("[admin/announcements] Не удалось загрузить объявления:", error);
+  }
+
+  if (!announcements) {
+    return (
+      <FormAlert variant="error">
+        Не удалось загрузить объявления. Проверьте доступность базы данных.
+      </FormAlert>
+    );
+  }
+
+  return (
+    <AnnouncementsManager
+      initial={announcements}
+      canManage={canAdmin({ id: session.user.id, role: session.user.role }, "announcements.manage")}
+    />
+  );
+}
