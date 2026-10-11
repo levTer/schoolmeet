@@ -1,15 +1,18 @@
 "use client";
 
 /**
- * ИИ-панель учителя SchoolMeet (этап 4).
+ * ИИ-панель учителя SchoolMeet (этап 8 — внешний ИИ-движок).
  *
  * Отображается ИСКЛЮЧИТЕЛЬНО для ролей TEACHER и ADMIN — ученики этот
  * компонент не видят (дополнительно к серверному 403 на `/api/ai`).
  *
- * На этапе 4 все ответы готовит локальный `MockAIProvider` — внешние
- * нейросети не вызываются. Голосовой ввод работает через нативный
- * Web Speech API браузера (`useVoiceInput`) и всегда попадает в поле ввода
- * для проверки и редактирования перед отправкой.
+ * Ответы готовит серверный ИИ-движок с авто-фоллбэком (Groq → OpenRouter →
+ * Gemini → локальный Mock; распознавание формул с доски — Gemini Vision).
+ * Все внешние вызовы выполняет сервер (`/api/ai`), поэтому ИИ работает
+ * в РФ БЕЗ VPN, а каждый ответ помечен бейджем фактической модели.
+ * Голосовой ввод работает через нативный Web Speech API браузера
+ * (`useVoiceInput`) и всегда попадает в поле ввода для проверки и
+ * редактирования перед отправкой.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -46,7 +49,18 @@ interface ChatEntry {
   text: string;
   drawing?: DrawingInstruction[];
   applied?: boolean;
+  /** Какой провайдер/модель фактически ответили (бейдж прозрачности). */
+  providerId?: string;
+  model?: string;
 }
+
+/** Короткие имена провайдеров для бейджа ответа. */
+const PROVIDER_BADGES: Record<string, string> = {
+  groq: "Groq",
+  gemini: "Gemini Vision",
+  openrouter: "OpenRouter",
+  mock: "локальный режим",
+};
 
 /** Шаблоны-кнопки панели (порядок согласован с заданием). */
 const TEMPLATES: Array<{ action: AIAction; icon: LucideIcon; hint: string }> = [
@@ -78,7 +92,8 @@ export function AIAssistant({ role, meetingTitle, onApplyDrawing, onClose }: AIA
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [providerName, setProviderName] = useState("MockAI (локальный режим)");
+  const [providerName, setProviderName] = useState("ИИ-движок SchoolMeet");
+  const [providerIsLocal, setProviderIsLocal] = useState(true);
   const [interim, setInterim] = useState("");
 
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -103,8 +118,10 @@ export function AIAssistant({ role, meetingTitle, onApplyDrawing, onClose }: AIA
     fetch("/api/ai", { credentials: "same-origin" })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        const name = data?.data?.provider?.name;
-        if (!cancelled && typeof name === "string") setProviderName(name);
+        if (cancelled) return;
+        const provider = data?.data?.provider;
+        if (typeof provider?.name === "string") setProviderName(provider.name);
+        if (typeof provider?.isLocal === "boolean") setProviderIsLocal(provider.isLocal);
       })
       .catch(() => undefined);
     return () => {
@@ -178,6 +195,8 @@ export function AIAssistant({ role, meetingTitle, onApplyDrawing, onClose }: AIA
             text: data.text,
             drawing: data.drawing,
             applied,
+            providerId: data.providerId,
+            model: data.model,
           },
         ]);
         setInput("");
@@ -207,7 +226,9 @@ export function AIAssistant({ role, meetingTitle, onApplyDrawing, onClose }: AIA
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-white">ИИ-помощник учителя</p>
-          <p className="truncate text-[11px] text-slate-400">{providerName} · без внешних запросов</p>
+          <p className="truncate text-[11px] text-slate-400">
+            {providerName} · {providerIsLocal ? "локальный режим" : "серверный прокси · работает без VPN"}
+          </p>
         </div>
         <button
           type="button"
@@ -261,6 +282,12 @@ export function AIAssistant({ role, meetingTitle, onApplyDrawing, onClose }: AIA
               <Markdown text={entry.text} />
               {entry.applied && entry.drawing ? (
                 <p className="mt-2 text-[11px] text-accent-300">✓ Чертёж автоматически добавлен на доску</p>
+              ) : null}
+              {entry.providerId ? (
+                <p className="mt-2 text-[10px] text-slate-500">
+                  {PROVIDER_BADGES[entry.providerId] ?? entry.providerId}
+                  {entry.model ? ` · ${entry.model}` : ""}
+                </p>
               ) : null}
             </div>
           ),
