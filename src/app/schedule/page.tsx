@@ -2,35 +2,50 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { ArrowLeft, CalendarDays, Clock3, Construction, Sparkles } from "lucide-react";
+import { ArrowLeft, CalendarDays } from "lucide-react";
 
+import { ScheduleBoard } from "@/components/schedule/schedule-board";
 import { AppShell } from "@/components/layout/app-shell";
 import { authOptions } from "@/lib/auth";
-import { DAY_LABELS, ROLE_LABELS, hasPermission, type DayOfWeek } from "@/types";
+import { listLessonsForViewer, listSubjects } from "@/lib/schedule";
+import { getSchoolViewer } from "@/lib/school-viewer";
+import { ROLE_LABELS, hasPermission } from "@/types";
 
 export const metadata: Metadata = {
   title: "Расписание",
-  description: "Школьное расписание SchoolMeet: недельная сетка уроков по классам и учителям.",
+  description: "Расписание SchoolMeet: недельная сетка уроков класса и вход в урок.",
 };
 
 export const dynamic = "force-dynamic";
 
-const WEEK_DAYS: DayOfWeek[] = [1, 2, 3, 4, 5, 6];
-
 /**
- * Каркас раздела «Расписание».
- * CRUD слотов и привязка комнат к занятиям — в следующих этапах; здесь уже
- * работает защита маршрута и разделение прав по ролям.
+ * Расписание. Ученик видит уроки своего класса, учитель — свои, администратор — всё.
+ * Данные грузим на сервере по роли; таймер, статусы и красная линия считаются в браузере.
  */
 export default async function SchedulePage() {
   const session = await getServerSession(authOptions);
-
   if (!session?.user) {
     redirect("/login?callbackUrl=/schedule");
   }
 
-  const { role } = session.user;
-  const canEdit = hasPermission(role, "schedule:write");
+  const viewer = await getSchoolViewer(session.user.id);
+  if (!viewer) {
+    redirect("/login?callbackUrl=/schedule");
+  }
+
+  const canEdit = hasPermission(viewer.role, "schedule:write");
+  const [lessons, subjects] = await Promise.all([
+    listLessonsForViewer(viewer),
+    canEdit ? listSubjects() : Promise.resolve([]),
+  ]);
+
+  const description = canEdit
+    ? "Планируйте уроки по классам: предмет, время и кабинет. Каждый урок получает комнату для входа."
+    : viewer.role === "STUDENT"
+      ? viewer.grade
+        ? "Уроки вашего класса на неделю. Кнопка «Войти» откроет текущий или ближайший урок."
+        : "Класс не назначен — расписание появится после назначения класса."
+      : "Расписание школы.";
 
   return (
     <AppShell>
@@ -43,68 +58,27 @@ export default async function SchedulePage() {
           В кабинет
         </Link>
 
-        <h1 className="mt-4 flex items-center gap-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-          <CalendarDays className="h-7 w-7 text-brand-300" />
-          Расписание
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-          {canEdit
-            ? "Вы вошли как учитель: сможете создавать слоты, назначать предметы и привязывать комнату урока."
-            : "Вы вошли как ученик: здесь появится ваше расписание и кнопки входа в урок."}
-        </p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="flex items-center gap-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+              <CalendarDays className="h-7 w-7 text-brand-300" />
+              Расписание
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">{description}</p>
+          </div>
+          <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-300">
+            {ROLE_LABELS[viewer.role]}
+          </span>
+        </div>
       </header>
 
-      <div className="mt-6 flex flex-wrap gap-2 text-xs">
-        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-slate-300">
-          Роль: {ROLE_LABELS[role]}
-        </span>
-        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-slate-300">
-          {canEdit ? "Права: планирование расписания" : "Права: только просмотр"}
-        </span>
+      <div className="mt-8">
+        <ScheduleBoard
+          lessons={lessons}
+          subjects={subjects}
+          viewer={{ id: viewer.id, role: viewer.role, grade: viewer.grade }}
+        />
       </div>
-
-      {/* Сетка дней */}
-      <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {WEEK_DAYS.map((day, index) => (
-          <section
-            key={day}
-            style={{ animationDelay: `${80 + index * 60}ms` }}
-            className="ring-gradient glass-card animate-fade-up p-5"
-          >
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
-              {DAY_LABELS[day]}
-            </h2>
-
-            <div className="mt-4 space-y-2.5">
-              {[0, 1, 2].map((slot) => (
-                <div
-                  key={slot}
-                  className="flex items-center gap-3 rounded-2xl border border-dashed border-white/10 bg-ink-900/40 px-3.5 py-3 text-xs text-slate-500"
-                >
-                  <Clock3 className="h-3.5 w-3.5" />
-                  — —
-                  <span className="ml-auto text-[11px] uppercase tracking-wider">свободно</span>
-                </div>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-
-      <section className="mt-8 flex flex-col gap-4 glass-card p-6 sm:flex-row sm:items-center">
-        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-gradient shadow-glow">
-          <Construction className="h-5 w-5 text-white" />
-        </span>
-        <div>
-          <h2 className="text-lg font-semibold text-white">Слоты расписания — в следующих этапах</h2>
-          <p className="mt-1 text-sm leading-relaxed text-slate-400">
-            API для расписания, поиск свободных окон и привязка комнат к урокам — следующий шаг.
-            Модели <span className="font-mono text-xs">Schedule</span> и{" "}
-            <span className="font-mono text-xs">Meeting</span> уже описаны в Prisma-схеме.
-          </p>
-        </div>
-        <Sparkles className="hidden h-5 w-5 shrink-0 text-brand-300 sm:ml-auto sm:block" />
-      </section>
     </AppShell>
   );
 }

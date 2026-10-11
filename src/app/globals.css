@@ -171,3 +171,24 @@
   width: 100% !important;
   height: 100% !important;
 }
+
+/* Мягкая пульсация активного урока в расписании. */
+@keyframes pulse-soft {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.25);
+  }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-soft {
+    animation: none;
+  }
+}

@@ -13,8 +13,8 @@ datasource db {
 // ---------------------------------------------------------------------------
 // Роли пользователей платформы
 // ADMIN   — управляет платформой, модерация, доступ ко всем данным
-// TEACHER — создаёт уроки, планирует расписание, ведёт доску
-// STUDENT — посещает уроки, смотрит расписание, пишет в чат
+// TEACHER — создаёт уроки, планирует расписание, проверяет ДЗ
+// STUDENT — посещает уроки, смотрит расписание своего класса, сдаёт ДЗ
 // ---------------------------------------------------------------------------
 enum Role {
   ADMIN
@@ -22,29 +22,54 @@ enum Role {
   STUDENT
 }
 
+/// Класс обучения (5–11). Учитель и администратор класса не имеют.
+enum ClassGrade {
+  GRADE_5
+  GRADE_6
+  GRADE_7
+  GRADE_8
+  GRADE_9
+  GRADE_10
+  GRADE_11
+}
+
+/// DRAFT — ученик заполняет ответ (черновик), SUBMITTED — сдано, на проверке,
+/// GRADED — учитель утвердил оценку, её видит ученик.
+enum HomeworkSubmissionStatus {
+  DRAFT
+  SUBMITTED
+  GRADED
+}
+
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
+  id        String      @id @default(cuid())
+  email     String      @unique
   password  String // bcrypt-хеш, никогда не отдаётся клиенту
   name      String
-  role      Role     @default(STUDENT)
+  role      Role        @default(STUDENT)
+  /// Класс ученика. Для учителей и администраторов — null.
+  grade     ClassGrade?
   avatar    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   // Связи
-  hostedMeetings Meeting[]     @relation("MeetingHost")
-  schedules      Schedule[]    @relation("ScheduleTeacher")
+  hostedMeetings Meeting[]            @relation("MeetingHost")
+  schedules      Schedule[]           @relation("ScheduleTeacher")
+  homeworks      Homework[]           @relation("HomeworkTeacher")
+  submissions    HomeworkSubmission[] @relation("SubmissionStudent")
+  reviews        HomeworkReview[]     @relation("HomeworkReviewer")
   messages       ChatMessage[]
 
   @@index([role])
+  @@index([grade])
   @@map("users")
 }
 
 model Meeting {
   id            String    @id @default(cuid())
   title         String
-  meetingCode   String    @unique // короткий код комнаты, например "ABC-1234"
+  meetingCode   String    @unique // короткий код комнаты, например "matematika-8b"
   hostId        String
   startTime     DateTime  @default(now())
   endTime       DateTime?
@@ -64,26 +89,136 @@ model Meeting {
   @@map("meetings")
 }
 
-model Schedule {
-  id        String  @id @default(cuid())
-  title     String
-  subject   String
-  teacherId String
-  dayOfWeek Int // 1 = понедельник ... 7 = воскресенье (ISO-8601)
-  startTime String // время начала в формате "HH:mm" (например "09:00")
-  endTime   String // время окончания в формате "HH:mm" (например "09:45")
-  meetingId String? @unique // комната, привязанная к этому слоту расписания
+/// Предмет школьной программы.
+model Subject {
+  id    String @id @default(cuid())
+  name  String @unique
+  /// Фирменный цвет предмета в HEX, например "#a855f7". Из него строится градиент карточки.
+  color String
+  /// Эмодзи предмета для карточки урока.
+  emoji String
 
-  // Связи
-  teacher User     @relation("ScheduleTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
-  meeting Meeting? @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  schedules Schedule[]
+  homeworks Homework[]
+
+  @@map("subjects")
+}
+
+/// Слот еженедельного расписания: предмет, учитель, класс, день и время.
+model Schedule {
+  id          String     @id @default(cuid())
+  subjectId   String
+  teacherId   String
+  grade       ClassGrade
+  dayOfWeek   Int // 1 = понедельник ... 7 = воскресенье (ISO-8601)
+  startTime   String // "HH:mm", например "09:00"
+  endTime     String // "HH:mm", например "09:45"
+  room        String? // кабинет или «онлайн»
+  /// Комната урока (Meeting.meetingCode), создаётся вместе со слотом.
+  meetingCode String     @unique
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teacher User    @relation("ScheduleTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  meeting Meeting @relation(fields: [meetingCode], references: [meetingCode], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([teacherId])
-  @@index([dayOfWeek])
+  @@index([grade, dayOfWeek])
+  @@index([teacherId, dayOfWeek])
   @@map("schedules")
+}
+
+/// Домашнее задание, назначенное классу учителем.
+model Homework {
+  id          String     @id @default(cuid())
+  title       String
+  /// Условие в Markdown с LaTeX-формулами ($…$ и $$…$$).
+  description String
+  subjectId   String
+  teacherId   String
+  grade       ClassGrade
+  deadline    DateTime
+  /// Максимальный балл (по умолчанию пятибалльная шкала).
+  maxScore    Int        @default(5)
+
+  subject     Subject              @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teacher     User                 @relation("HomeworkTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  submissions HomeworkSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([grade, deadline])
+  @@index([teacherId])
+  @@map("homeworks")
+}
+
+/// Ответ ученика на ДЗ. Один ученик — одна запись на задание (черновик → сдача).
+model HomeworkSubmission {
+  id           String                   @id @default(cuid())
+  homeworkId   String
+  studentId    String
+  /// Текст ответа (черновик или финальная версия).
+  answer       String                   @default("")
+  status       HomeworkSubmissionStatus @default(DRAFT)
+  draftSavedAt DateTime?
+  submittedAt  DateTime?
+
+  homework    Homework             @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  student     User                 @relation("SubmissionStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  attachments HomeworkAttachment[]
+  review      HomeworkReview?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([homeworkId, studentId])
+  @@index([status])
+  @@map("homework_submissions")
+}
+
+/// Файл, приложенный к ответу. Сами файлы лежат на диске, в БД — только метаданные.
+model HomeworkAttachment {
+  id           String @id @default(cuid())
+  submissionId String
+  fileName     String
+  mimeType     String
+  size         Int
+  /// Имя файла в каталоге загрузок (генерируется сервером, не из пользовательского ввода).
+  storageKey   String @unique
+
+  submission HomeworkSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([submissionId])
+  @@map("homework_attachments")
+}
+
+/// Проверка ответа учителем.
+/// Поля `aiSuggested*` / `aiDraft*` — черновик ИИ, виден ТОЛЬКО учителю.
+/// Поля `grade` / `comment` / `approvedAt` — утверждённая учителем оценка, её видит ученик.
+model HomeworkReview {
+  id           String @id @default(cuid())
+  submissionId String @unique
+  reviewerId   String
+
+  aiSuggestedGrade Int?
+  aiDraftComment   String?
+  aiDraftedAt      DateTime?
+
+  grade      Int?
+  comment    String?
+  approvedAt DateTime?
+
+  submission HomeworkSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reviewer   User               @relation("HomeworkReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("homework_reviews")
 }
 
 model ChatMessage {

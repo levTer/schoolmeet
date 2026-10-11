@@ -150,8 +150,33 @@ export interface AIProviderInfo {
   isLocal: boolean;
 }
 
+/** Данные для черновика проверки домашнего задания. */
+export interface HomeworkReviewRequest {
+  /** Условие задания (Markdown). Передаётся для контекста проверки. */
+  description: string;
+  /** Текст ответа ученика. */
+  answer: string;
+  /** Максимальный балл за работу. */
+  maxScore: number;
+  /** Сколько файлов приложено к ответу. */
+  attachmentCount: number;
+  /** Сдано ли после дедлайна. */
+  isLate: boolean;
+}
+
+/**
+ * Черновик проверки. ВАЖНО: это только предложение для учителя.
+ * Оценка и комментарий становятся видны ученику лишь после утверждения учителем.
+ */
+export interface HomeworkReviewDraft {
+  suggestedGrade: number;
+  draftComment: string;
+}
+
 export interface AIProvider extends AIProviderInfo {
   complete(request: AIRequest): Promise<AIResponse>;
+  /** Черновик проверки ДЗ (только для учителя). */
+  reviewHomework(request: HomeworkReviewRequest): Promise<HomeworkReviewDraft>;
 }
 
 export function isAIAction(value: unknown): value is AIAction {
@@ -557,6 +582,54 @@ export class MockAIProvider implements AIProvider {
         return { text: SUMMARY_TEMPLATES.general };
     }
   }
+
+  /**
+   * Детерминированный черновик проверки: объём ответа, наличие выкладок и
+   * файлов, опоздание. Один и тот же ответ всегда получает одну и ту же оценку.
+   */
+  async reviewHomework(request: HomeworkReviewRequest): Promise<HomeworkReviewDraft> {
+    await delay(600);
+
+    const answer = request.answer.trim();
+    const words = answer === "" ? 0 : answer.split(/\s+/).length;
+    const hasFormulas = /[=+\-*/^]|\\frac|\\sqrt|\$/.test(answer);
+    const hasFiles = request.attachmentCount > 0;
+
+    if (words === 0 && !hasFiles) {
+      return {
+        suggestedGrade: 1,
+        draftComment:
+          "Ответ не содержит текста и файлов. Проверить работу по существу невозможно — свяжитесь с учеником.",
+      };
+    }
+
+    const volumeScore = Math.min(1, words / 80);
+    const score = 0.5 * volumeScore + (hasFormulas ? 0.25 : 0) + (hasFiles ? 0.25 : 0);
+    const suggestedGrade = clamp(Math.round(1 + score * (request.maxScore - 1)), 1, request.maxScore);
+
+    const comments: string[] = [];
+    if (words < 20 && !hasFiles) {
+      comments.push("Ответ краткий: стоит подробнее расписать ход решения.");
+    }
+    if (hasFormulas) {
+      comments.push("В ответе есть выкладки: проверьте знаки, единицы измерения и итоговый вывод.");
+    } else if (words >= 20) {
+      comments.push("Промежуточные шаги не видны — добавьте их, чтобы оценить ход рассуждений.");
+    }
+    if (hasFiles) {
+      comments.push(`Приложено файлов: ${request.attachmentCount}. Откройте их и сверьте с ответом.`);
+    }
+    if (request.isLate) {
+      comments.push("Работа сдана после дедлайна.");
+    }
+    comments.push("Это черновик ИИ: проверьте текст, при необходимости исправьте и утвердите оценку.");
+
+    return { suggestedGrade, draftComment: comments.join(" ") };
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function delay(ms: number): Promise<void> {

@@ -8,6 +8,7 @@ import type { Session } from "next-auth";
 import {
   CalendarDays,
   ChevronDown,
+  ClipboardList,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -32,6 +33,7 @@ interface NavItem {
 const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard", label: "Кабинет", icon: LayoutDashboard, roles: null },
   { href: "/schedule", label: "Расписание", icon: CalendarDays, roles: null },
+  { href: "/homework", label: "ДЗ", icon: ClipboardList, roles: null },
   { href: "/meeting", label: "Урок", icon: Video, roles: null },
   { href: "/admin", label: "Админ-панель", icon: ShieldCheck, roles: ["ADMIN", "TEACHER"] },
 ];
