@@ -1,0 +1,104 @@
+// SchoolMeet — схема базы данных
+// Документация по Prisma schema: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Роли пользователей платформы
+// ADMIN   — управляет платформой, модерация, доступ ко всем данным
+// TEACHER — создаёт уроки, планирует расписание, ведёт доску
+// STUDENT — посещает уроки, смотрит расписание, пишет в чат
+// ---------------------------------------------------------------------------
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String // bcrypt-хеш, никогда не отдаётся клиенту
+  name      String
+  role      Role     @default(STUDENT)
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  hostedMeetings Meeting[]     @relation("MeetingHost")
+  schedules      Schedule[]    @relation("ScheduleTeacher")
+  messages       ChatMessage[]
+
+  @@index([role])
+  @@map("users")
+}
+
+model Meeting {
+  id            String    @id @default(cuid())
+  title         String
+  meetingCode   String    @unique // короткий код комнаты, например "ABC-1234"
+  hostId        String
+  startTime     DateTime  @default(now())
+  endTime       DateTime?
+  isActive      Boolean   @default(false)
+  encryptionKey String // ключ комнаты для AES-256 шифрования чата
+
+  // Связи
+  host     User          @relation("MeetingHost", fields: [hostId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+  schedule Schedule?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([hostId])
+  @@index([isActive])
+  @@map("meetings")
+}
+
+model Schedule {
+  id        String  @id @default(cuid())
+  title     String
+  subject   String
+  teacherId String
+  dayOfWeek Int // 1 = понедельник ... 7 = воскресенье (ISO-8601)
+  startTime String // время начала в формате "HH:mm" (например "09:00")
+  endTime   String // время окончания в формате "HH:mm" (например "09:45")
+  meetingId String? @unique // комната, привязанная к этому слоту расписания
+
+  // Связи
+  teacher User     @relation("ScheduleTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  meeting Meeting? @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teacherId])
+  @@index([dayOfWeek])
+  @@map("schedules")
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  meetingId String
+  userId    String
+  content   String // зашифрованный AES-256 текст (base64) либо открытый текст
+  encrypted Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  // Связи
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([userId])
+  @@map("chat_messages")
+}

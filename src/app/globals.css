@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #05060f;
+    --foreground: #e6e9f7;
+    --brand: #8b5cf6;
+    --accent: #38bdf8;
+  }
+
+  * {
+    @apply border-white/10;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-ink-950 font-sans text-slate-400 antialiased;
+    background-image:
+      radial-gradient(60rem 40rem at 15% -10%, rgba(124, 58, 237, 0.18), transparent 60%),
+      radial-gradient(50rem 35rem at 95% 5%, rgba(56, 189, 248, 0.14), transparent 60%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply text-white;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    @apply bg-brand-500/30 text-white;
+  }
+
+  /* Тёмный скроллбар под общую стилистику */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #05060f;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(#7c3aed, #0ea5e9);
+    border: 2px solid #05060f;
+    border-radius: 9999px;
+  }
+}
+
+@layer utilities {
+  /* Градиентный текст */
+  .text-gradient {
+    @apply bg-gradient-to-r from-violet-300 via-indigo-200 to-sky-300 bg-clip-text text-transparent;
+  }
+
+  .text-gradient-brand {
+    @apply bg-brand-gradient bg-clip-text text-transparent;
+  }
+
+  /* Фоновая сетка */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgba(148, 163, 184, 0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148, 163, 184, 0.07) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+
+  /* Маски для затухания фоновых слоёв */
+  .mask-radial {
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 35%, transparent 100%);
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 35%, transparent 100%);
+  }
+
+  .mask-fade-b {
+    -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 50%, transparent 100%);
+  }
+
+  /* Стеклянные панели */
+  .glass {
+    @apply border border-white/10 bg-white/[0.035] backdrop-blur-xl;
+  }
+
+  .glass-strong {
+    @apply border border-white/10 bg-white/[0.06] backdrop-blur-2xl;
+  }
+
+  .shadow-glow {
+    box-shadow: 0 30px 80px -30px rgba(124, 58, 237, 0.65);
+  }
+
+  /* Тонкая градиентная рамка карточки */
+  .ring-gradient {
+    position: relative;
+  }
+  .ring-gradient::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(140deg, rgba(139, 92, 246, 0.55), rgba(56, 189, 248, 0.35), transparent 60%);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
