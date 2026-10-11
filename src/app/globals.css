@@ -3,9 +3,10 @@
 @tailwind utilities;
 
 /*
- * SchoolMeet · дизайн-система, этап 3.
+ * SchoolMeet · дизайн-система, этап 7.
  * Тёмный графитовый фон, ярко-фиолетовые кнопки и неоново-синие акценты,
  * матовое стекло (backdrop-blur) на карточках и панелях.
+ * + Мобильная адаптация, PWA-поддержка, анимации переходов.
  */
 
 @layer base {
@@ -36,6 +37,9 @@
       radial-gradient(40rem 30rem at 50% 110%, rgba(124, 58, 237, 0.12), transparent 65%);
     background-attachment: fixed;
     background-repeat: no-repeat;
+    /* iOS safe area для PWA */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   h1,
@@ -66,6 +70,16 @@
     background: linear-gradient(#a855f7, #00d9ff);
     border: 3px solid #06070b;
     border-radius: 9999px;
+  }
+
+  /* Скрываем скроллбар на мобильных для чистого вида */
+  @media (max-width: 768px) {
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      border: 1px solid #06070b;
+    }
   }
 }
 
@@ -100,7 +114,6 @@
 
   /* ----------------------------- Матовое стекло ----------------------------- */
 
-  /* Базовая панель: полупрозрачная заливка, размытие фона, тонкая светлая кромка */
   .glass {
     @apply border backdrop-blur-2xl;
     border-color: var(--glass-border);
@@ -108,7 +121,6 @@
     box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
   }
 
-  /* Плотная панель: верхняя шапка, нижняя панель управления, чат */
   .glass-strong {
     @apply border backdrop-blur-3xl;
     border-color: rgba(255, 255, 255, 0.11);
@@ -116,7 +128,6 @@
     box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 30px 60px -30px rgba(0, 0, 0, 0.8);
   }
 
-  /* Карточка секции: скругление, hover-подсветка рамки */
   .glass-card {
     @apply rounded-3xl border backdrop-blur-2xl transition duration-300;
     border-color: var(--glass-border);
@@ -128,12 +139,10 @@
     border-color: rgba(168, 85, 247, 0.28);
   }
 
-  /* Мелкая стеклянная плитка внутри карточки */
   .glass-tile {
     @apply rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl;
   }
 
-  /* Тонкая градиентная рамка карточки */
   .ring-gradient {
     position: relative;
   }
@@ -152,7 +161,6 @@
     pointer-events: none;
   }
 
-  /* Неоновая подсветка говорящего участника */
   .speaking-ring {
     @apply rounded-2xl;
     box-shadow: 0 0 0 2px rgba(0, 217, 255, 0.85), 0 0 22px 2px rgba(0, 217, 255, 0.4);
@@ -162,10 +170,14 @@
   .shadow-glow {
     box-shadow: 0 24px 70px -24px rgba(168, 85, 247, 0.75);
   }
+
+  /* iOS safe area: добавляем padding для нижней панели. */
+  .safe-bottom {
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
 }
 
-/* Доска: канва Fabric.js (1600x900) масштабируется под контейнер.
-   Обёртку .whiteboard-stage создаёт хук useWhiteboard. */
+/* Доска: канва Fabric.js (1600x900) масштабируется под контейнер. */
 .whiteboard-stage,
 .whiteboard-stage canvas {
   width: 100% !important;
@@ -187,8 +199,70 @@
   animation: pulse-soft 2.4s ease-in-out infinite;
 }
 
+/* Пульсирующее свечение кнопки «Войти в урок» (активная за 5 мин до начала). */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.5), 0 24px 70px -24px rgba(168, 85, 247, 0.75);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(168, 85, 247, 0), 0 24px 70px -12px rgba(168, 85, 247, 0.9);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Плавный транзишн для появления/исчезновения (страницы, модалки). */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ------------------------------------------------------------------ */
+/* Мобильная адаптация                                                 */
+/* ------------------------------------------------------------------ */
+
+/* Компактный тулбар доски на мобильных. */
+@media (max-width: 768px) {
+  .whiteboard-toolbar {
+    gap: 2px !important;
+  }
+  .whiteboard-toolbar button {
+    padding: 6px !important;
+  }
+}
+
+/* Тач-кнопки управления звонком: увеличиваем размеры на мобильных. */
+@media (max-width: 768px) {
+  .meeting-controls button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Видео-сетка на мобильных: 1-2 крупных видео. */
+@media (max-width: 640px) {
+  .video-grid-mobile-single {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-pulse-soft {
+  .animate-pulse-soft,
+  .animate-pulse-glow,
+  .animate-neon-breathe {
     animation: none;
   }
 }

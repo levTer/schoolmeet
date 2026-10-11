@@ -14,11 +14,17 @@ import {
 } from "lucide-react";
 
 import { AnnouncementBanner } from "@/components/dashboard/announcement-banner";
-import { NextLessonWidget, ReviewQueueWidget, UrgentHomeworkWidget } from "@/components/dashboard/widgets";
+import {
+  NextLessonWidgetLive,
+  QuickLessonButton,
+  ReviewQueueWidget,
+  UrgentHomeworkWidget,
+} from "@/components/dashboard/widgets";
 import { AppShell } from "@/components/layout/app-shell";
 import { FormAlert } from "@/components/ui/form-alert";
 import { listActiveAnnouncementsForViewer, type AnnouncementDto } from "@/lib/announcements";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
+import { getGreeting } from "@/lib/dashboard-greeting";
 import { getReviewQueue, getUrgentHomework } from "@/lib/homework";
 import { findLiveLesson, findNextLesson, getSchoolClock } from "@/lib/schedule-rules";
 import { listLessonsForViewer } from "@/lib/schedule";
@@ -55,13 +61,18 @@ export default async function DashboardPage({
 
   const now = new Date();
   const viewer = await getSchoolViewer(id);
-  const [lessons, urgent, review] = viewer
-    ? await Promise.all([
-        listLessonsForViewer(viewer),
-        getUrgentHomework(viewer, now),
-        getReviewQueue(viewer),
-      ])
-    : [[] as Schedule[], [], { count: 0, items: [] }];
+  let lessons: Schedule[] = [];
+  let urgent: Awaited<ReturnType<typeof getUrgentHomework>> = [];
+  let review: Awaited<ReturnType<typeof getReviewQueue>> = { count: 0, items: [] };
+
+  if (viewer) {
+    [lessons, urgent, review] = await Promise.all([
+      listLessonsForViewer(viewer),
+      getUrgentHomework(viewer, now),
+      getReviewQueue(viewer),
+    ]);
+  }
+
   const clock = getSchoolClock(now);
   const live = findLiveLesson(lessons, clock);
   const next = findNextLesson(lessons, clock);
@@ -77,6 +88,9 @@ export default async function DashboardPage({
   } catch (error) {
     console.error("[dashboard] Не удалось загрузить объявления:", error);
   }
+
+  /* Динамическое приветствие по времени суток. */
+  const { greeting, emoji } = getGreeting(now);
 
   const quickLinks = [
     {
@@ -103,23 +117,24 @@ export default async function DashboardPage({
       : []),
   ];
 
+  const firstName = (name ?? "друг").split(" ")[0];
+
   return (
     <AppShell>
       <AnnouncementBanner announcements={announcements} />
 
       {/* Приветствие */}
-      <header className="animate-fade-up flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+      <header className="animate-fade-up flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">
             Личный кабинет
           </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Здравствуйте,{" "}
-            <span className="text-gradient">{(name ?? "друг").split(" ")[0]}</span>!
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl lg:text-4xl">
+            {emoji} {greeting},{" "}
+            <span className="text-gradient">{firstName}</span>!
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">
-            Сессия защищена JWT-cookie, а доступ к разделам определяется ролью. Ниже — ваш профиль и
-            быстрые переходы.
+            Добро пожаловать в SchoolMeet. Ниже — ваш следующий урок, задания и быстрые переходы.
           </p>
         </div>
 
@@ -141,15 +156,25 @@ export default async function DashboardPage({
       )}
 
       {/* Виджеты: следующий урок, срочные ДЗ и очередь проверки */}
-      <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-        <NextLessonWidget next={next} live={live} />
+      <div className="mt-6 grid gap-4 sm:gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <NextLessonWidgetLive next={next} live={live} />
         <UrgentHomeworkWidget items={urgent} role={role} />
         <ReviewQueueWidget queue={review} role={role} />
       </div>
 
+      {/* Быстрое действие: внеплановый урок (только для учителей) */}
+      {role !== "STUDENT" && (
+        <div className="mt-5">
+          <QuickLessonButton role={role} />
+        </div>
+      )}
+
       <div className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,20rem)_1fr]">
         {/* Профиль */}
-        <section className="ring-gradient glass-card animate-fade-up h-fit p-6">
+        <section
+          id="profile"
+          className="ring-gradient glass-card animate-fade-up h-fit p-5 sm:p-6"
+        >
           <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
             <UserRound className="h-4 w-4" />
             Профиль
@@ -193,7 +218,7 @@ export default async function DashboardPage({
           </div>
         </section>
 
-        {/* Быстрые переходы и статус этапа */}
+        {/* Быстрые переходы */}
         <div className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
             {quickLinks.map(({ href, title, text, icon: Icon }, index) => (
@@ -201,7 +226,7 @@ export default async function DashboardPage({
                 key={href}
                 href={href}
                 style={{ animationDelay: `${100 + index * 80}ms` }}
-                className="ring-gradient glass-card animate-fade-up group p-6 hover:bg-white/[0.05]"
+                className="ring-gradient glass-card animate-fade-up group p-5 sm:p-6 hover:bg-white/[0.05]"
               >
                 <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-gradient shadow-glow">
                   <Icon className="h-5 w-5 text-white" />
@@ -216,15 +241,24 @@ export default async function DashboardPage({
             ))}
           </div>
 
-          <section className="glass-card p-6">
-            <h2 className="text-lg font-semibold text-white">Что дальше</h2>
+          <section className="glass-card p-5 sm:p-6">
+            <h2 className="text-lg font-semibold text-white">Что нового в Этапе 7</h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-400">
-              Этап 5 добавил расписание 5–11 классов и домашние задания: дедлайны, загрузку файлов и
-              проверку учителем. ИИ формирует только черновик проверки — оценку видит ученик после
-              утверждения учителем.
+              Главный дашборд с живым обратным отсчётом до урока, полная мобильная адаптация
+              (нижняя навигация, адаптивные видео и доска), PWA-поддержка для установки на экран
+              телефона, а также красивые страницы ошибок в стиле glass-morphism.
             </p>
             <div className="mt-5 flex flex-wrap gap-2 text-xs">
-              {["JWT-сессия", "WebRTC", "Socket.IO", "AES-256", "Prisma", "Файлы", "ДЗ"].map((chip) => (
+              {[
+                "PWA",
+                "Mobile-first",
+                "Bottom Nav",
+                "Обратный отсчёт",
+                "Glass-morphism",
+                "Touch UI",
+                "JWT",
+                "WebRTC",
+              ].map((chip) => (
                 <span
                   key={chip}
                   className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-slate-300"

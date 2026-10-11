@@ -243,7 +243,7 @@ export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProp
       </header>
 
       {/* Тулбар */}
-      <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-white/10 px-4 py-2">
+      <div className="whiteboard-toolbar flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-white/10 px-3 py-2 sm:gap-2 sm:px-4">
         {/* Инструменты */}
         <div className="flex items-center gap-1">
           {visibleTools.map((item) => (
@@ -380,7 +380,7 @@ export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProp
       <main className="flex min-h-0 flex-1 gap-3 p-3">
         {/* Канва */}
         <div className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center">
-          <div className="relative aspect-[16/9] w-full max-w-full overflow-hidden rounded-3xl border border-white/10 bg-white shadow-glow">
+          <div className="relative aspect-[16/9] w-full max-w-full overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-white shadow-glow" style={{ touchAction: "none" }}>
             <canvas ref={wb.canvasRef} className="block" />
 
             {/* SVG-превью лассо и выделения формулы (координаты канвы 1600x900) */}

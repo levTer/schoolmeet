@@ -63,7 +63,7 @@ export function Controls(props: ControlsProps) {
   } = props;
 
   return (
-    <div className="glass-strong flex items-center justify-center gap-2 rounded-3xl px-3 py-2.5 shadow-glow sm:gap-3 sm:px-4">
+    <div className="meeting-controls glass-strong flex items-center justify-center gap-1.5 rounded-3xl px-2 py-2 sm:gap-3 sm:px-4 sm:py-2.5 shadow-glow">
       <ControlButton
         label={!hasMic ? "Микрофон недоступен" : micOn ? "Выключить микрофон" : "Включить микрофон"}
         active={micOn && hasMic}

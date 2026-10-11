@@ -96,6 +96,14 @@ const config: Config = {
           "0%, 100%": { boxShadow: "0 0 0 2px rgba(0,217,255,.85), 0 0 18px 2px rgba(0,217,255,.35)" },
           "50%": { boxShadow: "0 0 0 2px rgba(0,217,255,1), 0 0 34px 6px rgba(0,217,255,.6)" },
         },
+        "pulse-glow": {
+          "0%, 100%": { boxShadow: "0 0 0 0 rgba(168,85,247,.5), 0 24px 70px -24px rgba(168,85,247,.75)" },
+          "50%": { boxShadow: "0 0 0 8px rgba(168,85,247,0), 0 24px 70px -12px rgba(168,85,247,.9)" },
+        },
+        "page-enter": {
+          from: { opacity: "0", transform: "translateY(12px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "fade-up": "fade-up .7s cubic-bezier(.16,1,.3,1) both",
@@ -106,6 +114,8 @@ const config: Config = {
         "pulse-ring": "pulse-ring 2.4s cubic-bezier(.24,.6,.35,1) infinite",
         "spin-slow": "spin-slow 26s linear infinite",
         "neon-breathe": "neon-breathe 1.6s ease-in-out infinite",
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
+        "page-enter": "page-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) both",
       },
     },
   },
