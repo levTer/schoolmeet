@@ -163,3 +163,11 @@
     box-shadow: 0 24px 70px -24px rgba(168, 85, 247, 0.75);
   }
 }
+
+/* Доска: канва Fabric.js (1600x900) масштабируется под контейнер.
+   Обёртку .whiteboard-stage создаёт хук useWhiteboard. */
+.whiteboard-stage,
+.whiteboard-stage canvas {
+  width: 100% !important;
+  height: 100% !important;
+}

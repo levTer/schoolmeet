@@ -25,12 +25,14 @@ export interface ControlsProps {
   hasCamera: boolean;
   chatOpen: boolean;
   unreadCount: number;
+  boardOpen: boolean;
   handRaised: boolean;
   raisedHandsCount: number;
   onToggleMic: () => void;
   onToggleCamera: () => void;
   onToggleScreen: () => void;
   onToggleChat: () => void;
+  onToggleBoard: () => void;
   onToggleHand: () => void;
   onLeave: () => void;
 }
@@ -48,12 +50,14 @@ export function Controls(props: ControlsProps) {
     hasCamera,
     chatOpen,
     unreadCount,
+    boardOpen,
     handRaised,
     raisedHandsCount,
     onToggleMic,
     onToggleCamera,
     onToggleScreen,
     onToggleChat,
+    onToggleBoard,
     onToggleHand,
     onLeave,
   } = props;
@@ -95,9 +99,10 @@ export function Controls(props: ControlsProps) {
       />
 
       <ControlButton
-        label="Доска — скоро (ИИ-доска)"
-        disabled
-        onClick={() => undefined}
+        label={boardOpen ? "Скрыть доску" : "Открыть доску"}
+        active={boardOpen}
+        highlight={boardOpen}
+        onClick={onToggleBoard}
         icon={LayoutPanelTop}
       />
 

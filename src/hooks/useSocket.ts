@@ -13,6 +13,13 @@ import {
   type RoomParticipant,
   type ServerToClientEvents,
   type SignalData,
+  type WhiteboardClearPayload,
+  type WhiteboardCursorPayload,
+  type WhiteboardDeletePayload,
+  type WhiteboardDrawPolicy,
+  type WhiteboardObjectPayload,
+  type WhiteboardServerEvent,
+  type WhiteboardState,
 } from "@/lib/realtime";
 
 /**
@@ -29,6 +36,7 @@ export type SocketStatus = "idle" | "connecting" | "connected" | "reconnecting" 
 
 type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 type SignalHandler = (from: string, data: SignalData) => void;
+type WhiteboardHandler = (event: WhiteboardServerEvent) => void;
 
 /** Ошибки, при которых переподключаться бессмысленно (нет сессии / чужой origin). */
 const FATAL_CONNECT_ERRORS = new Set(["UNAUTHORIZED", "FORBIDDEN_ORIGIN"]);
@@ -53,7 +61,12 @@ export function useSocket(options: UseSocketOptions = {}) {
   const roomRef = useRef<string | null>(null);
   const hasConnectedRef = useRef(false);
   const signalHandlersRef = useRef(new Set<SignalHandler>());
+  const whiteboardHandlersRef = useRef(new Set<WhiteboardHandler>());
   const optionsRef = useRef(options);
+
+  const emitWhiteboard = useCallback((event: WhiteboardServerEvent) => {
+    whiteboardHandlersRef.current.forEach((handler) => handler(event));
+  }, []);
 
   useEffect(() => {
     optionsRef.current = options;
@@ -154,9 +167,17 @@ export function useSocket(options: UseSocketOptions = {}) {
       setMessages((prev) => [...prev, message].slice(-MAX_CHAT_HISTORY));
     });
 
+    socket.on("whiteboard-add", (payload) => emitWhiteboard({ type: "add", payload }));
+    socket.on("whiteboard-modify", (payload) => emitWhiteboard({ type: "modify", payload }));
+    socket.on("whiteboard-delete", (payload) => emitWhiteboard({ type: "delete", payload }));
+    socket.on("whiteboard-clear", (payload) => emitWhiteboard({ type: "clear", payload }));
+    socket.on("whiteboard-cursor", (payload) => emitWhiteboard({ type: "cursor", payload }));
+    socket.on("whiteboard-access", (payload) => emitWhiteboard({ type: "access", payload }));
+    socket.on("whiteboard-page", (payload) => emitWhiteboard({ type: "page", payload }));
+
     socketRef.current = socket;
     return socket;
-  }, [applyJoinResult, updateParticipant]);
+  }, [applyJoinResult, emitWhiteboard, updateParticipant]);
 
   /** Подключается к серверу. Резолвится, когда соединение установлено. */
   const connect = useCallback((): Promise<void> => {
@@ -255,6 +276,82 @@ export function useSocket(options: UseSocketOptions = {}) {
     [],
   );
 
+  /* ------------------------------- Доска --------------------------------- */
+
+  /** Отправляет событие доски и возвращает true, если сервер его принял. */
+  const sendWhiteboard = useCallback(
+    async (
+      emit: (ack: (result: Ack) => void) => void,
+    ): Promise<boolean> => {
+      const socket = socketRef.current;
+      if (!socket?.connected) return false;
+      return new Promise((resolve) => {
+        emit((result) => resolve(result.ok));
+      });
+    },
+    [],
+  );
+
+  const sendWhiteboardAdd = useCallback(
+    (payload: WhiteboardObjectPayload) =>
+      sendWhiteboard((ack) => socketRef.current?.emit("whiteboard-add", payload, ack)),
+    [sendWhiteboard],
+  );
+
+  const sendWhiteboardModify = useCallback(
+    (payload: WhiteboardObjectPayload) =>
+      sendWhiteboard((ack) => socketRef.current?.emit("whiteboard-modify", payload, ack)),
+    [sendWhiteboard],
+  );
+
+  const sendWhiteboardDelete = useCallback(
+    (payload: WhiteboardDeletePayload) =>
+      sendWhiteboard((ack) => socketRef.current?.emit("whiteboard-delete", payload, ack)),
+    [sendWhiteboard],
+  );
+
+  const sendWhiteboardClear = useCallback(
+    (payload: WhiteboardClearPayload) =>
+      sendWhiteboard((ack) => socketRef.current?.emit("whiteboard-clear", payload, ack)),
+    [sendWhiteboard],
+  );
+
+  const sendWhiteboardAccess = useCallback(
+    (payload: { drawPolicy: WhiteboardDrawPolicy }) =>
+      sendWhiteboard((ack) => socketRef.current?.emit("whiteboard-access", payload, ack)),
+    [sendWhiteboard],
+  );
+
+  const sendWhiteboardPage = useCallback(
+    (payload: { page: number }) =>
+      sendWhiteboard((ack) => socketRef.current?.emit("whiteboard-page", payload, ack)),
+    [sendWhiteboard],
+  );
+
+  /** Курсор — без ack, отправляется часто и теряет старые значения. */
+  const sendWhiteboardCursor = useCallback((payload: WhiteboardCursorPayload) => {
+    socketRef.current?.emit("whiteboard-cursor", payload);
+  }, []);
+
+  /** Запрашивает полное состояние доски (при открытии панели). */
+  const syncWhiteboard = useCallback((): Promise<WhiteboardState | null> => {
+    const socket = socketRef.current;
+    if (!socket?.connected) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      socket.emit("whiteboard-sync", undefined, (ack: Ack<WhiteboardState>) => {
+        resolve(ack.ok ? ack.data : null);
+      });
+    });
+  }, []);
+
+  /** Подписка на входящие события доски. Возвращает функцию отписки. */
+  const onWhiteboard = useCallback((handler: WhiteboardHandler) => {
+    whiteboardHandlersRef.current.add(handler);
+    return () => {
+      whiteboardHandlersRef.current.delete(handler);
+    };
+  }, []);
+
   // Отключаемся при размонтировании страницы урока.
   useEffect(() => {
     return () => {
@@ -279,5 +376,14 @@ export function useSocket(options: UseSocketOptions = {}) {
     setHandRaised,
     sendMediaState,
     sendChat,
+    sendWhiteboardAdd,
+    sendWhiteboardModify,
+    sendWhiteboardDelete,
+    sendWhiteboardClear,
+    sendWhiteboardCursor,
+    sendWhiteboardAccess,
+    sendWhiteboardPage,
+    syncWhiteboard,
+    onWhiteboard,
   };
 }

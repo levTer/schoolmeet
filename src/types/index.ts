@@ -29,10 +29,12 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "meeting:delete",
     "schedule:write",
     "board:write",
+    "board:manage",
+    "ai:use",
     "chat:write",
     "admin:panel",
   ],
-  TEACHER: ["meeting:create", "schedule:write", "board:write", "chat:write"],
+  TEACHER: ["meeting:create", "schedule:write", "board:write", "board:manage", "ai:use", "chat:write"],
   STUDENT: ["meeting:join", "schedule:read", "board:view", "chat:write"],
 };
 
@@ -49,6 +51,8 @@ export const PERMISSION_LABELS: Record<string, string> = {
   "schedule:write": "Планирование расписания",
   "board:view": "Просмотр доски",
   "board:write": "Работа на доске",
+  "board:manage": "Управление доской",
+  "ai:use": "ИИ-помощник",
   "chat:write": "Чат класса",
   "admin:panel": "Админ-панель",
 };

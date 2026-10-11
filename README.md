@@ -3,9 +3,11 @@
 **SchoolMeet** — платная школьная платформа видеозвонков и уроков с ИИ-доской и расписанием
 (аналог Zoom, адаптированный под школу).
 
-Этап 3 — видеозвонки, чат и realtime: WebRTC mesh-звонки (камера, микрофон, демонстрация экрана),
-сигналинг и чат на Socket.IO, шифрование сообщений AES-256, а также обновлённая тёмная
-графитовая палитра с неоново-фиолетовыми акцентами и стеклянными карточками по всему сайту.
+Этап 4 — интерактивная доска и ИИ-архитектура: Fabric.js-доска (карандаш, фигуры, стрелки,
+текст, стикеры, ластик, лассо, Undo/Redo, страницы, экспорт PNG) с realtime-синхронизацией
+через Socket.IO и курсорами участников; голосовой ввод через нативный Web Speech API;
+ИИ-помощник учителя на **локальном MockAIProvider** (без внешних нейросетей) с черчением
+по JSON-инструкциям и «распознаванием» формул в LaTeX.
 
 ## Стек
 
@@ -80,12 +82,18 @@ src/hooks/useSocket.ts             Подключение Socket.IO, подпи�
 src/hooks/useWebRTC.ts             Камера, микрофон, демонстрация экрана, RTCPeerConnection mesh
 src/hooks/useSpeakingIndicator.ts  Определение говорящего по уровню звука (AnalyserNode)
 src/hooks/useElapsed.ts            Таймер длительности звонка
-src/components/meeting/            MeetingRoom, PreJoinScreen, VideoGrid, Controls, Chat, MeetingLobby
+src/hooks/useWhiteboard.ts         Доска Fabric.js: инструменты, Undo/Redo, страницы, синхронизация
+src/hooks/useVoiceInput.ts         Голосовой ввод через нативный Web Speech API (без серверов)
+src/lib/ai-provider.ts             AIProvider + MockAIProvider: русские конспекты/решения/формулы
+src/lib/drawing-engine.ts          JSON-инструкции ИИ → фигуры Fabric.js (треугольники, графики…)
+src/app/api/ai/route.ts            POST/GET — ИИ-помощник (ТОЛЬКО TEACHER / ADMIN, STUDENT → 403)
+src/components/meeting/            MeetingRoom, PreJoinScreen, VideoGrid, Controls, Chat, MeetingLobby,
+                                   Whiteboard (доска + курсоры), AIAssistant (панель учителя)
+src/components/ui/                 Поля формы, градиентная кнопка, алерты, Markdown-рендер
 src/components/layout/app-shell.tsx Каркас внутренних страниц: навбар + контент
 src/components/layout/Navbar.tsx   Шапка с профилем, ролью и кнопкой «Выйти» (signOut)
 src/components/layout/app-shell.tsx Каркас внутренних страниц: навбар + контент
 src/components/auth/               AuthShell и формы входа/регистрации
-src/components/ui/                 Поля формы, градиентная кнопка, алерты (стеклянный стиль)
 src/components/providers.tsx       SessionProvider для клиентских компонентов
 src/components/landing/            Секции лендинга (шапка, hero, мокап урока, фичи, футер)
 src/lib/utils.ts                   cn(), sanitizeRedirectPath(), код комнаты, инициалы, время
@@ -138,6 +146,11 @@ src/types/next-auth.d.ts           Расширение типов сессии 
   сквозное шифрование «end-to-end» (сервер может расшифровать сообщения своим ключом).
 - Медиапоток идёт напрямую между браузерами по WebRTC/SRTP (mesh: каждый с каждым). Сигналинг
   (SDP и ICE) проходит через Socket.IO, медиа через сервер не проходит.
+- ИИ-панель и `/api/ai` открыты **только для TEACHER и ADMIN**: ученики не видят UI ИИ, а сервер
+  отвечает на любые вызовы `/api/ai` статусом **403 Forbidden**. На этапе 4 ИИ работает полностью
+  локально (`MockAIProvider`) — данные никуда не отправляются, внешние нейросети не вызываются.
+- Доска: события рисования (`whiteboard-*`) проверяются на сервере — учитель решает, кто рисует
+  («Рисуют все» / «Рисует учитель»), а перегрузка событиями ограничена рейт-лимитами.
 - Для работы в школьных сетях с симметричным NAT нужен TURN-сервер (см. `NEXT_PUBLIC_ICE_SERVERS`).
 - Реальный `.env` в репозиторий не попадает (см. `.gitignore`), в git лежит только `.env.example`.
 
@@ -147,4 +160,7 @@ src/types/next-auth.d.ts           Расширение типов сессии 
 - ✅ **Этап 2** — авторизация (NextAuth + bcrypt), роли, защита маршрутов, кабинет и админ-панель.
 - ✅ **Этап 3** — видеозвонки WebRTC (mesh), realtime на Socket.IO, чат с AES-256, предпроверка
   устройств, сетка видео 1/2/4/9, подсветка говорящего, таймер звонка, новая палитра сайта.
-- ⏭ Следующий этап — ИИ-доска (Fabric.js + GPT-4o Vision).
+- ✅ **Этап 4** — интерактивная доска (Fabric.js, Undo/Redo, страницы, PNG, синхронизация и
+  курсоры через Socket.IO, права учителя), голосовой ввод (Web Speech API), MockAIProvider
+  с черчением и LaTeX-формулами, ИИ-панель учителя (только TEACHER / ADMIN).
+- ⏭ Следующий этап — подключение внешнего ИИ (GPT-4o Vision) в финале проекта.

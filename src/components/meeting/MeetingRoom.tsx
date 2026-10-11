@@ -8,12 +8,14 @@ import { Chat, CHAT_MAX_MESSAGE_LENGTH, type ChatViewMessage } from "@/component
 import { Controls } from "@/components/meeting/Controls";
 import { PreJoinScreen } from "@/components/meeting/PreJoinScreen";
 import { VideoGrid, type GridTile } from "@/components/meeting/VideoGrid";
+import { Whiteboard } from "@/components/meeting/Whiteboard";
 import { FormAlert } from "@/components/ui/form-alert";
 import { Logo } from "@/components/landing/logo";
 import { useSocket, type SocketStatus } from "@/hooks/useSocket";
 import { useSpeakingIndicator } from "@/hooks/useSpeakingIndicator";
 import { formatDuration, useElapsedSeconds } from "@/hooks/useElapsed";
 import { useWebRTC } from "@/hooks/useWebRTC";
+import type { WhiteboardSync } from "@/hooks/useWhiteboard";
 import { decryptMessage, encryptMessage } from "@/lib/crypto";
 import type { JoinRoomResult } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
@@ -52,6 +54,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
   const [joinError, setJoinError] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [boardOpen, setBoardOpen] = useState(false);
   const [seenCount, setSeenCount] = useState(0);
   const [chatError, setChatError] = useState<string | null>(null);
 
@@ -68,6 +71,32 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
   const { requestMedia, hangUp, connectToPeers, dropPeer, dropAllPeers, toggleMic, toggleCamera, toggleScreenShare } =
     rtc;
   const { sendMediaState, setHandRaised, sendChat, leaveRoom, disconnect } = socket;
+
+  /** Адаптер доски поверх сокета — передаётся в Whiteboard/useWhiteboard. */
+  const boardSync = useMemo<WhiteboardSync>(
+    () => ({
+      sendAdd: socket.sendWhiteboardAdd,
+      sendModify: socket.sendWhiteboardModify,
+      sendDelete: socket.sendWhiteboardDelete,
+      sendClear: socket.sendWhiteboardClear,
+      sendCursor: socket.sendWhiteboardCursor,
+      sendAccess: socket.sendWhiteboardAccess,
+      sendPage: socket.sendWhiteboardPage,
+      requestState: socket.syncWhiteboard,
+      subscribe: socket.onWhiteboard,
+    }),
+    [
+      socket.sendWhiteboardAdd,
+      socket.sendWhiteboardModify,
+      socket.sendWhiteboardDelete,
+      socket.sendWhiteboardClear,
+      socket.sendWhiteboardCursor,
+      socket.sendWhiteboardAccess,
+      socket.sendWhiteboardPage,
+      socket.syncWhiteboard,
+      socket.onWhiteboard,
+    ],
+  );
 
   useEffect(() => {
     dropPeerRef.current = dropPeer;
@@ -348,16 +377,28 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
             hasCamera={rtc.devices.hasCamera}
             chatOpen={chatOpen}
             unreadCount={unreadCount}
+            boardOpen={boardOpen}
             handRaised={handRaised}
             raisedHandsCount={raisedHandsCount}
             onToggleMic={() => void toggleMic()}
             onToggleCamera={() => void toggleCamera()}
             onToggleScreen={() => void toggleScreenShare()}
             onToggleChat={() => setChatOpen((open) => !open)}
+            onToggleBoard={() => setBoardOpen((open) => !open)}
             onToggleHand={() => setHandRaised(!handRaised)}
             onLeave={leave}
           />
         </footer>
+      )}
+
+      {/* Интерактивная доска (поверх звонка) */}
+      {isLive && boardOpen && (
+        <Whiteboard
+          self={self}
+          meetingTitle={title}
+          sync={boardSync}
+          onClose={() => setBoardOpen(false)}
+        />
       )}
     </div>
   );
