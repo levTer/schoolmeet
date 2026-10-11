@@ -32,30 +32,69 @@ cp .env.example .env      # затем заполните DATABASE_URL, NEXTAUTH
 npx prisma generate       # генерация клиента
 npx prisma migrate dev --name init
 
-# 4. Разработка
+# 4. Демо-аккаунты и запуск
+npm run db:seed           # admin@ / teacher@ / student@schoolmeet.dev
 npm run dev               # http://localhost:3000
 ```
 
 Полезные команды:
 
 ```bash
-npm run build     # прод-сборка
-npm run lint      # ESLint
-npx prisma studio # веб-UI для просмотра данных
+npm run build      # прод-сборка
+npm run lint       # ESLint
+npm run db:seed    # демо-аккаунты (пароль из SEED_PASSWORD)
+npm run db:push    # синхронизация схемы без миграций
+npm run db:studio  # веб-UI для просмотра данных
 ```
 
 ## Структура
 
 ```
-prisma/schema.prisma           Enum Role + модели User / Meeting / Schedule / ChatMessage
-src/app/layout.tsx             Корневой layout: метаданные, шрифты, тёмная тема
-src/app/page.tsx               Лендинг: Hero → Features → ИИ-Доска → Расписание → CTA → Footer
-src/app/login|register         Заглушки этапа 2 (авторизация)
-src/components/landing/        Секции лендинга (шапка, hero, мокап урока, фичи, футер)
-src/lib/utils.ts               cn(), генератор кода комнаты, инициалы, формат времени
-src/types/index.ts             Интерфейсы User / Meeting / Schedule / ChatMessage, роли, события Socket.IO
-src/types/next-auth.d.ts       Расширение типов сессии NextAuth полем role
+prisma/schema.prisma               Enum Role + модели User / Meeting / Schedule / ChatMessage
+prisma/seed.mjs                    Демо-аккаунты ADMIN / TEACHER / STUDENT (npm run db:seed)
+src/middleware.ts                  Защита /dashboard, /meeting, /schedule, /admin + RBAC для /admin
+src/lib/auth.ts                    NextAuth: CredentialsProvider, JWT/session callbacks с id и role
+src/lib/password.ts                bcryptjs: hashPassword() / verifyPassword()
+src/lib/validation.ts              Валидация регистрации (общая для API и форм) + контракты ответов
+src/lib/auth-errors.ts             Коды ошибок входа → тексты для пользователя
+src/lib/prisma.ts                  Singleton PrismaClient
+src/app/api/auth/[...nextauth]     Обработчик NextAuth (вход, выход, сессия, CSRF)
+src/app/api/auth/register          POST-регистрация: валидация → уникальность email → bcrypt → БД
+src/app/login|register             Страницы входа и регистрации (формы в src/components/auth)
+src/app/dashboard|admin            Кабинет пользователя и админ-панель (ADMIN / TEACHER)
+src/app/meeting|schedule           Каркасы разделов урока и расписания (этап 3)
+src/components/layout/Navbar.tsx   Шапка с профилем, ролью и кнопкой «Выйти» (signOut)
+src/components/layout/app-shell.tsx Каркас внутренних страниц: навбар + контент
+src/components/auth/               AuthShell и формы входа/регистрации
+src/components/ui/                 Поля формы, градиентная кнопка, алерты
+src/components/providers.tsx       SessionProvider для клиентских компонентов
+src/components/landing/            Секции лендинга (шапка, hero, мокап урока, фичи, футер)
+src/lib/utils.ts                   cn(), sanitizeRedirectPath(), код комнаты, инициалы, время
+src/types/index.ts                 Интерфейсы User / Meeting / Schedule / ChatMessage, роли, права
+src/types/next-auth.d.ts           Расширение типов сессии NextAuth полем role
 ```
+
+## Авторизация и роли
+
+| Маршрут                       | Доступ                                  |
+| ----------------------------- | --------------------------------------- |
+| `/`, `/login`, `/register`    | Публично                                |
+| `/dashboard`, `/schedule`, `/meeting` | Любая авторизованная роль      |
+| `/admin`                      | Только `ADMIN` и `TEACHER`              |
+
+- Сессия — подписанный JWT (30 дней); `id` и `role` кладутся в токен в `jwt`-callback
+  и доступны как `session.user.id` / `session.user.role` на сервере и на клиенте.
+- `src/middleware.ts` проверяет cookie до рендера страницы: без сессии — редирект на
+  `/login?callbackUrl=...`, а ученика на `/admin` возвращает в `/dashboard?denied=/admin`.
+- Пароли хешируются bcrypt (10 раундов). Роль `ADMIN` через `POST /api/auth/register`
+  выдать нельзя — только `STUDENT` или `TEACHER` (админа создаёт сид).
+- `POST /api/auth/register` отвечает `201` с созданным пользователем, `409` при занятом
+  email, `422` с ошибками по полям и `500` при недоступной БД.
+
+Демо-аккаунты после `npm run db:seed` (пароль задаётся `SEED_PASSWORD`, по умолчанию
+`schoolmeet`): `admin@schoolmeet.dev`, `teacher@schoolmeet.dev`, `student@schoolmeet.dev`.
+Подсказки с демо-доступами на странице входа включаются флагом
+`NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS=1` (по умолчанию выключены).
 
 ## Модель данных
 
@@ -79,5 +118,5 @@ src/types/next-auth.d.ts       Расширение типов сессии Next
 ## Статус этапов
 
 - ✅ **Этап 1** — фундамент и лендинг.
-- ⏭ Этап 2 — авторизация (NextAuth), роли, кабинет учителя/ученика.
+- ✅ **Этап 2** — авторизация (NextAuth + bcrypt), роли, защита маршрутов, кабинет и админ-панель.
 - ⏭ Этап 3 — видеозвонки (PeerJS/WebRTC), чат на Socket.IO, ИИ-доска (Fabric.js + GPT-4o Vision).

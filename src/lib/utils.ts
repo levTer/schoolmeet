@@ -27,6 +27,26 @@ export function getInitials(name: string): string {
     .join("");
 }
 
+/**
+ * Приводит `callbackUrl` к безопасному внутреннему пути.
+ *
+ * Защищает от open redirect: пропускаем только пути вида `/dashboard`,
+ * отбрасываем протоколы, `//evil.com` и всё, что не начинается со слэша.
+ */
+export function sanitizeRedirectPath(
+  value: string | string[] | null | undefined,
+  fallback = "/dashboard",
+): string {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return fallback;
+
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
+    return fallback;
+  }
+
+  return raw;
+}
+
 /** Форматирует "HH:mm" из Date. */
 export function formatTime(date: Date | string): string {
   const value = typeof date === "string" ? new Date(date) : date;
