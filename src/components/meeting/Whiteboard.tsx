@@ -115,7 +115,7 @@ export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProp
     onFormulaRegion: (payload) => formulaHandlerRef.current(payload),
   });
 
-  /* --------------------- Распознавание формулы (Mock) --------------------- */
+  /* ---------------- Распознавание формулы (Gemini Vision) ----------------- */
 
   const handleFormulaRegion = useCallback(
     async (payload: FormulaRegionPayload) => {

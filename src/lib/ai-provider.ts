@@ -1,662 +1,337 @@
 /**
- * Локальная ИИ-архитектура SchoolMeet (этап 4).
+ * ИИ-движок SchoolMeet (этап 8): контракт, авто-выбор провайдера и
+ * waterfall-фоллбэк.
  *
- * СТРОГОЕ ПРАВИЛО ЭТАПА: внешние нейросети (OpenAI / Gemini / Claude) НЕ
- * подключаются. Единственная реализация `AIProvider` — `MockAIProvider`,
- * который мгновенно отдаёт заготовленные русскоязычные ответы. Внешний
- * провайдер будет добавлен в самом конце проекта и подключится через тот же
- * интерфейс `AIProvider` без изменения UI и API.
+ * АРХИТЕКТУРА «ИИ В РФ БЕЗ VPN»:
+ * Все вызовы внешних нейросетей выполняются ТОЛЬКО на сервере — в роуте
+ * `/api/ai` (Vercel, регион Европа). Сервер выступает прокси-посредником:
+ * браузер учителя в РФ обращается к своему домену школы, а уже Vercel
+ * разговаривает с Groq / Gemini / OpenRouter. API-ключи никогда не попадают
+ * в клиентский бандл.
  *
- * Модуль не зависит ни от Next.js, ни от DOM — его импортируют и серверный
- * роут `/api/ai`, и клиентские компоненты.
+ * ЦЕПОЧКА АВТО-ВЫБОРА (AutoAIProvider):
+ *   • запрос с изображением доски (распознавание формулы)
+ *       → Gemini Vision → OpenRouter Vision → Mock;
+ *   • текстовый запрос (конспект, решение, чертёж, проверка ДЗ)
+ *       → Groq (14 400 запросов/день бесплатно) → OpenRouter :free
+ *       → Gemini Flash → Mock;
+ *   • провайдер без ключа или с ошибкой (лимит, сеть, 5xx) — автоматически
+ *     пропускается, API школы не падает НИКОГДА: последнее звено Mock
+ *     работает полностью локально.
+ *
+ * Принудительный выбор одного провайдера — переменная `AI_PROVIDER`
+ * (`groq` | `gemini` | `openrouter` | `mock` | `auto`, по умолчанию `auto`).
+ *
+ * БЕЗОПАСНОСТЬ: ИИ доступен строго ролям TEACHER и ADMIN — проверку
+ * выполняет `/api/ai` (ученик получает 403 Forbidden), UI-панель для
+ * учеников не рендерится.
+ *
+ * Модуль не зависит от Next.js и DOM: его импортируют серверный роут
+ * `/api/ai`, `src/lib/homework.ts` и клиентские компоненты (типы).
  */
 
 /* -------------------------------------------------------------------------- */
-/* Контракт                                                                    */
+/* Контракт — единая точка экспорта (обратная совместимость импортов)          */
 /* -------------------------------------------------------------------------- */
 
-/** Действия ИИ-помощника учителя. */
-export type AIAction = "summary" | "solve" | "formulas" | "check" | "draw" | "formula";
+export * from "./ai-providers/types";
+export { MockAIProvider } from "./ai-providers/mock";
+export {
+  GroqProvider,
+  GROQ_API_URL,
+  GROQ_DEFAULT_MODEL,
+  GROQ_DEFAULT_REASONING_MODEL,
+} from "./ai-providers/groq";
+export {
+  GeminiProvider,
+  GEMINI_API_BASE,
+  GEMINI_DEFAULT_MODEL,
+  GEMINI_FALLBACK_MODELS,
+} from "./ai-providers/gemini";
+export {
+  OpenRouterProvider,
+  OPENROUTER_API_URL,
+  OPENROUTER_DEFAULT_MODEL,
+  OPENROUTER_DEFAULT_VISION_MODEL,
+} from "./ai-providers/openrouter";
+export { AIProviderError } from "./ai-providers/shared";
 
-export const AI_ACTIONS: readonly AIAction[] = ["summary", "solve", "formulas", "check", "draw", "formula"];
+import { GeminiProvider } from "./ai-providers/gemini";
+import { GroqProvider } from "./ai-providers/groq";
+import { MockAIProvider } from "./ai-providers/mock";
+import { OpenRouterProvider } from "./ai-providers/openrouter";
+import type {
+  AIProvider,
+  AIProviderInfo,
+  AIProviderStatus,
+  AIRequest,
+  AIResponse,
+  HomeworkReviewDraft,
+  HomeworkReviewRequest,
+} from "./ai-providers/types";
 
-export const AI_ACTION_LABELS: Record<AIAction, string> = {
-  summary: "Сделай конспект",
-  solve: "Реши задачу",
-  formulas: "Все формулы по теме",
-  check: "Проверь решение",
-  draw: "Нарисуй чертёж по условию",
-  formula: "Распознать формулу",
-};
+/* -------------------------------------------------------------------------- */
+/* AutoAIProvider — умная цепочка авто-выбора и переключения                   */
+/* -------------------------------------------------------------------------- */
 
-export interface AIRequest {
-  action: AIAction;
-  /** Текстовый запрос учителя (тема, условие, номер задачи…). */
-  prompt: string;
+/** Идентификаторы сетевых провайдеров в порядке регистрации. */
+export type ExternalProviderId = "groq" | "gemini" | "openrouter";
+
+/** Цепочка фоллбэка для текстовых запросов (задача, конспект, чертёж, ДЗ). */
+export const TEXT_CHAIN: readonly ExternalProviderId[] = ["groq", "openrouter", "gemini"];
+/** Цепочка фоллбэка для запросов с изображением доски (Vision). */
+export const VISION_CHAIN: readonly ExternalProviderId[] = ["gemini", "openrouter"];
+
+export interface AutoAIProviderOptions {
+  /** Таблица переменных окружения (по умолчанию `process.env`) — для тестов. */
+  env?: NodeJS.ProcessEnv;
   /**
-   * PNG-фрагмент доски в формате data URL — для действия `formula`
-   * («распознать формулу»). В Mock-режиме изображение не анализируется,
-   * но контракт сохранён для будущего внешнего ИИ.
+   * Готовые экземпляры провайдеров (внедрение зависимостей для тестов).
+   * Отсутствующие будут созданы из `env`, если заданы ключи.
    */
-  imageDataUrl?: string;
-  /** Контекст урока — помогает подобрать тему ответа. */
-  context?: {
-    meetingTitle?: string;
-  };
+  registry?: Partial<Record<ExternalProviderId | "mock", AIProvider>>;
 }
 
-/** Фигуры, которые умеет рисовать `drawing-engine.ts`. */
-export type DrawingShape =
-  | "triangle"
-  | "circle"
-  | "line"
-  | "rect"
-  | "vector"
-  | "graph"
-  | "point"
-  | "text";
-
-/** Базовые поля любой фигуры. */
-interface DrawingBase {
-  shape: DrawingShape;
-  /** Цвет обводки/заливки (CSS-цвет). */
-  color?: string;
-  /** Толщина линии в px. */
-  strokeWidth?: number;
-  /** Подпись рядом с фигурой (например «ABC»). */
-  label?: string;
-}
-
-export interface TriangleInstruction extends DrawingBase {
-  shape: "triangle";
-  /** Три точки в координатах «инструкции»: [x, y]. */
-  points: [number, number][];
-}
-
-export interface CircleInstruction extends DrawingBase {
-  shape: "circle";
-  center: [number, number];
-  radius: number;
-}
-
-export interface LineInstruction extends DrawingBase {
-  shape: "line";
-  from: [number, number];
-  to: [number, number];
-}
-
-export interface RectInstruction extends DrawingBase {
-  shape: "rect";
-  topLeft: [number, number];
-  width: number;
-  height: number;
-}
-
-export interface VectorInstruction extends DrawingBase {
-  shape: "vector";
-  from: [number, number];
-  to: [number, number];
-}
-
-export interface GraphInstruction extends DrawingBase {
-  shape: "graph";
-  /** Какую функцию построить. */
-  fn: "parabola" | "sine" | "linear" | "cubic";
-  /** Область определения, например [-5, 5]. */
-  domain: [number, number];
-  /** Начало координат графика в координатах «инструкции». */
-  origin: [number, number];
-  /** Масштаб: сколько пикселей в одной единице. */
-  scale: number;
-}
-
-export interface PointInstruction extends DrawingBase {
-  shape: "point";
-  at: [number, number];
-}
-
-export interface TextInstruction extends DrawingBase {
-  shape: "text";
-  at: [number, number];
-  text: string;
-  fontSize?: number;
-}
-
-export type DrawingInstruction =
-  | TriangleInstruction
-  | CircleInstruction
-  | LineInstruction
-  | RectInstruction
-  | VectorInstruction
-  | GraphInstruction
-  | PointInstruction
-  | TextInstruction;
-
-export interface AIResponse {
-  /** Ответ в Markdown (конспект, решение, список формул…). */
-  text: string;
-  /** LaTeX-формула — заполняется для действия `formula`. */
-  latex?: string;
-  /** JSON-инструкции для автоматического черчения (действие `draw`). */
-  drawing?: DrawingInstruction[];
-}
-
-export interface AIProviderInfo {
-  /** Стабильный идентификатор провайдера: `mock`, позже `openai`… */
-  id: string;
-  /** Человекочитаемое имя для UI. */
-  name: string;
-  /** `true` — всё работает локально, без внешних вызовов. */
-  isLocal: boolean;
-}
-
-/** Данные для черновика проверки домашнего задания. */
-export interface HomeworkReviewRequest {
-  /** Условие задания (Markdown). Передаётся для контекста проверки. */
-  description: string;
-  /** Текст ответа ученика. */
-  answer: string;
-  /** Максимальный балл за работу. */
-  maxScore: number;
-  /** Сколько файлов приложено к ответу. */
-  attachmentCount: number;
-  /** Сдано ли после дедлайна. */
-  isLate: boolean;
+interface ResolvedRegistry {
+  groq?: AIProvider;
+  gemini?: AIProvider;
+  openrouter?: AIProvider;
+  mock: AIProvider;
 }
 
 /**
- * Черновик проверки. ВАЖНО: это только предложение для учителя.
- * Оценка и комментарий становятся видны ученику лишь после утверждения учителем.
+ * Провайдер-оркестратор: на каждый запрос строит цепочку кандидатов
+ * (Vision — если приложено изображение доски, иначе текстовую) и передаёт
+ * запрос первому доступному. Ошибка любого звена — переключение на следующее.
+ * Цепочка всегда заканчивается локальным Mock, поэтому `complete()` и
+ * `reviewHomework()` не бросают исключений при живом модуле.
  */
-export interface HomeworkReviewDraft {
-  suggestedGrade: number;
-  draftComment: string;
-}
-
-export interface AIProvider extends AIProviderInfo {
-  complete(request: AIRequest): Promise<AIResponse>;
-  /** Черновик проверки ДЗ (только для учителя). */
-  reviewHomework(request: HomeworkReviewRequest): Promise<HomeworkReviewDraft>;
-}
-
-export function isAIAction(value: unknown): value is AIAction {
-  return typeof value === "string" && (AI_ACTIONS as readonly string[]).includes(value);
-}
-
-/* -------------------------------------------------------------------------- */
-/* MockAIProvider — единственная реализация на этапе 4                         */
-/* -------------------------------------------------------------------------- */
-
-/** Темы, на которые у MockAIProvider есть заготовленные материалы. */
-type Topic = "algebra" | "geometry" | "physics" | "general";
-
-function detectTopic(prompt: string, meetingTitle = ""): Topic {
-  const text = `${prompt} ${meetingTitle}`.toLowerCase();
-  if (/(геометр|треуголь|круг|окружн|угол|параллел|прямоуг|диагонал|площад|объём|вектор)/.test(text)) return "geometry";
-  if (/(физик|скорост|ускорен|сил[аыуе]|энерг|закон ньютона|мощност|давлен|работ[аы])/ .test(text)) return "physics";
-  if (/(алгебр|уравнен|функци|квадрат|корн|степен|логарифм|производн|ряд|график|многочлен|дроб)/.test(text)) return "algebra";
-  return "general";
-}
-
-const SUMMARY_TEMPLATES: Record<Topic, string> = {
-  algebra: `## Конспект: алгебраические выражения и уравнения
-
-### 1. Основные понятия
-- **Числовое выражение** — комбинация чисел и операций над ними.
-- **Переменная** — буква, обозначающая любое число из некоторого множества.
-- **Уравнение** — равенство с переменной; **корень уравнения** — значение переменной, при котором оно верно.
-
-### 2. Ключевые свойства
-- Перемещение слагаемых не меняет сумму: *a + b = b + a*.
-- Раскрытие скобок: *a(b + c) = ab + ac*.
-- Формула квадратного уравнения \\(ax^2 + bx + c = 0\\):
-
-> **x = (−b ± √(b² − 4ac)) / 2a**, где D = b² − 4ac.
-
-### 3. Порядок решения задачи
-1. Ввести обозначения.
-2. Составить уравнение по условию.
-3. Решить уравнение.
-4. Проверить корни и сделать вывод.
-
-### 4. Типичные ошибки
-- Потеря корня при делении на выражение с переменной.
-- Неверное раскрытие скобок со знаком «минус».
-- Ответ не проверен подстановкой.`,
-  geometry: `## Конспект: геометрия на плоскости
-
-### 1. Основные понятия
-- **Точка, прямая, отрезок, луч** — основные объекты плоскости.
-- **Угол** — две стороны с общей вершиной; градусная мера — от 0° до 180°.
-- **Треугольник** — три точки, не лежащие на одной прямой, и соединяющие их отрезки.
-
-### 2. Ключевые факты
-- Сумма углов треугольника равна **180°**.
-- Теорема Пифагора (прямоугольный треугольник): **a² + b² = c²**.
-- Площадь треугольника: **S = ½ · a · h**; площадь круга: **S = πR²**.
-- Длина окружности: **C = 2πR**.
-
-### 3. Порядок решения задачи
-1. Сделать чертёж и обозначить данные.
-2. Выбрать признак/теорему (равенство, подобие, Пифагор…).
-3. Записать вычисления.
-4. Указать единицы измерения и сделать вывод.
-
-### 4. Типичные ошибки
-- Чертёж не соответствует условию.
-- Применение теоремы вне её условий (например, теоремы Пифагора вне прямоугольного треугольника).
-- Ответ дан без единиц измерения.`,
-  physics: `## Конспект: механика — движение и силы
-
-### 1. Основные понятия
-- **Путь** (м) и **перемещение** (м) — разные величины: путь — длина траектории.
-- **Скорость** (м/с): v = s / t; при равноускоренном движении **v = v₀ + at**.
-- **Сила** (Н): F = ma — второй закон Ньютона.
-
-### 2. Ключевые формулы
-- Равномерное движение: **s = v · t**.
-- Равноускоренное движение: **s = v₀t + at²/2**.
-- Импульс: **p = mv**; работа силы: **A = F · s · cos α**.
-- Кинетическая энергия: **E = mv²/2**.
-
-### 3. Порядок решения задачи
-1. Перевести все величины в СИ (м, кг, с).
-2. Нарисовать чертёж и указать силы (векторы).
-3. Применить закон/формулу.
-4. Проверить размерность и записать ответ.
-
-### 4. Типичные ошибки
-- Смешение средней и мгновенной скорости.
-- Забытый знак проекции силы.
-- Ответ без единиц измерения.`,
-  general: `## Конспект урока
-
-### 1. Основные понятия
-- Запишите определения главных терминов урока своими словами.
-- Выделите связи между понятиями: *причина → следствие*, *часть → целое*.
-
-### 2. Ключевые формулы и правила
-- Сформулируйте 2–3 главные формулы темы.
-- Запишите условия, при которых они верны.
-
-### 3. Порядок решения типовой задачи
-1. Разобрать условие и выделить данные.
-2. Выбрать формулу или метод.
-3. Выполнить вычисления.
-4. Проверить ответ и сформулировать вывод.
-
-### 4. Типичные ошибки
-- Условие прочитано не полностью.
-- Формула применена вне области применимости.
-- Нет проверки результата.
-
-*Подсказка: напишите тему урока в запросе — конспект станет точнее.*`,
-};
-
-const SOLUTION_TEMPLATES: Record<Topic, string> = {
-  algebra: `## Решение задачи (алгебра)
-
-**Дано:** квадратное уравнение x² − 5x + 6 = 0.
-
-**Решение:**
-1. Коэффициенты: a = 1, b = −5, c = 6.
-2. Дискриминант: D = b² − 4ac = 25 − 24 = 1.
-3. Корни: x₁ = (5 − 1)/2 = 2; x₂ = (5 + 1)/2 = 3.
-4. Проверка: 2² − 5·2 + 6 = 0 ✓; 3² − 5·3 + 6 = 0 ✓.
-
-**Ответ:** x₁ = 2, x₂ = 3.
-
-*Пришлите условие своей задачи — разберу его по тем же шагам.*`,
-  geometry: `## Решение задачи (геометрия)
-
-**Дано:** прямоугольный треугольник, катеты a = 3 см, b = 4 см. Найти гипотенузу c.
-
-**Решение:**
-1. По теореме Пифагора: c² = a² + b².
-2. c² = 9 + 16 = 25.
-3. c = √25 = 5 см.
-4. Проверка: 3² + 4² = 5² ✓.
-
-**Ответ:** c = 5 см.
-
-*Пришлите условие своей задачи — построю чертёж и разберу решение.*`,
-  physics: `## Решение задачи (физика)
-
-**Дано:** тело движется равномерно, v = 5 м/с, t = 4 с. Найти путь s.
-
-**Решение:**
-1. Переводим в СИ — величины уже в СИ.
-2. Формула равномерного движения: s = v · t.
-3. s = 5 · 4 = 20 м.
-4. Проверка размерности: [м/с] · [с] = [м] ✓.
-
-**Ответ:** s = 20 м.
-
-*Пришлите условие — разберу его и нарисую схему сил.*`,
-  general: `## Решение задачи
-
-**Шаг 1.** Выпишите условие и что нужно найти.
-**Шаг 2.** Обозначьте данные буквами.
-**Шаг 3.** Выберите формулу или метод (пришлите тему — подскажу).
-**Шаг 4.** Выполните вычисления и проверьте ответ.
-
-*Опишите задачу подробнее — дам конкретное решение с проверкой.*`,
-};
-
-const FORMULA_TEMPLATES: Record<Topic, string> = {
-  algebra: `## Формулы по теме «Алгебра»
-
-| Формула | Название |
-| --- | --- |
-| \\(x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\\) | Корни квадратного уравнения |
-| \\((a \\pm b)^2 = a^2 \\pm 2ab + b^2\\) | Квадрат суммы и разности |
-| \\(a^2 - b^2 = (a-b)(a+b)\\) | Разность квадратов |
-| \\(a^3 \\pm b^3 = (a \\pm b)(a^2 \\mp ab + b^2)\\) | Сумма и разность кубов |
-| \\(\\log_a (xy) = \\log_a x + \\log_a y\\) | Логарифм произведения |
-
-### Сокращённое умножение — шпаргалка
-1. (a + b)² = a² + 2ab + b²
-2. (a − b)² = a² − 2ab + b²
-3. a² − b² = (a − b)(a + b)`,
-  geometry: `## Формулы по теме «Геометрия»
-
-| Формула | Название |
-| --- | --- |
-| \\(a^2 + b^2 = c^2\\) | Теорема Пифагора |
-| \\(S = \\frac{1}{2} a h\\) | Площадь треугольника |
-| \\(S = \\pi R^2\\), \\(C = 2\\pi R\\) | Круг и окружность |
-| \\(S = a b\\) | Площадь прямоугольника |
-| \\(V = a b h\\) | Объём параллелепипеда |
-
-### Углы
-1. Сумма углов треугольника — 180°.
-2. Смежные углы в сумме дают 180°.
-3. Вертикальные углы равны.`,
-  physics: `## Формулы по теме «Физика»
-
-| Формула | Название |
-| --- | --- |
-| \\(v = s / t\\) | Скорость при равномерном движении |
-| \\(v = v_0 + a t\\) | Скорость при равноускоренном движении |
-| \\(s = v_0 t + \\frac{a t^2}{2}\\) | Путь при равноускоренном движении |
-| \\(F = m a\\) | Второй закон Ньютона |
-| \\(E = \\frac{m v^2}{2}\\) | Кинетическая энергия |
-
-### Единицы СИ
-1. Длина — метр (м).
-2. Масса — килограмм (кг).
-3. Время — секунда (с).`,
-  general: `## Формулы по теме урока
-
-Пришлите название темы (например «квадратные уравнения» или «теорема Пифагора») — и я соберу полный список формул с пояснениями.
-
-### Как пользоваться шпаргалкой
-1. Найдите нужную формулу в таблице.
-2. Проверьте условия применения.
-3. Подставьте данные в СИ.
-4. Вычислите и проверьте размерность.`,
-};
-
-const CHECK_TEMPLATE = `## Проверка решения — чек-лист учителя
-
-1. **Условие прочитано полностью?** Все ли данные выписаны, ничего ли не выдумано.
-2. **Обозначения корректны?** Единицы измерения переведены в СИ (м, кг, с, Н…).
-3. **Формула подходит?** Проверьте условия применимости (например, теорема Пифагора — только для прямоугольного треугольника).
-4. **Вычисления без арифметических ошибок?** Пересчитайте ключевой шаг в уме или на калькуляторе.
-5. **Ответ имеет смысл?** Оцените порядок величины: путь не может быть отрицательным, скорость — больше нуля.
-6. **Размерность сходится?** Подставьте единицы в формулу и упростите.
-7. **Вывод записан?** Ответ содержит число, единицу измерения и краткий вывод.
-
-### Что прислать помощнику
-- Полное условие задачи.
-- Своё решение по шагам.
-- Место, где возникло сомнение.`;
-
-const DRAW_TEMPLATES: Record<Topic, { text: string; drawing: DrawingInstruction[] }> = {
-  geometry: {
-    text: `## Чертёж по условию
-
-Построил типовой чертёж: прямоугольный треугольник **ABC** (катеты AB и BC, гипотенузу AC обозначил вектором высоты) и вспомогательную окружность с центром в точке **O**.
-
-**Обозначения на чертеже:**
-1. Треугольник ABC — исходная фигура.
-2. Вектор — направление (например, скорость или сила).
-3. Окружность — вспомогательное построение.
-
-*Напишите конкретное условие — построю чертёж с вашими данными (стороны, углы, точки).*`,
-    drawing: [
-      { shape: "triangle", points: [[220, 420], [520, 420], [220, 180]], color: "#2563eb", strokeWidth: 4, label: "A" },
-      { shape: "point", at: [220, 420], color: "#111827", label: "A" },
-      { shape: "point", at: [520, 420], color: "#111827", label: "B" },
-      { shape: "point", at: [220, 180], color: "#111827", label: "C" },
-      { shape: "vector", from: [220, 180], to: [520, 420], color: "#dc2626", strokeWidth: 3, label: "F" },
-      { shape: "circle", center: [620, 200], radius: 110, color: "#7c3aed", strokeWidth: 3, label: "O" },
-    ],
-  },
-  algebra: {
-    text: `## График функции
-
-Построил координатную плоскость и график параболы **y = x²** с подписью вершины.
-
-**Как читать чертёж:**
-1. Горизонтальная ось — x, вертикальная — y.
-2. Вершина параболы — точка (0, 0).
-3. Ветви направлены вверх (коэффициент при x² положительный).
-
-*Опишите функцию из задачи — построю именно её график.*`,
-    drawing: [
-      { shape: "line", from: [120, 420], to: [880, 420], color: "#374151", strokeWidth: 3, label: "x" },
-      { shape: "line", from: [500, 120], to: [500, 520], color: "#374151", strokeWidth: 3, label: "y" },
-      { shape: "graph", fn: "parabola", domain: [-4, 4], origin: [500, 420], scale: 70, color: "#059669", strokeWidth: 4, label: "y = x²" },
-    ],
-  },
-  physics: {
-    text: `## Схема задачи
-
-Нарисовал схему: тело (точка) с вектором скорости **v** и вектором силы **F**, а также путь движения.
-
-**Обозначения:**
-1. Стрелка **v** — направление скорости.
-2. Стрелка **F** — приложенная сила.
-3. Длина стрелки — относительная величина.
-
-*Опишите условие физической задачи — уточню углы и величины.*`,
-    drawing: [
-      { shape: "point", at: [220, 300], color: "#111827", label: "m" },
-      { shape: "vector", from: [220, 300], to: [620, 300], color: "#2563eb", strokeWidth: 5, label: "v" },
-      { shape: "vector", from: [220, 300], to: [380, 160], color: "#dc2626", strokeWidth: 5, label: "F" },
-      { shape: "line", from: [120, 420], to: [880, 420], color: "#6b7280", strokeWidth: 3 },
-    ],
-  },
-  general: {
-    text: `## Универсальный чертёж
-
-Построил базовую фигуру с подписями — так начинается любой чертёж по условию.
-
-1. Точка — начало отсчёта.
-2. Окружность — геометрическое место точек.
-3. Вектор — направление и величина.
-
-*Уточните условие (геометрия, физика, график функции) — построю точный чертёж.*`,
-    drawing: [
-      { shape: "circle", center: [400, 300], radius: 130, color: "#2563eb", strokeWidth: 4, label: "O" },
-      { shape: "vector", from: [400, 300], to: [700, 180], color: "#d97706", strokeWidth: 4, label: "a" },
-      { shape: "point", at: [400, 300], color: "#111827", label: "O" },
-    ],
-  },
-};
-
-/**
- * Формулы для «распознавания» (Mock): набор красивых LaTeX-формул,
- * которые по очереди «распознаются» с доски. Подбор по ключевым словам
- * запроса делает ответ чуть более осмысленным.
- */
-const LATEX_FORMULAS: Record<Topic, string[]> = {
-  algebra: [
-    "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}",
-    "D = b^2 - 4ac",
-    "(a + b)^2 = a^2 + 2ab + b^2",
-    "a^2 - b^2 = (a - b)(a + b)",
-  ],
-  geometry: [
-    "a^2 + b^2 = c^2",
-    "S = \\frac{1}{2} a h",
-    "S = \\pi R^2",
-    "C = 2\\pi R",
-  ],
-  physics: [
-    "v = v_0 + a t",
-    "s = v_0 t + \\frac{a t^2}{2}",
-    "F = m a",
-    "E = \\frac{m v^2}{2}",
-  ],
-  general: [
-    "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}",
-    "a^2 + b^2 = c^2",
-    "v = \\frac{s}{t}",
-    "S = \\pi R^2",
-  ],
-};
-
-const FORMULA_HINT = `### Формула распознана
-
-Рукописный фрагмент заменён печатной формулой. Нажмите **«Распознать формулу»** ещё раз и выделите следующий фрагмент — так можно оцифровать всю доску.
-
-*Mock-режим: изображение не отправляется наружу, формула подбирается локально из набора школьных формул. В финальном этапе здесь появится настоящее распознавание.*`;
-
-/**
- * Локальный мок-провайдер ИИ.
- *
- * Содержит заготовленные русскоязычные ответы: конспекты, решения, формулы,
- * чек-листы проверки и JSON-инструкции для автоматического черчения.
- * Работает мгновенно и детерминированно, сеть не используется.
- */
-export class MockAIProvider implements AIProvider {
-  readonly id = "mock";
-  readonly name = "MockAI (локальный режим)";
-  readonly isLocal = true;
-
-  /** Счётчик для чередования формул при «распознавании». */
-  private formulaCursor = 0;
+export class AutoAIProvider implements AIProvider {
+  readonly id = "auto";
+  readonly name: string;
+
+  private readonly env: NodeJS.ProcessEnv;
+  private readonly registry: ResolvedRegistry;
+  private readonly forced: ExternalProviderId | "mock" | null;
+
+  constructor(options: AutoAIProviderOptions = {}) {
+    this.env = options.env ?? process.env;
+
+    const forcedRaw = (this.env.AI_PROVIDER ?? "auto").trim().toLowerCase();
+    this.forced =
+      forcedRaw === "groq" || forcedRaw === "gemini" || forcedRaw === "openrouter" || forcedRaw === "mock"
+        ? forcedRaw
+        : null;
+
+    this.registry = {
+      groq: options.registry?.groq ?? this.tryCreate("groq"),
+      gemini: options.registry?.gemini ?? this.tryCreate("gemini"),
+      openrouter: options.registry?.openrouter ?? this.tryCreate("openrouter"),
+      mock: options.registry?.mock ?? new MockAIProvider(),
+    };
+
+    this.name = this.buildName();
+  }
+
+  /**
+   * `true`, когда внешних ключей нет (или выбран `mock`) и все ответы
+   * готовятся локально — UI показывает «локальный режим».
+   */
+  get isLocal(): boolean {
+    if (this.forced === "mock") return true;
+    // Принудительный внешний провайдер без ключа → фактически работает Mock.
+    if (this.forced) return !this.registry[this.forced];
+    return !this.registry.groq && !this.registry.gemini && !this.registry.openrouter;
+  }
 
   async complete(request: AIRequest): Promise<AIResponse> {
-    // Небольшая задержка имитирует работу модели и даёт UI показать спиннер.
-    await delay(350);
-
-    const topic = detectTopic(request.prompt, request.context?.meetingTitle);
-    const prompt = request.prompt.trim();
-    const title = request.context?.meetingTitle ? ` по уроку «${request.context.meetingTitle}»` : "";
-
-    switch (request.action) {
-      case "summary":
-        return { text: SUMMARY_TEMPLATES[topic] };
-
-      case "solve":
-        return { text: SOLUTION_TEMPLATES[topic] };
-
-      case "formulas":
-        return { text: FORMULA_TEMPLATES[topic] };
-
-      case "check":
-        return { text: CHECK_TEMPLATE };
-
-      case "draw": {
-        const template = DRAW_TEMPLATES[topic];
-        return {
-          text: prompt ? `${template.text}\n\n**Условие:** ${escapeMarkdown(prompt)}${title}.` : template.text,
-          drawing: template.drawing,
-        };
-      }
-
-      case "formula": {
-        const formulas = LATEX_FORMULAS[topic];
-        const latex = formulas[this.formulaCursor % formulas.length];
-        this.formulaCursor += 1;
-        return {
-          text: `**Распознанная формула${title}:**\n\n\`\`\`latex\n${latex}\n\`\`\`\n\n${FORMULA_HINT}`,
-          latex,
-        };
-      }
-
-      default:
-        return { text: SUMMARY_TEMPLATES.general };
-    }
+    const chain = this.chainFor(request);
+    return this.runChain(chain, (provider) => provider.complete(request), "complete");
   }
 
-  /**
-   * Детерминированный черновик проверки: объём ответа, наличие выкладок и
-   * файлов, опоздание. Один и тот же ответ всегда получает одну и ту же оценку.
-   */
   async reviewHomework(request: HomeworkReviewRequest): Promise<HomeworkReviewDraft> {
-    await delay(600);
-
-    const answer = request.answer.trim();
-    const words = answer === "" ? 0 : answer.split(/\s+/).length;
-    const hasFormulas = /[=+\-*/^]|\\frac|\\sqrt|\$/.test(answer);
-    const hasFiles = request.attachmentCount > 0;
-
-    if (words === 0 && !hasFiles) {
-      return {
-        suggestedGrade: 1,
-        draftComment:
-          "Ответ не содержит текста и файлов. Проверить работу по существу невозможно — свяжитесь с учеником.",
-      };
-    }
-
-    const volumeScore = Math.min(1, words / 80);
-    const score = 0.5 * volumeScore + (hasFormulas ? 0.25 : 0) + (hasFiles ? 0.25 : 0);
-    const suggestedGrade = clamp(Math.round(1 + score * (request.maxScore - 1)), 1, request.maxScore);
-
-    const comments: string[] = [];
-    if (words < 20 && !hasFiles) {
-      comments.push("Ответ краткий: стоит подробнее расписать ход решения.");
-    }
-    if (hasFormulas) {
-      comments.push("В ответе есть выкладки: проверьте знаки, единицы измерения и итоговый вывод.");
-    } else if (words >= 20) {
-      comments.push("Промежуточные шаги не видны — добавьте их, чтобы оценить ход рассуждений.");
-    }
-    if (hasFiles) {
-      comments.push(`Приложено файлов: ${request.attachmentCount}. Откройте их и сверьте с ответом.`);
-    }
-    if (request.isLate) {
-      comments.push("Работа сдана после дедлайна.");
-    }
-    comments.push("Это черновик ИИ: проверьте текст, при необходимости исправьте и утвердите оценку.");
-
-    return { suggestedGrade, draftComment: comments.join(" ") };
+    // Проверка ДЗ — всегда текстовый запрос.
+    const chain = this.chainFor({ action: "check", prompt: "" });
+    return this.runChain(chain, (provider) => provider.reviewHomework(request), "reviewHomework");
   }
-}
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
+  /** Диагностика для GET /api/ai: какие провайдеры подключены и в каком порядке. */
+  getStatuses(): AIProviderStatus[] {
+    const describe = (
+      id: ExternalProviderId | "mock",
+      provider: AIProvider | undefined,
+      model: string,
+      textPriority: number | null,
+      visionPriority: number | null,
+      reason?: string,
+    ): AIProviderStatus => ({
+      id,
+      name: provider?.name ?? id,
+      model,
+      available: Boolean(provider),
+      reason: provider ? undefined : reason ?? "API-ключ не задан",
+      textPriority,
+      visionPriority,
+    });
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+    const textIndex = (id: ExternalProviderId): number | null =>
+      this.forced === id ? 0 : this.forced ? null : TEXT_CHAIN.indexOf(id) >= 0 ? TEXT_CHAIN.indexOf(id) : null;
+    const visionIndex = (id: ExternalProviderId): number | null =>
+      this.forced === id ? 0 : this.forced ? null : VISION_CHAIN.indexOf(id) >= 0 ? VISION_CHAIN.indexOf(id) : null;
 
-function escapeMarkdown(text: string): string {
-  return text.replace(/([*_`[\]])/g, "\\$1");
+    return [
+      describe("groq", this.registry.groq, this.modelOf("groq"), textIndex("groq"), visionIndex("groq"),
+        this.registry.groq ? undefined : "нет GROQ_API_KEY (console.groq.com — 14 400 запросов/день бесплатно)"),
+      describe("gemini", this.registry.gemini, this.modelOf("gemini"), textIndex("gemini"), visionIndex("gemini"),
+        this.registry.gemini ? undefined : "нет GEMINI_API_KEY (aistudio.google.com — бесплатно, без карты)"),
+      describe("openrouter", this.registry.openrouter, this.modelOf("openrouter"), textIndex("openrouter"), visionIndex("openrouter"),
+        this.registry.openrouter ? undefined : "нет OPENROUTER_API_KEY (openrouter.ai — :free модели)"),
+      {
+        id: "mock",
+        name: "MockAI (локальный режим)",
+        model: "локальные шаблоны",
+        available: true,
+        textPriority: TEXT_CHAIN.length,
+        visionPriority: VISION_CHAIN.length,
+      },
+    ];
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Внутренняя механика                                                       */
+  /* ------------------------------------------------------------------------ */
+
+  /** Цепочка провайдеров под конкретный запрос (всегда заканчивается Mock). */
+  private chainFor(request: AIRequest): AIProvider[] {
+    if (this.forced === "mock") return [this.registry.mock];
+
+    // После ветки выше `forced` — внешний провайдер или null.
+    const ids: readonly ExternalProviderId[] = this.forced
+      ? [this.forced]
+      : request.imageDataUrl
+        ? VISION_CHAIN
+        : TEXT_CHAIN;
+
+    const chain = ids
+      .map((id) => this.registry[id])
+      .filter((provider): provider is AIProvider => Boolean(provider));
+
+    // Mock — гарантированный последний рубеж (без него цепочка могла бы опустеть).
+    chain.push(this.registry.mock);
+    return chain;
+  }
+
+  private async runChain<T>(
+    chain: AIProvider[],
+    invoke: (provider: AIProvider) => Promise<T>,
+    operation: string,
+  ): Promise<T> {
+    let lastError: unknown = null;
+
+    for (const provider of chain) {
+      try {
+        const result = await invoke(provider);
+        this.logSuccess(provider, operation);
+        return result;
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[ai-auto] ${operation}: провайдер "${provider.id}" не ответил (${message}) — переключение`);
+      }
+    }
+
+    // Недостижимо при живой цепочке (Mock не бросает исключений), но контракт
+    // требует возврата — сообщаем о последней ошибке.
+    throw lastError ?? new Error("ИИ-движок: цепочка провайдеров пуста");
+  }
+
+  private logSuccess(provider: AIProvider, operation: string): void {
+    if (!provider.isLocal) {
+      console.info(`[ai-auto] ${operation}: ответил "${provider.id}"`);
+    }
+  }
+
+  private tryCreate(id: ExternalProviderId): AIProvider | undefined {
+    try {
+      // Общий таймаут внешнего вызова (AI_TIMEOUT_MS), если задан.
+      const timeoutRaw = Number(this.env.AI_TIMEOUT_MS);
+      const timeoutMs = Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : undefined;
+
+      switch (id) {
+        case "groq":
+          return GroqProvider.isAvailable(this.env)
+            ? new GroqProvider({ apiKey: this.env.GROQ_API_KEY, timeoutMs })
+            : undefined;
+        case "gemini":
+          return GeminiProvider.isAvailable(this.env)
+            ? new GeminiProvider({ apiKey: this.env.GEMINI_API_KEY ?? this.env.GOOGLE_API_KEY, timeoutMs })
+            : undefined;
+        case "openrouter":
+          return OpenRouterProvider.isAvailable(this.env)
+            ? new OpenRouterProvider({ apiKey: this.env.OPENROUTER_API_KEY, timeoutMs })
+            : undefined;
+      }
+    } catch (error) {
+      console.warn(`[ai-auto] провайдер "${id}" не инициализирован:`, error instanceof Error ? error.message : error);
+      return undefined;
+    }
+  }
+
+  private modelOf(id: ExternalProviderId): string {
+    const provider = this.registry[id];
+    if (!provider) return "—";
+    if (provider instanceof GroqProvider) return `${provider.model} / ${provider.reasoningModel}`;
+    if (provider instanceof GeminiProvider) return provider.model;
+    if (provider instanceof OpenRouterProvider) return `${provider.model} / vision: ${provider.visionModel}`;
+    return "—";
+  }
+
+  private buildName(): string {
+    if (this.forced === "mock") return "MockAI (локальный режим)";
+    if (this.forced) {
+      const provider = this.registry[this.forced];
+      return provider ? `${provider.name} (принудительно)` : `${this.forced} (недоступен — резерв Mock)`;
+    }
+    const active = [this.registry.groq, this.registry.gemini, this.registry.openrouter].filter(Boolean);
+    if (active.length === 0) return "MockAI (локальный режим)";
+    const names = active.map((provider) => provider?.name.replace(/ \(.*\)$/, "")).join(" + ");
+    return `AutoAI: ${names}`;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
 /* Провайдер по умолчанию                                                      */
 /* -------------------------------------------------------------------------- */
 
-let provider: AIProvider = new MockAIProvider();
+let provider: AIProvider | null = null;
 
 /**
- * Текущий провайдер ИИ. На этапе 4 — всегда `MockAIProvider`.
- * В финальном этапе здесь появится выбор внешнего провайдера.
+ * Текущий провайдер ИИ: `AutoAIProvider` (waterfall Groq → OpenRouter →
+ * Gemini → Mock; для изображений — Gemini Vision → OpenRouter Vision → Mock).
+ * Создаётся лениво при первом обращении, чтобы окружение успело загрузиться.
  */
 export function getAIProvider(): AIProvider {
+  if (!provider) provider = new AutoAIProvider();
   return provider;
 }
 
-/** Замена провайдера (для будущего внешнего ИИ и для тестов). */
-export function setAIProvider(next: AIProvider): void {
+/** Замена провайдера (для тестов и нестандартных конфигураций). */
+export function setAIProvider(next: AIProvider | null): void {
   provider = next;
+}
+
+/** Диагностика подключённых провайдеров (для GET /api/ai и админ-отладки). */
+export function getAIProvidersStatus(): { provider: AIProviderInfo; statuses: AIProviderStatus[] } {
+  const current = getAIProvider();
+  const statuses = current instanceof AutoAIProvider ? current.getStatuses() : [];
+  return {
+    provider: {
+      id: current.id,
+      name: current.name,
+      isLocal: current.isLocal,
+    },
+    statuses,
+  };
 }
 
 /* -------------------------------------------------------------------------- */

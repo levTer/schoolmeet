@@ -1,17 +1,34 @@
 # schoolmeet
 
-**SchoolMeet** — платная школьная платформа видеозвонков и уроков с ИИ-доской и расписанием
-(аналог Zoom, адаптированный под школу).
+**SchoolMeet** — школьная платформа видеозвонков и уроков с ИИ-доской и расписанием
+(аналог Zoom, адаптированный под школу). **Проект завершён: этапы 1–8 в main.**
+
+🚀 **Этап 8 (финал)** — 100% бесплатный ИИ-движок и деплой:
+- **Groq Cloud** (Llama 3.3 70B + DeepSeek R1 Distill, 14 400 запросов/день бесплатно) — конспекты,
+  решения задач, формулы, JSON-чертежи, черновики проверки ДЗ;
+- **Google Gemini Flash** (Vision, 1 500 запросов/день бесплатно, ключ без карты) — распознавание
+  рукописных формул с изображения доски;
+- **OpenRouter** (`:free` модели) — резервное звено; **MockAIProvider** — локальный гарант
+  работоспособности без единого ключа;
+- **AutoAIProvider** — waterfall-цепочка авто-выбора и переключения: изображение → Gemini Vision,
+  текст → Groq, сбой/нет ключа → следующий провайдер без падения API;
+- **ИИ в РФ без VPN**: все вызовы нейросетей выполняет сервер (`/api/ai` на Vercel, Европа) —
+  прокси-посредник; ключи никогда не покидают сервер;
+- **WebRTC STUN/TURN**: пул публичных STUN Google + кастомные TURN через `NEXT_PUBLIC_TURN_SERVERS`
+  для школьных Wi-Fi с фаерволами;
+- **vercel.json** и пошаговое руководство бесплатного деплоя **[DEPLOYMENT.md](DEPLOYMENT.md)**
+  (Neon/Supabase → ключи Groq/Gemini → Vercel → prisma db push/seed → PWA/APK).
+
+Этап 7 — дашборд, мобильная адаптация и PWA («Добавить на главный экран»).
 
 Этап 5 — расписание для 5–11 классов (День/Неделя, статусы уроков, красная линия текущего времени,
 проверка пересечений), домашние задания с дедлайнами (🟢 >24ч · 🟡 <24ч · 🔴 <1ч · ⚫ просрочено),
 загрузка файлов (drag-drop, автосохранение черновика каждые 10 с) и проверка учителем с черновиком ИИ.
 
-Этап 4 — интерактивная доска и ИИ-архитектура: Fabric.js-доска (карандаш, фигуры, стрелки,
+Этап 4 — интерактивная доска: Fabric.js-доска (карандаш, фигуры, стрелки,
 текст, стикеры, ластик, лассо, Undo/Redo, страницы, экспорт PNG) с realtime-синхронизацией
 через Socket.IO и курсорами участников; голосовой ввод через нативный Web Speech API;
-ИИ-помощник учителя на **локальном MockAIProvider** (без внешних нейросетей) с черчением
-по JSON-инструкциям и «распознаванием» формул в LaTeX.
+ИИ-помощник учителя с черчением по JSON-инструкциям и распознаванием формул в LaTeX.
 
 ## Стек
 
@@ -19,11 +36,13 @@
 | ----------- | ------------------------------------------------------- |
 | Фронтенд    | Next.js 14 (App Router), TypeScript, Tailwind CSS, ESLint |
 | Состояние   | Zustand                                                  |
-| Реальное время | Socket.IO (сервер + клиент), нативный WebRTC (`RTCPeerConnection`) |
-| Доска       | Fabric.js + GPT-4o Vision (OpenAI SDK)                   |
-| БД / ORM    | PostgreSQL + Prisma                                      |
+| Реальное время | Socket.IO (сервер + клиент), нативный WebRTC (`RTCPeerConnection`), STUN Google + TURN |
+| Доска       | Fabric.js + JSON-чертежи от ИИ                            |
+| ИИ-движок   | Groq (Llama 3.3 70B / DeepSeek R1) + Gemini Flash Vision + OpenRouter `:free` + локальный Mock; авто-фоллбэк, нативный `fetch` (без SDK) |
+| БД / ORM    | PostgreSQL + Prisma (Neon / Supabase бесплатно)           |
 | Авторизация | NextAuth.js, bcryptjs                                    |
 | Шифрование  | crypto-js (AES-256-CBC + HMAC-SHA256 для чата)           |
+| Деплой      | Vercel (Hobby, бесплатно) + vercel.json — см. [DEPLOYMENT.md](DEPLOYMENT.md) |
 | Утилиты     | clsx, tailwind-merge, date-fns, lucide-react             |
 
 ## Быстрый старт
@@ -33,11 +52,13 @@
 npm install
 
 # 2. Окружение
-cp .env.example .env      # затем заполните DATABASE_URL, NEXTAUTH_SECRET, OPENAI_API_KEY
+cp .env.example .env      # затем заполните DATABASE_URL, NEXTAUTH_SECRET
+                          # ИИ-ключи (GROQ_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY)
+                          # необязательны — без них работает локальный MockAIProvider
 
-# 3. База данных (нужен запущенный PostgreSQL)
+# 3. База данных (нужен запущенный PostgreSQL; бесплатно — Neon.tech / Supabase)
 npx prisma generate       # генерация клиента
-npx prisma migrate dev --name init
+npx prisma db push        # синхронизация схемы (или prisma migrate dev --name init)
 
 # 4. Демо-аккаунты и запуск
 npm run db:seed           # admin@ / teacher@ / student@schoolmeet.dev
@@ -47,13 +68,17 @@ npm run dev               # http://localhost:3000 (Next.js и Socket.IO на о�
 Полезные команды:
 
 ```bash
-npm run build      # прод-сборка
+npm run build      # прод-сборка (Vercel выполняет её автоматически)
 npm run start      # прод-сервер (server.ts: Next.js + Socket.IO), нужен npm run build
 npm run lint       # ESLint
+npm run test       # смоук-тесты ИИ-движка + тесты правил (сеть и БД не нужны)
 npm run db:seed    # демо-аккаунты (пароль из SEED_PASSWORD)
 npm run db:push    # синхронизация схемы без миграций
 npm run db:studio  # веб-UI для просмотра данных
 ```
+
+Бесплатный деплой в продакшен (Vercel + Neon + Groq/Gemini) — пошагово в
+**[DEPLOYMENT.md](DEPLOYMENT.md)**.
 
 ## Структура
 
@@ -93,7 +118,8 @@ src/lib/realtime.ts                Контракт событий Socket.IO, л
 src/lib/crypto.ts                  encryptMessage / decryptMessage: AES-256-CBC + HMAC (crypto-js)
 src/lib/lesson-code.ts             Читаемые коды уроков (matematika-101-klass) с суффиксом при коллизии
 src/lib/meetings.ts                Доступ к данным уроков и сообщений чата (Prisma)
-src/lib/webrtc-config.ts           ICE-серверы из NEXT_PUBLIC_ICE_SERVERS (по умолчанию STUN)
+src/lib/webrtc-config.ts           ICE: пул STUN Google + TURN из NEXT_PUBLIC_TURN_SERVERS
+                                   (legacy-override — NEXT_PUBLIC_ICE_SERVERS)
 src/app/api/meetings/route.ts      POST — создать урок (только TEACHER / ADMIN)
 src/app/api/meetings/[code]/route.ts GET — урок по коду для участника (нужна сессия)
 src/app/meeting/page.tsx           Лобби: создание урока для учителя, вход по коду для ученика
@@ -104,9 +130,17 @@ src/hooks/useSpeakingIndicator.ts  Определение говорящего �
 src/hooks/useElapsed.ts            Таймер длительности звонка
 src/hooks/useWhiteboard.ts         Доска Fabric.js: инструменты, Undo/Redo, страницы, синхронизация
 src/hooks/useVoiceInput.ts         Голосовой ввод через нативный Web Speech API (без серверов)
-src/lib/ai-provider.ts             AIProvider + MockAIProvider: русские конспекты/решения/формулы
+src/lib/ai-provider.ts             Контракт ИИ + AutoAIProvider: waterfall-цепочка авто-выбора
+                                   (текст → Groq → OpenRouter → Gemini → Mock; изображение доски
+                                   → Gemini Vision → OpenRouter Vision → Mock), latexToReadableText
+src/lib/ai-providers/types.ts      Общий контракт: AIRequest/AIResponse/DrawingInstruction/статусы
+src/lib/ai-providers/shared.ts     Нативный fetch с таймаутом, парсеры JSON/LaTeX, русские промпты
+src/lib/ai-providers/groq.ts       Groq Cloud: Llama 3.3 70B + DeepSeek R1 Distill (14 400/день)
+src/lib/ai-providers/gemini.ts     Gemini Flash Vision: распознавание формул с доски (1 500/день)
+src/lib/ai-providers/openrouter.ts OpenRouter: резервные :free-модели (текст и vision)
+src/lib/ai-providers/mock.ts       MockAIProvider: локальные ответы без сети — гарант работоспособности
 src/lib/drawing-engine.ts          JSON-инструкции ИИ → фигуры Fabric.js (треугольники, графики…)
-src/app/api/ai/route.ts            POST/GET — ИИ-помощник (ТОЛЬКО TEACHER / ADMIN, STUDENT → 403)
+src/app/api/ai/route.ts            POST/GET — серверный ИИ-прокси (ТОЛЬКО TEACHER / ADMIN, STUDENT → 403)
 src/components/meeting/            MeetingRoom, PreJoinScreen, VideoGrid, Controls, Chat, MeetingLobby,
                                    Whiteboard (доска + курсоры), AIAssistant (панель учителя)
 src/components/ui/                 Поля формы, градиентная кнопка, алерты, Markdown-рендер
@@ -181,11 +215,14 @@ src/types/next-auth.d.ts           Расширение типов сессии 
 - Медиапоток идёт напрямую между браузерами по WebRTC/SRTP (mesh: каждый с каждым). Сигналинг
   (SDP и ICE) проходит через Socket.IO, медиа через сервер не проходит.
 - ИИ-панель и `/api/ai` открыты **только для TEACHER и ADMIN**: ученики не видят UI ИИ, а сервер
-  отвечает на любые вызовы `/api/ai` статусом **403 Forbidden**. На этапе 4 ИИ работает полностью
-  локально (`MockAIProvider`) — данные никуда не отправляются, внешние нейросети не вызываются.
+  отвечает на любые вызовы `/api/ai` статусом **403 Forbidden**. Внешние нейросети (Groq / Gemini /
+  OpenRouter) вызываются **только на сервере** — браузер обращается лишь к своему API, поэтому ИИ
+  работает в РФ **без VPN**, а API-ключи никогда не попадают в клиентский бандл. Без ключей ИИ
+  остаётся полностью локальным (`MockAIProvider`).
 - Доска: события рисования (`whiteboard-*`) проверяются на сервере — учитель решает, кто рисует
   («Рисуют все» / «Рисует учитель»), а перегрузка событиями ограничена рейт-лимитами.
-- Для работы в школьных сетях с симметричным NAT нужен TURN-сервер (см. `NEXT_PUBLIC_ICE_SERVERS`).
+- Для работы в школьных сетях с симметричным NAT добавьте TURN-релей через
+  `NEXT_PUBLIC_TURN_SERVERS` (по умолчанию используется пул публичных STUN Google).
 - **Rate-limit** (`src/lib/rate-limit.ts`, `middleware.ts`): не более 100 запросов в минуту с одного IP,
   для `/api/auth` — 20 (защита от подбора пароля), для `/api/admin` — 60, для рукопожатий Socket.IO — 40.
   Превышение — `429` с `Retry-After` (страницы получают понятную HTML-заглушку), ответы несут заголовки
@@ -219,4 +256,14 @@ src/types/next-auth.d.ts           Расширение типов сессии 
   сброс пароля, бан с мгновенным разрывом сессий), активные уроки и посещаемость с принудительным
   завершением через Socket.IO, общешкольные объявления с баннером на дашборде, журнал действий
   (`AuditLog`) и rate-limit в middleware. Демо-данные: `npm run db:seed`.
-- ⏭ Следующий этап — подключение внешнего ИИ (GPT-4o Vision) в финале проекта.
+- ✅ **Этап 7** — дашборд, мобильная адаптация и PWA: нижняя навигация, manifest.json, иконки,
+  «Добавить на главный экран» (см. DEPLOYMENT.md, шаг 5).
+- ✅ **Этап 8 (ФИНАЛ)** — 100% бесплатный ИИ-движок: Groq (Llama 3.3 70B + DeepSeek R1 Distill,
+  14 400 запросов/день) для текста и JSON-чертежей, Gemini Flash Vision (1 500 запросов/день) для
+  распознавания формул с доски, OpenRouter `:free` как резерв, локальный Mock как гарант;
+  `AutoAIProvider` — waterfall-автопереключение без падения API; серверный прокси на Vercel —
+  ИИ доступен в РФ без VPN; WebRTC: STUN-пул Google + `NEXT_PUBLIC_TURN_SERVERS`; `vercel.json`;
+  руководство деплоя [DEPLOYMENT.md](DEPLOYMENT.md). Смоук-тесты движка: `npm run test:ai`.
+
+**Проект завершён.** Итоговая сборка: `npm run build`, запуск: `npm run start` (или деплой на
+Vercel — [DEPLOYMENT.md](DEPLOYMENT.md)).
