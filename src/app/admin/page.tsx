@@ -106,7 +106,7 @@ export default async function AdminPage() {
       </div>
 
       {/* Таблица пользователей */}
-      <section className="animate-fade-up mt-8 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl">
+      <section className="animate-fade-up glass-card mt-8 overflow-hidden">
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
             Пользователи

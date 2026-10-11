@@ -52,12 +52,12 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
           aria-invalid={error ? true : undefined}
           aria-describedby={error || hint ? describedById : undefined}
           className={cn(
-            "w-full rounded-xl border bg-ink-900/70 py-3 pr-3.5 text-sm text-white shadow-inner-top outline-none transition",
+            "w-full rounded-xl border bg-white/[0.035] py-3 pr-3.5 text-sm text-white shadow-inner-top outline-none backdrop-blur-xl transition duration-200",
             "placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-60",
             Icon && "pl-10",
             error
               ? "border-rose-500/60 focus:border-rose-400 focus:ring-4 focus:ring-rose-500/15"
-              : "border-white/10 focus:border-brand-400/70 focus:bg-ink-900 focus:ring-4 focus:ring-brand-500/15",
+              : "border-white/10 hover:border-white/20 focus:border-accent-400/70 focus:bg-white/[0.06] focus:ring-4 focus:ring-accent-500/15",
             trailing && "pr-11",
             className,
           )}

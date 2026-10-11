@@ -1,5 +1,10 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * Палитра SchoolMeet, этап 3: почти чёрный графит, ярко-фиолетовый бренд и
+ * неоново-синий акцент. Токены используются во всём сайте (лендинг, кабинет,
+ * формы, видеокомната), поэтому менять цвета стоит только здесь.
+ */
 const config: Config = {
   darkMode: "class",
   content: [
@@ -10,32 +15,38 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        /** Тёмная подложка интерфейса. */
+        /** Графитовая подложка: от почти чёрного (950) до светлого графита (700). */
         ink: {
-          950: "#05060f",
-          900: "#080b18",
-          850: "#0b0f20",
-          800: "#11152b",
-          700: "#1a1f3d",
+          950: "#06070b",
+          900: "#0a0c12",
+          850: "#0e1119",
+          800: "#151923",
+          700: "#1d2230",
         },
-        /** Фирменный фиолетово-голубой градиент. */
+        /** Ярко-фиолетовый бренд: кнопки, активные состояния, свечение. */
         brand: {
-          50: "#f4f2ff",
-          100: "#ebe5ff",
-          200: "#d9ceff",
-          300: "#bea6ff",
-          400: "#9f76ff",
-          500: "#8b5cf6",
-          600: "#7c3aed",
-          700: "#6d28d9",
-          800: "#5b21b6",
-          900: "#4c1d95",
-          950: "#2e1065",
+          50: "#faf5ff",
+          100: "#f3e8ff",
+          200: "#e9d5ff",
+          300: "#d8b4fe",
+          400: "#c084fc",
+          500: "#a855f7",
+          600: "#9333ea",
+          700: "#7e22ce",
+          800: "#6b21a8",
+          900: "#581c87",
+          950: "#3b0764",
         },
+        /** Неоново-синий акцент: подсветка, таймер, «говорит сейчас». */
         accent: {
-          300: "#7dd3fc",
-          400: "#38bdf8",
-          500: "#0ea5e9",
+          300: "#8cf3ff",
+          400: "#00d9ff",
+          500: "#00b4ff",
+          600: "#0091e6",
+        },
+        neon: {
+          blue: "#00d9ff",
+          violet: "#b44dff",
         },
       },
       fontFamily: {
@@ -43,14 +54,15 @@ const config: Config = {
         mono: ["var(--font-geist-mono)", "ui-monospace", "monospace"],
       },
       backgroundImage: {
-        "brand-gradient": "linear-gradient(135deg, #8b5cf6 0%, #6366f1 45%, #38bdf8 100%)",
+        "brand-gradient": "linear-gradient(135deg, #b44dff 0%, #8b3dff 35%, #3b82f6 70%, #00d9ff 100%)",
         "brand-gradient-soft":
-          "linear-gradient(135deg, rgba(139,92,246,.18) 0%, rgba(99,102,241,.12) 45%, rgba(56,189,248,.16) 100%)",
+          "linear-gradient(135deg, rgba(168,85,247,.20) 0%, rgba(59,130,246,.12) 50%, rgba(0,217,255,.16) 100%)",
       },
       boxShadow: {
-        glow: "0 30px 80px -30px rgba(124, 58, 237, 0.65)",
-        "glow-accent": "0 30px 80px -30px rgba(56, 189, 248, 0.55)",
-        "inner-top": "inset 0 1px 0 0 rgba(255, 255, 255, 0.08)",
+        glow: "0 0 0 1px rgba(168, 85, 247, 0.18), 0 24px 70px -24px rgba(168, 85, 247, 0.75)",
+        "glow-accent": "0 0 0 1px rgba(0, 217, 255, 0.25), 0 24px 70px -26px rgba(0, 217, 255, 0.7)",
+        "neon-ring": "0 0 0 2px rgba(0, 217, 255, 0.85), 0 0 26px 4px rgba(0, 217, 255, 0.45)",
+        "inner-top": "inset 0 1px 0 0 rgba(255, 255, 255, 0.07)",
       },
       keyframes: {
         "fade-up": {
@@ -80,6 +92,10 @@ const config: Config = {
         "spin-slow": {
           to: { transform: "rotate(360deg)" },
         },
+        "neon-breathe": {
+          "0%, 100%": { boxShadow: "0 0 0 2px rgba(0,217,255,.85), 0 0 18px 2px rgba(0,217,255,.35)" },
+          "50%": { boxShadow: "0 0 0 2px rgba(0,217,255,1), 0 0 34px 6px rgba(0,217,255,.6)" },
+        },
       },
       animation: {
         "fade-up": "fade-up .7s cubic-bezier(.16,1,.3,1) both",
@@ -89,6 +105,7 @@ const config: Config = {
         shimmer: "shimmer 2.4s infinite",
         "pulse-ring": "pulse-ring 2.4s cubic-bezier(.24,.6,.35,1) infinite",
         "spin-slow": "spin-slow 26s linear infinite",
+        "neon-breathe": "neon-breathe 1.6s ease-in-out infinite",
       },
     },
   },

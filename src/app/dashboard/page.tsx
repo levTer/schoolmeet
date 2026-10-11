@@ -108,7 +108,7 @@ export default async function DashboardPage({
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,20rem)_1fr]">
         {/* Профиль */}
-        <section className="ring-gradient animate-fade-up h-fit rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-2xl">
+        <section className="ring-gradient glass-card animate-fade-up h-fit p-6">
           <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
             <UserRound className="h-4 w-4" />
             Профиль
@@ -160,7 +160,7 @@ export default async function DashboardPage({
                 key={href}
                 href={href}
                 style={{ animationDelay: `${100 + index * 80}ms` }}
-                className="ring-gradient animate-fade-up group rounded-3xl border border-white/10 bg-white/[0.035] p-6 backdrop-blur-xl transition hover:bg-white/[0.07]"
+                className="ring-gradient glass-card animate-fade-up group p-6 hover:bg-white/[0.05]"
               >
                 <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-gradient shadow-glow">
                   <Icon className="h-5 w-5 text-white" />
@@ -175,15 +175,14 @@ export default async function DashboardPage({
             ))}
           </div>
 
-          <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-xl">
+          <section className="glass-card p-6">
             <h2 className="text-lg font-semibold text-white">Что дальше</h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-400">
-              Этап 2 закрывает вход, регистрацию и права ролей. Видеозвонки на PeerJS, чат на
-              Socket.IO и ИИ-доска на Fabric.js подключаются на этапе 3 — каркасы разделов уже
-              защищены middleware.
+              Этап 3 добавил видеозвонки WebRTC с сигналингом через Socket.IO и чат с шифрованием
+              AES-256. ИИ-доска на Fabric.js и GPT-4o Vision — следующий шаг.
             </p>
             <div className="mt-5 flex flex-wrap gap-2 text-xs">
-              {["JWT-сессия", "bcrypt", "RBAC-middleware", "Prisma"].map((chip) => (
+              {["JWT-сессия", "WebRTC", "Socket.IO", "AES-256", "Prisma"].map((chip) => (
                 <span
                   key={chip}
                   className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-slate-300"

@@ -16,7 +16,7 @@ interface Feature {
   bullets: readonly string[];
   badge?: string;
   span?: string;
-  tone?: "violet" | "sky" | "emerald" | "amber";
+  tone?: "violet" | "sky" | "cyan" | "fuchsia";
   visual?: "board" | "schedule";
 }
 
@@ -47,24 +47,24 @@ const FEATURES: readonly Feature[] = [
       "Недельная сетка уроков с ограничением ролей: учитель планирует слоты и привязывает комнаты, ученик видит только своё расписание и входит в урок в один клик.",
     bullets: ["Учитель планирует", "Ученик смотрит", "Авто-создание комнаты к началу урока"],
     span: "lg:col-span-2",
-    tone: "emerald",
+    tone: "cyan",
     visual: "schedule",
   },
   {
     icon: MessageSquareLock,
-    title: "Защищённый сквозной чат",
+    title: "Защищённый чат урока",
     description:
-      "Сообщения шифруются AES-256 на клиенте: сервер хранит только шифротекст и не может прочитать переписку класса.",
-    bullets: ["AES-256 end-to-end", "Ключ на урок", "Модерация и история"],
-    tone: "amber",
+      "Каждое сообщение шифруется AES-256 до отправки: в сети и в базе лежит только шифротекст. Ключ урока выдаётся только участникам.",
+    bullets: ["AES-256 + HMAC", "Ключ на урок", "История урока"],
+    tone: "fuchsia",
   },
 ] as const;
 
 const TONES = {
   violet: "from-violet-500/25 to-violet-500/0 text-violet-200 ring-violet-400/20",
   sky: "from-sky-500/25 to-sky-500/0 text-sky-200 ring-sky-400/20",
-  emerald: "from-emerald-500/25 to-emerald-500/0 text-emerald-200 ring-emerald-400/20",
-  amber: "from-amber-500/25 to-amber-500/0 text-amber-200 ring-amber-400/20",
+  cyan: "from-accent-500/25 to-accent-500/0 text-accent-300 ring-accent-400/20",
+  fuchsia: "from-fuchsia-500/25 to-fuchsia-500/0 text-fuchsia-200 ring-fuchsia-400/20",
 } as const;
 
 export function Features() {
@@ -212,7 +212,7 @@ function ScheduleVisual() {
             {item.lessons.map((lesson) => (
               <p
                 key={lesson}
-                className="truncate rounded-md bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 px-1 py-1 text-[10px] font-medium text-emerald-100"
+                className="truncate rounded-md bg-gradient-to-br from-accent-500/20 to-accent-500/5 px-1 py-1 text-[10px] font-medium text-accent-300"
               >
                 {lesson}
               </p>

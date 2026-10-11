@@ -19,7 +19,7 @@ const WEEK_DAYS: DayOfWeek[] = [1, 2, 3, 4, 5, 6];
 
 /**
  * Каркас раздела «Расписание».
- * CRUD слотов и привязка комнат к занятиям появятся на этапе 3 — здесь уже
+ * CRUD слотов и привязка комнат к занятиям — в следующих этапах; здесь уже
  * работает защита маршрута и разделение прав по ролям.
  */
 export default async function SchedulePage() {
@@ -69,7 +69,7 @@ export default async function SchedulePage() {
           <section
             key={day}
             style={{ animationDelay: `${80 + index * 60}ms` }}
-            className="ring-gradient animate-fade-up rounded-3xl border border-white/10 bg-white/[0.035] p-5 backdrop-blur-xl"
+            className="ring-gradient glass-card animate-fade-up p-5"
           >
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
               {DAY_LABELS[day]}
@@ -91,12 +91,12 @@ export default async function SchedulePage() {
         ))}
       </div>
 
-      <section className="mt-8 flex flex-col gap-4 rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-xl sm:flex-row sm:items-center">
+      <section className="mt-8 flex flex-col gap-4 glass-card p-6 sm:flex-row sm:items-center">
         <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-gradient shadow-glow">
           <Construction className="h-5 w-5 text-white" />
         </span>
         <div>
-          <h2 className="text-lg font-semibold text-white">Слоты появятся на этапе 3</h2>
+          <h2 className="text-lg font-semibold text-white">Слоты расписания — в следующих этапах</h2>
           <p className="mt-1 text-sm leading-relaxed text-slate-400">
             API для расписания, поиск свободных окон и привязка комнат к урокам — следующий шаг.
             Модели <span className="font-mono text-xs">Schedule</span> и{" "}

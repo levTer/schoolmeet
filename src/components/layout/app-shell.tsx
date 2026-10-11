@@ -33,7 +33,7 @@ export async function AppShell({ children, className }: AppShellProps) {
       </main>
 
       <footer className="border-t border-white/5 px-5 py-6 text-center text-xs text-slate-500 sm:px-8">
-        SchoolMeet · Этап 2 — авторизация, роли и защита маршрутов
+        SchoolMeet · Этап 3 — видеозвонки, чат и realtime
       </footer>
     </div>
   );
