@@ -1,0 +1,283 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { io, type Socket } from "socket.io-client";
+
+import {
+  SOCKET_PATH,
+  type Ack,
+  type ChatEnvelope,
+  type ClientToServerEvents,
+  type JoinRoomResult,
+  type MediaState,
+  type RoomParticipant,
+  type ServerToClientEvents,
+  type SignalData,
+} from "@/lib/realtime";
+
+/**
+ * Подключение к Socket.IO-серверу SchoolMeet и события комнаты.
+ *
+ * Сокет создаётся лениво и подключается только по `connect()` / `joinRoom()`.
+ * Авторизация — по cookie сессии NextAuth, поэтому отдельный токен не нужен.
+ * После разрыва связи хук сам переподключается и заново входит в комнату
+ * (сервер при разрыве забывает участника), а вызывающий код получает `onRejoin`,
+ * чтобы пересоздать WebRTC-соединения.
+ */
+
+export type SocketStatus = "idle" | "connecting" | "connected" | "reconnecting" | "disconnected" | "error";
+
+type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+type SignalHandler = (from: string, data: SignalData) => void;
+
+/** Ошибки, при которых переподключаться бессмысленно (нет сессии / чужой origin). */
+const FATAL_CONNECT_ERRORS = new Set(["UNAUTHORIZED", "FORBIDDEN_ORIGIN"]);
+
+const MAX_CHAT_HISTORY = 200;
+
+export interface UseSocketOptions {
+  /** Участник вышел из комнаты — закрыть его WebRTC-соединение. */
+  onUserLeft?: (socketId: string) => void;
+  /** Сокет переподключился и снова вошёл в комнату — пересоздать пиры. */
+  onRejoin?: (result: JoinRoomResult) => void;
+}
+
+export function useSocket(options: UseSocketOptions = {}) {
+  const [status, setStatus] = useState<SocketStatus>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [selfId, setSelfId] = useState<string | null>(null);
+  const [participants, setParticipants] = useState<RoomParticipant[]>([]);
+  const [messages, setMessages] = useState<ChatEnvelope[]>([]);
+
+  const socketRef = useRef<ClientSocket | null>(null);
+  const roomRef = useRef<string | null>(null);
+  const hasConnectedRef = useRef(false);
+  const signalHandlersRef = useRef(new Set<SignalHandler>());
+  const optionsRef = useRef(options);
+
+  useEffect(() => {
+    optionsRef.current = options;
+  });
+
+  const updateParticipant = useCallback(
+    (socketId: string, update: (participant: RoomParticipant) => RoomParticipant) => {
+      setParticipants((prev) => prev.map((item) => (item.socketId === socketId ? update(item) : item)));
+    },
+    [],
+  );
+
+  const applyJoinResult = useCallback((result: JoinRoomResult) => {
+    setSelfId(result.self.socketId);
+    setParticipants(result.participants);
+    setMessages(result.history.slice(-MAX_CHAT_HISTORY));
+  }, []);
+
+  /** Создаём сокет один раз и вешаем постоянные обработчики. */
+  const getSocket = useCallback((): ClientSocket => {
+    if (socketRef.current) return socketRef.current;
+
+    const socket: ClientSocket = io({
+      path: SOCKET_PATH,
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+      autoConnect: false,
+      reconnection: true,
+      reconnectionDelay: 800,
+      reconnectionDelayMax: 5000,
+    });
+
+    socket.on("connect", () => {
+      setSelfId(socket.id ?? null);
+      setError(null);
+
+      const isReconnect = hasConnectedRef.current;
+      hasConnectedRef.current = true;
+      setStatus("connected");
+
+      const roomId = roomRef.current;
+      if (isReconnect && roomId) {
+        socket.emit("join-room", { roomId }, (ack: Ack<JoinRoomResult>) => {
+          if (!ack.ok) {
+            roomRef.current = null;
+            setError(ack.error);
+            return;
+          }
+          applyJoinResult(ack.data);
+          optionsRef.current.onRejoin?.(ack.data);
+        });
+      }
+    });
+
+    socket.on("disconnect", (reason) => {
+      if (reason === "io client disconnect") {
+        setStatus("disconnected");
+        return;
+      }
+      // Сервер сам разорвал соединение. Socket.IO в этом случае не переподключается,
+      // поэтому делаем это вручную. Если сессия истекла, connect_error вернёт UNAUTHORIZED.
+      setStatus("reconnecting");
+      if (reason === "io server disconnect") socket.connect();
+    });
+
+    socket.on("connect_error", (err) => {
+      setError(err.message);
+      if (FATAL_CONNECT_ERRORS.has(err.message)) {
+        setStatus("error");
+        socket.disconnect();
+        return;
+      }
+      setStatus(hasConnectedRef.current ? "reconnecting" : "connecting");
+    });
+
+    socket.on("user-joined", (participant) => {
+      setParticipants((prev) => [...prev.filter((item) => item.socketId !== participant.socketId), participant]);
+    });
+
+    socket.on("user-left", ({ socketId }) => {
+      setParticipants((prev) => prev.filter((item) => item.socketId !== socketId));
+      optionsRef.current.onUserLeft?.(socketId);
+    });
+
+    socket.on("signal", ({ from, data }) => {
+      signalHandlersRef.current.forEach((handler) => handler(from, data));
+    });
+
+    socket.on("raise-hand", ({ socketId, raised }) => {
+      updateParticipant(socketId, (item) => ({ ...item, handRaised: raised }));
+    });
+
+    socket.on("media-state", ({ socketId, media }) => {
+      updateParticipant(socketId, (item) => ({ ...item, media }));
+    });
+
+    socket.on("chat-message", (message) => {
+      setMessages((prev) => [...prev, message].slice(-MAX_CHAT_HISTORY));
+    });
+
+    socketRef.current = socket;
+    return socket;
+  }, [applyJoinResult, updateParticipant]);
+
+  /** Подключается к серверу. Резолвится, когда соединение установлено. */
+  const connect = useCallback((): Promise<void> => {
+    const socket = getSocket();
+    if (socket.connected) return Promise.resolve();
+
+    setStatus((current) => (current === "connected" ? current : "connecting"));
+
+    return new Promise((resolve, reject) => {
+      const onConnect = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (err: Error) => {
+        if (!FATAL_CONNECT_ERRORS.has(err.message)) return;
+        cleanup();
+        reject(new Error(err.message));
+      };
+      const cleanup = () => {
+        socket.off("connect", onConnect);
+        socket.off("connect_error", onError);
+      };
+
+      socket.on("connect", onConnect);
+      socket.on("connect_error", onError);
+      socket.connect();
+    });
+  }, [getSocket]);
+
+  /** Входит в комнату урока по коду. Подключается, если сокета ещё нет. */
+  const joinRoom = useCallback(
+    async (roomId: string): Promise<Ack<JoinRoomResult>> => {
+      await connect();
+      const socket = getSocket();
+
+      return new Promise((resolve) => {
+        socket.emit("join-room", { roomId }, (ack: Ack<JoinRoomResult>) => {
+          if (ack.ok) {
+            roomRef.current = roomId;
+            applyJoinResult(ack.data);
+          }
+          resolve(ack);
+        });
+      });
+    },
+    [applyJoinResult, connect, getSocket],
+  );
+
+  const leaveRoom = useCallback(() => {
+    roomRef.current = null;
+    setParticipants([]);
+    setMessages([]);
+    socketRef.current?.emit("leave-room");
+  }, []);
+
+  const disconnect = useCallback(() => {
+    roomRef.current = null;
+    socketRef.current?.disconnect();
+    setStatus("disconnected");
+  }, []);
+
+  const sendSignal = useCallback(
+    (to: string, data: SignalData) => {
+      socketRef.current?.emit("signal", { to, data });
+    },
+    [],
+  );
+
+  /** Подписка на входящие SDP/ICE-сообщения. Возвращает функцию отписки. */
+  const onSignal = useCallback((handler: SignalHandler) => {
+    signalHandlersRef.current.add(handler);
+    return () => {
+      signalHandlersRef.current.delete(handler);
+    };
+  }, []);
+
+  const setHandRaised = useCallback((raised: boolean) => {
+    socketRef.current?.emit("raise-hand", { raised });
+  }, []);
+
+  const sendMediaState = useCallback((media: MediaState) => {
+    socketRef.current?.emit("media-state", media);
+  }, []);
+
+  /** Отправляет уже зашифрованное сообщение. Возвращает ack сервера. */
+  const sendChat = useCallback(
+    (ciphertext: string): Promise<Ack<{ id: string }>> => {
+      const socket = socketRef.current;
+      if (!socket?.connected) {
+        return Promise.resolve({ ok: false, code: "OFFLINE", error: "Нет соединения с сервером" });
+      }
+      return new Promise((resolve) => {
+        socket.emit("chat-message", { ciphertext }, (ack) => resolve(ack));
+      });
+    },
+    [],
+  );
+
+  // Отключаемся при размонтировании страницы урока.
+  useEffect(() => {
+    return () => {
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+      hasConnectedRef.current = false;
+    };
+  }, []);
+
+  return {
+    status,
+    error,
+    selfId,
+    participants,
+    messages,
+    connect,
+    joinRoom,
+    leaveRoom,
+    disconnect,
+    sendSignal,
+    onSignal,
+    setHandRaised,
+    sendMediaState,
+    sendChat,
+  };
+}

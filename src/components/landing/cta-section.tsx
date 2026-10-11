@@ -26,7 +26,7 @@ export function CtaSection() {
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
             href="/register"
-            className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-7 py-3.5 text-sm font-semibold text-ink-950 transition hover:scale-[1.02] sm:w-auto"
+            className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-brand-gradient px-7 py-3.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02] sm:w-auto"
           >
             Начать урок
             <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />

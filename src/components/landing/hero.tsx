@@ -5,7 +5,7 @@ import { ProductPreview } from "./product-preview";
 
 const SECURITY_BADGES = [
   { icon: ShieldCheck, label: "AES-256", hint: "шифрование чата и материалов" },
-  { icon: Lock, label: "End-to-End", hint: "ключи только у участников урока" },
+  { icon: Lock, label: "Вход по сессии", hint: "звонок и чат только для участников" },
   { icon: KeyRound, label: "WebRTC / SRTP", hint: "защищённый медиапоток" },
 ] as const;
 

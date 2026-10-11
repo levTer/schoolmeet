@@ -146,7 +146,7 @@ export function SiteHeader() {
       <div className="hidden border-t border-white/5 bg-white/[0.02] md:block">
         <div className="mx-auto flex max-w-7xl items-center justify-center gap-2 px-8 py-1.5 text-[11px] text-slate-500">
           <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-          Сквозное шифрование AES-256 · WebRTC / SRTP · Данные не передаются третьим лицам
+          Шифрование чата AES-256 · Видео по WebRTC / SRTP · Доступ только для участников
         </div>
       </div>
     </header>

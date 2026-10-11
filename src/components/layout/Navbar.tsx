@@ -114,7 +114,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                 className={cn(
                   "inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm transition",
                   isActive
-                    ? "bg-white/10 text-white shadow-inner-top"
+                    ? "bg-brand-500/15 text-white shadow-inner-top ring-1 ring-brand-400/30"
                     : "text-slate-400 hover:bg-white/5 hover:text-white",
                 )}
               >

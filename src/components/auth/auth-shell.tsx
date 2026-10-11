@@ -40,7 +40,7 @@ export function AuthShell({
         <div className="absolute inset-0 bg-grid mask-radial opacity-60" />
         <div className="absolute -left-24 top-1/4 h-[26rem] w-[26rem] animate-float rounded-full bg-brand-600/25 blur-[130px]" />
         <div className="absolute -right-20 top-10 h-[22rem] w-[22rem] animate-float rounded-full bg-accent-500/20 blur-[130px] [animation-delay:1.5s]" />
-        <div className="absolute bottom-[-6rem] left-1/3 h-[24rem] w-[24rem] animate-float rounded-full bg-indigo-600/20 blur-[140px] [animation-delay:3s]" />
+        <div className="absolute bottom-[-6rem] left-1/3 h-[24rem] w-[24rem] animate-float rounded-full bg-brand-600/20 blur-[140px] [animation-delay:3s]" />
       </div>
 
       <div className="relative grid w-full max-w-6xl items-center gap-10 lg:grid-cols-[1.05fr_minmax(0,27rem)] lg:gap-16">
@@ -92,7 +92,7 @@ export function AuthShell({
             </Link>
           </div>
 
-          <div className="ring-gradient animate-fade-up rounded-3xl border border-white/10 bg-white/[0.045] p-6 shadow-glow backdrop-blur-2xl sm:p-9">
+          <div className="ring-gradient glass-card animate-fade-up p-6 shadow-glow sm:p-9">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">
               {eyebrow}
             </p>
