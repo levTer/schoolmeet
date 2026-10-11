@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { Navbar } from "@/components/layout/Navbar";
+import { BottomNav } from "@/components/layout/bottom-nav";
 import { authOptions } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -35,13 +36,21 @@ export async function AppShell({ children, className }: AppShellProps) {
 
       <Navbar user={session?.user ?? null} />
 
-      <main className={cn("mx-auto w-full max-w-7xl flex-1 px-5 py-9 sm:px-8", className)}>
+      <main
+        className={cn(
+          "mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-8 sm:py-9 pb-20 md:pb-9",
+          className,
+        )}
+      >
         {children}
       </main>
 
-      <footer className="border-t border-white/5 px-5 py-6 text-center text-xs text-slate-500 sm:px-8">
-        SchoolMeet · Этап 6 — админ-панель, объявления и защита платформы
+      <footer className="hidden border-t border-white/5 px-5 py-6 text-center text-xs text-slate-500 sm:px-8 md:block">
+        SchoolMeet · Этап 7 — дашборд, мобильная адаптация и PWA
       </footer>
+
+      {/* Нижняя навигация для мобильных устройств */}
+      <BottomNav />
     </div>
   );
 }

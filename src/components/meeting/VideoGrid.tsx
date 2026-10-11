@@ -25,11 +25,13 @@ export interface GridTile {
 /**
  * Адаптивная сетка: 1 участник — во весь экран, 2 — в ряд, 3–4 — 2×2,
  * 5–9 — 3×3, больше — 4 колонки с прокруткой.
+ * На мобильных (< 640px) максимум 2 колонки для крупных видео.
  */
 export function gridLayoutClass(count: number): string {
   if (count <= 1) return "grid-cols-1 grid-rows-1";
   if (count === 2) return "grid-cols-1 sm:grid-cols-2";
   if (count <= 4) return "grid-cols-1 sm:grid-cols-2 auto-rows-fr";
+  if (count <= 6) return "grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 auto-rows-fr";
   if (count <= 9) return "grid-cols-2 lg:grid-cols-3 auto-rows-fr";
   return "grid-cols-2 lg:grid-cols-4 auto-rows-fr";
 }

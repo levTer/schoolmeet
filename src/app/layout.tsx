@@ -44,11 +44,21 @@ export const metadata: Metadata = {
     siteName: "SchoolMeet",
   },
   robots: { index: true, follow: true },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "SchoolMeet",
+  },
 };
 
 export const viewport: Viewport = {
   themeColor: "#05060f",
   colorScheme: "dark",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -58,6 +68,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru" className="dark scroll-smooth">
+      <head>
+        {/* iOS PWA: полноэкранный режим, иконка на рабочем столе */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <link rel="apple-touch-icon" href="/icon-192.svg" />
+        <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-ink-950 font-sans antialiased`}
       >
