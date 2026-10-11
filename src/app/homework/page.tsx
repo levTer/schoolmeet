@@ -6,6 +6,7 @@ import { ArrowLeft, ClipboardList } from "lucide-react";
 
 import { HomeworkCard } from "@/components/homework/homework-card";
 import { HomeworkCreateButton } from "@/components/homework/homework-create-modal";
+import { HomeworkEmptyState } from "@/components/homework/homework-empty-state";
 import { AppShell } from "@/components/layout/app-shell";
 import { authOptions } from "@/lib/auth";
 import { listHomeworkForViewer } from "@/lib/homework";
@@ -42,8 +43,9 @@ export default async function HomeworkPage() {
   const todo = homeworks.filter((item) => !item.mySubmission || item.mySubmission.status === "DRAFT");
   const done = homeworks.filter((item) => item.mySubmission && item.mySubmission.status !== "DRAFT");
 
+  // pt-24 / pt-28 — свободное пространство под фиксированной шапкой (Navbar, z-50).
   return (
-    <AppShell>
+    <AppShell className="pt-24 sm:pt-28">
       <header className="animate-fade-up flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <Link href="/dashboard" className="inline-flex items-center gap-2 text-xs text-slate-400 transition hover:text-white">
@@ -66,12 +68,12 @@ export default async function HomeworkPage() {
       </header>
 
       {role === "STUDENT" ? (
-        <div className="mt-8 space-y-10">
+        <div className="relative z-0 mt-8 space-y-10">
           <HomeworkSection title="Нужно сдать" items={todo} role={role} empty="Всё сдано — отличная работа!" />
           <HomeworkSection title="Сданы" items={done} role={role} empty="Здесь появятся работы, которые вы сдали." />
         </div>
       ) : (
-        <div className="mt-8">
+        <div className="relative z-0 mt-8">
           <HomeworkSection title="Задания" items={homeworks} role={role} empty="Вы ещё не выдали ни одного задания." />
         </div>
       )}
@@ -96,7 +98,7 @@ function HomeworkSection({
         {title} <span className="text-slate-600">({items.length})</span>
       </h2>
       {items.length === 0 ? (
-        <div className="glass-card p-8 text-center text-sm text-slate-400">{empty}</div>
+        <HomeworkEmptyState text={empty} />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {items.map((item, index) => (

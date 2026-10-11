@@ -20,11 +20,19 @@ export const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
  */
 export const SESSION_REFRESH_MS = 60_000;
 
-/** Роли, которым открыт раздел `/admin` (см. также `src/middleware.ts`). */
-export const ADMIN_AREA_ROLES: readonly Role[] = ["ADMIN", "TEACHER"];
+/**
+ * Роли, которым открыт раздел `/admin` (см. также `src/middleware.ts`).
+ *
+ * Доступ строго у суперадмина: учителя (TEACHER) и ученики (STUDENT) получают
+ * редирект `/dashboard?denied=admin` и toast «Доступ открыт только
+ * Администратору школы». Учитель сохраняет ВСЕ свои функции (расписание, ДЗ с ИИ,
+ * видеозвонки, ИИ-доска) — они живут вне админ-панели.
+ */
+export const ADMIN_AREA_ROLES: readonly Role[] = ["ADMIN"];
 
+/** Разрешён ли вход в админ-панель: только роль ADMIN. */
 export function canAccessAdminArea(role?: Role | null): boolean {
-  return role != null && ADMIN_AREA_ROLES.includes(role);
+  return role === "ADMIN";
 }
 
 export const authOptions: NextAuthOptions = {

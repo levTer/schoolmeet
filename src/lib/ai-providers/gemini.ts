@@ -112,7 +112,7 @@ export class GeminiProvider implements AIProvider {
 
     const wantsJson = request.action === "draw";
     const { text, model } = await this.generateContent({
-      system: buildSystemPrompt(request.action, request.context?.meetingTitle),
+      system: buildSystemPrompt(request.action, request.context?.meetingTitle, Boolean(request.imageDataUrl)),
       parts,
       jsonMode: wantsJson,
       temperature: wantsJson ? 0.3 : 0.4,

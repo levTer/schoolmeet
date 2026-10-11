@@ -36,7 +36,7 @@ export async function GET(request: Request): Promise<NextResponse> {
  * POST /api/admin/announcements — создать объявление.
  *
  * `targetGrade: null` — для всей школы, иначе только для указанного класса.
- * Доступно ADMIN и TEACHER.
+ * Доступно только ADMIN: раздел /admin и API /api/admin/* закрыты для TEACHER/STUDENT.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   try {

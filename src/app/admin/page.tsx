@@ -70,7 +70,7 @@ function formatDateTime(iso: string): string {
 export default async function AdminPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login?callbackUrl=/admin");
-  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=/admin");
+  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
 
   let overview: AdminOverview | null = null;
   let secondary: { pendingReview: number; banned: number; todayJoins: number } | null = null;

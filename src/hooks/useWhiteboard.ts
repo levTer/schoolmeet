@@ -166,6 +166,11 @@ export interface WhiteboardApi {
   setPage: (page: number) => void;
   clearPage: () => void;
   exportPNG: () => void;
+  /**
+   * PNG-снимок текущей страницы (data URL) для ИИ-панели («Передать доску»):
+   * уезжает на сервер и передаётся в Gemini Vision. `null`, если доска ещё не готова.
+   */
+  captureBoard: (maxWidth?: number) => string | null;
   /** Заменить выделенный рисунок печатной формулой (после /api/ai). */
   applyFormulaResult: (payload: FormulaResultPayload) => void;
   /** Нарисовать фигуры из JSON-инструкций ИИ. */
@@ -1047,6 +1052,26 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
     link.click();
   }, []);
 
+  /**
+   * Снимок доски для ИИ-панели (кнопка «Передать доску»).
+   *
+   * Ширину ограничиваем 1280 px: снимок остаётся читаемым для Gemini Vision,
+   * но не раздувает запрос (лимит `/api/ai` — 6 МБ на data URL).
+   */
+  const captureBoard = useCallback((maxWidth = 1280): string | null => {
+    const canvas = fabricRef.current;
+    if (!canvas) return null;
+
+    try {
+      const width = canvas.getWidth() || WHITEBOARD_WIDTH;
+      const multiplier = Math.min(1, maxWidth / width);
+      return canvas.toDataURL({ format: "png", multiplier, enableRetinaScaling: false });
+    } catch (error) {
+      console.warn("[whiteboard] не удалось снять копию доски:", error);
+      return null;
+    }
+  }, []);
+
   /* ----------------------------- ИИ-операции ----------------------------- */
 
   const applyFormulaResult = useCallback(
@@ -1280,6 +1305,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
     setPage,
     clearPage,
     exportPNG,
+    captureBoard,
     applyFormulaResult,
     applyDrawing,
     cursors,

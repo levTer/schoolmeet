@@ -6,7 +6,8 @@ import { badRequest, conflict, forbidden, notFound } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { GRADE_LABELS, slotsOverlap, type CreateLessonInput, type GradeCode, type ScheduleConflictInfo } from "@/lib/schedule-rules";
 import type { SchoolViewer } from "@/lib/school-viewer";
-import type { DayOfWeek, Schedule } from "@/types";
+import { DEFAULT_SUBJECTS } from "@/lib/subjects";
+import type { DayOfWeek, Schedule, Subject } from "@/types";
 
 /**
  * Серверная логика расписания: кто что видит, создание урока с проверкой
@@ -66,11 +67,35 @@ async function loadLessons(where: Prisma.ScheduleWhereInput): Promise<Schedule[]
   return rows.map(toLessonDto);
 }
 
-export async function listSubjects() {
-  return prisma.subject.findMany({
-    select: { id: true, name: true, color: true, emoji: true },
-    orderBy: { name: "asc" },
-  });
+/**
+ * Список предметов для выбора в расписании и ДЗ.
+ *
+ * Если таблица `subjects` пуста (чистая база без `npm run db:seed`), каталог
+ * наполняется эталонным набором из `DEFAULT_SUBJECTS` — учитель в любом случае
+ * увидит предметы в модалке «Новый урок». Существующий (в т.ч. отредактированный
+ * администратором) каталог не трогаем.
+ */
+export async function listSubjects(): Promise<Subject[]> {
+  const select = { id: true, name: true, color: true, emoji: true } as const;
+
+  const existing = await prisma.subject.findMany({ select, orderBy: { name: "asc" } });
+  if (existing.length > 0) return existing;
+
+  await ensureDefaultSubjects();
+  return prisma.subject.findMany({ select, orderBy: { name: "asc" } });
+}
+
+/** Создаёт отсутствующие предметы эталонного каталога (идемпотентно, по имени). */
+export async function ensureDefaultSubjects(): Promise<void> {
+  await prisma.$transaction(
+    DEFAULT_SUBJECTS.map((subject) =>
+      prisma.subject.upsert({
+        where: { name: subject.name },
+        update: { color: subject.color, emoji: subject.emoji },
+        create: { name: subject.name, color: subject.color, emoji: subject.emoji },
+      }),
+    ),
+  );
 }
 
 /** Ищет свободный код комнаты для урока (как в createMeeting, но внутри транзакции). */

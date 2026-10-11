@@ -5,32 +5,33 @@ import { usePathname } from "next/navigation";
 import { BarChart3, CalendarClock, Megaphone, ScrollText, Users, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import type { Role } from "@/types";
 
 interface Tab {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Кому виден раздел. `null` — всей админ-панели (ADMIN и TEACHER). */
-  roles: readonly Role[] | null;
 }
 
+/**
+ * Разделы админ-панели. Вся панель доступна строго роли ADMIN (см.
+ * `src/middleware.ts` и `src/app/admin/layout.tsx`), поэтому фильтровать вкладки
+ * по ролям не нужно — учитель и ученик сюда не попадают вовсе.
+ */
 const TABS: readonly Tab[] = [
-  { href: "/admin", label: "Обзор", icon: BarChart3, roles: null },
-  { href: "/admin/users", label: "Пользователи", icon: Users, roles: null },
-  { href: "/admin/meetings", label: "Уроки и посещаемость", icon: CalendarClock, roles: null },
-  { href: "/admin/announcements", label: "Объявления", icon: Megaphone, roles: null },
-  { href: "/admin/audit", label: "Журнал действий", icon: ScrollText, roles: ["ADMIN"] },
+  { href: "/admin", label: "Обзор", icon: BarChart3 },
+  { href: "/admin/users", label: "Пользователи", icon: Users },
+  { href: "/admin/meetings", label: "Уроки и посещаемость", icon: CalendarClock },
+  { href: "/admin/announcements", label: "Объявления", icon: Megaphone },
+  { href: "/admin/audit", label: "Журнал действий", icon: ScrollText },
 ];
 
 /** Подменю админ-панели: активная вкладка подсвечивается градиентом. */
-export function AdminNav({ role }: { role: Role }) {
+export function AdminNav() {
   const pathname = usePathname();
-  const tabs = TABS.filter((tab) => !tab.roles || tab.roles.includes(role));
 
   return (
     <nav aria-label="Разделы админ-панели" className="glass-card flex flex-wrap gap-1 p-1.5">
-      {tabs.map((tab) => {
+      {TABS.map((tab) => {
         const isActive = tab.href === "/admin" ? pathname === "/admin" : pathname.startsWith(tab.href);
         const Icon = tab.icon;
 

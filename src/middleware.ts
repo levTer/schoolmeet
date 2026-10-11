@@ -14,9 +14,11 @@ import type { Role } from "@/types";
  *   1. rate-limit — 100 запросов в минуту на IP (для `/api/auth` — 20,
  *      для `/api/admin` — 60): отсекаем флуд до криптографии и БД;
  *   2. сессия — `/dashboard`, `/meeting`, `/schedule`, `/homework`, `/admin`
- *      требуют входа (без сессии — редирект на `/login?callbackUrl=...`);
- *   3. RBAC — `/admin` открыт ролям ADMIN и TEACHER, ученик возвращается
- *      в `/dashboard?denied=/admin`;
+ *      и `/api/admin` требуют входа (без сессии — редирект на
+ *      `/login?callbackUrl=...`, для API — 401 JSON);
+ *   3. RBAC — `/admin`, `/admin/*` и `/api/admin/*` открыты ИСКЛЮЧИТЕЛЬНО роли
+ *      ADMIN (суперадмин). Учитель и ученик мгновенно возвращаются в кабинет:
+ *      `/dashboard?denied=admin` (для API — 403 JSON);
  *   4. блокировка — забаненный пользователь уходит на `/banned` (страницы) или
  *      получает 403 `ACCOUNT_BANNED` (API); исключение — `/api/auth/*`, чтобы
  *      человек мог выйти из аккаунта.
@@ -26,13 +28,25 @@ import type { Role } from "@/types";
  * `jwt`-callback NextAuth и проверки в API/страницах.
  */
 
-/** Разделы, требующие авторизации. */
-const PROTECTED_PREFIXES = ["/dashboard", "/meeting", "/schedule", "/homework", "/admin"] as const;
+/** Разделы, требующие авторизации (страницы и API админ-панели). */
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/meeting",
+  "/schedule",
+  "/homework",
+  "/admin",
+  "/api/admin",
+] as const;
 
-/** Разделы, доступные только персоналу школы. */
-const STAFF_PREFIXES = ["/admin"] as const;
+/** Раздел админ-панели: страницы `/admin`, `/admin/*` и API `/api/admin/*`. */
+const ADMIN_AREA_PREFIXES = ["/admin", "/api/admin"] as const;
 
-const STAFF_ROLES: readonly Role[] = ["ADMIN", "TEACHER"];
+/** Доступ в админ-панель — строго суперадмин (ADMIN). */
+const SUPERADMIN_ROLES: readonly Role[] = ["ADMIN"];
+
+/** Куда возвращаем пользователя без прав: метка для toast в кабинете. */
+const ADMIN_DENIED_QUERY = "admin";
+const ADMIN_DENIED_MESSAGE = "Доступ открыт только Администратору школы";
 
 /** Страница «аккаунт заблокирован» — её саму пропускаем всегда. */
 const BANNED_PATH = "/banned";
@@ -98,6 +112,13 @@ export async function middleware(request: NextRequest) {
   if (!token) {
     if (!isProtected) return NextResponse.next({ headers: limitHeaders });
 
+    if (isApi) {
+      return NextResponse.json(
+        { ok: false, code: "UNAUTHORIZED", error: "Войдите в аккаунт" },
+        { status: 401, headers: limitHeaders },
+      );
+    }
+
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", `${pathname}${search}`);
     return NextResponse.redirect(loginUrl);
@@ -119,10 +140,17 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(bannedUrl);
   }
 
-  /* 4. Раздел для персонала, а роль не подходит — возвращаем в кабинет. */
-  if (matchesPrefix(pathname, STAFF_PREFIXES) && !STAFF_ROLES.includes(role)) {
+  /* 4. Админ-панель — строго для суперадмина: учитель/ученик уходят в кабинет. */
+  if (matchesPrefix(pathname, ADMIN_AREA_PREFIXES) && !SUPERADMIN_ROLES.includes(role)) {
+    if (isApi) {
+      return NextResponse.json(
+        { ok: false, code: "FORBIDDEN", error: ADMIN_DENIED_MESSAGE },
+        { status: 403, headers: limitHeaders },
+      );
+    }
+
     const dashboardUrl = new URL("/dashboard", request.url);
-    dashboardUrl.searchParams.set("denied", pathname);
+    dashboardUrl.searchParams.set("denied", ADMIN_DENIED_QUERY);
     return NextResponse.redirect(dashboardUrl);
   }
 

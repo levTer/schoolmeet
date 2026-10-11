@@ -14,11 +14,12 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 /**
- * Каркас админ-панели.
+ * Каркас админ-панели — строго для суперадмина (ADMIN).
  *
  * Доступ проверяется дважды: в middleware (до рендера) и здесь — прямо перед
- * выдачей данных. Если ученик попадёт сюда в обход middleware, он уйдёт в
- * кабинет с пометкой `denied`.
+ * выдачей данных. Учитель или ученик, попавший сюда в обход middleware,
+ * уходит в кабинет с пометкой `denied=admin` (её показывает toast
+ * «Доступ открыт только Администратору школы»).
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
@@ -27,7 +28,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect("/login?callbackUrl=/admin");
   }
   if (!canAccessAdminArea(session.user.role)) {
-    redirect("/dashboard?denied=/admin");
+    redirect("/dashboard?denied=admin");
   }
   if (session.user.banned) {
     redirect("/banned");
@@ -41,13 +42,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Админ-панель</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
             Пользователи и роли, активные уроки, посещаемость и общешкольные объявления.
-            {session.user.role === "TEACHER" && " Учителю доступен просмотр и модерация учеников."}
+            Раздел открыт только Администратору школы.
           </p>
         </div>
       </header>
 
       <div className="mt-6">
-        <AdminNav role={session.user.role} />
+        <AdminNav />
       </div>
 
       <div className="mt-6">{children}</div>

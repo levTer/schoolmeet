@@ -15,6 +15,7 @@ import { PrismaClient, type ClassGrade, type Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 import { slugifyTitle } from "../src/lib/lesson-code";
+import { DEFAULT_SUBJECTS } from "../src/lib/subjects";
 
 const prisma = new PrismaClient();
 
@@ -35,19 +36,6 @@ const ACCOUNTS: ReadonlyArray<{ email: string; name: string; role: Role; grade: 
   { email: "student10@schoolmeet.dev", name: "Полина Захарова", role: "STUDENT", grade: "GRADE_10" },
   { email: "student11@schoolmeet.dev", name: "Роман Фёдоров", role: "STUDENT", grade: "GRADE_11" },
 ];
-
-const SUBJECTS = [
-  { name: "Математика", color: "#a855f7", emoji: "🧮" },
-  { name: "Физика", color: "#00b4ff", emoji: "⚡" },
-  { name: "Химия", color: "#22c55e", emoji: "🧪" },
-  { name: "Литература", color: "#f97316", emoji: "📖" },
-  { name: "История", color: "#eab308", emoji: "📜" },
-  { name: "Биология", color: "#10b981", emoji: "🌿" },
-  { name: "Информатика", color: "#06b6d4", emoji: "💻" },
-  { name: "Английский", color: "#3b82f6", emoji: "🇬🇧" },
-  { name: "Русский", color: "#ec4899", emoji: "📝" },
-  { name: "Физкультура", color: "#ef4444", emoji: "🏃" },
-] as const;
 
 type TeacherKey = "teacher" | "teacher2";
 
@@ -158,7 +146,7 @@ async function seedAccounts(passwordHash: string): Promise<void> {
 }
 
 async function seedSubjects(): Promise<Map<string, string>> {
-  for (const subject of SUBJECTS) {
+  for (const subject of DEFAULT_SUBJECTS) {
     await prisma.subject.upsert({
       where: { name: subject.name },
       update: { color: subject.color, emoji: subject.emoji },
@@ -431,7 +419,7 @@ async function main(): Promise<void> {
   await seedGradedHomework();
   await seedAttendance();
 
-  console.log("\nДемо-данные готовы. Админ-панель: /admin (ADMIN и TEACHER).");
+  console.log("\nДемо-данные готовы. Админ-панель: /admin — только для роли ADMIN.");
 }
 
 main()

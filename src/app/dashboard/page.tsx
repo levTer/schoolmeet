@@ -13,6 +13,7 @@ import {
   Video,
 } from "lucide-react";
 
+import { AdminDeniedNotice } from "@/components/dashboard/admin-denied-notice";
 import { AnnouncementBanner } from "@/components/dashboard/announcement-banner";
 import {
   NextLessonWidgetLive,
@@ -21,7 +22,6 @@ import {
   UrgentHomeworkWidget,
 } from "@/components/dashboard/widgets";
 import { AppShell } from "@/components/layout/app-shell";
-import { FormAlert } from "@/components/ui/form-alert";
 import { listActiveAnnouncementsForViewer, type AnnouncementDto } from "@/lib/announcements";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
 import { getGreeting } from "@/lib/dashboard-greeting";
@@ -148,10 +148,8 @@ export default async function DashboardPage({
 
       {searchParams.denied && (
         <div className="mt-6">
-          <FormAlert variant="info">
-            Раздел <span className="font-mono text-xs">{searchParams.denied}</span> доступен только
-            ролям ADMIN и TEACHER. Ваша роль — {ROLE_LABELS[role]}.
-          </FormAlert>
+          {/* toast «Доступ открыт только Администратору школы» + баннер-«след». */}
+          <AdminDeniedNotice denied={searchParams.denied} />
         </div>
       )}
 
