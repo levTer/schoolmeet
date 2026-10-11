@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Menu, ShieldCheck, X } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { LayoutDashboard, Menu, ShieldCheck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
@@ -16,6 +17,9 @@ const NAV_LINKS = [
 export function SiteHeader() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // Гость видит «Войти / Регистрация», авторизованный — переход в кабинет.
+  const { status } = useSession();
+  const isAuthenticated = status === "authenticated";
 
   useEffect(() => {
     const onScroll = () => setIsScrolled(window.scrollY > 12);
@@ -50,19 +54,32 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
-          <Link
-            href="/login"
-            className="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition hover:text-white"
-          >
-            Войти
-          </Link>
-          <Link
-            href="/register"
-            className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.03]"
-          >
-            <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-            <span className="relative">Регистрация</span>
-          </Link>
+          {isAuthenticated ? (
+            <Link
+              href="/dashboard"
+              className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.03]"
+            >
+              <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+              <LayoutDashboard className="relative h-4 w-4" />
+              <span className="relative">Личный кабинет</span>
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition hover:text-white"
+              >
+                Войти
+              </Link>
+              <Link
+                href="/register"
+                className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.03]"
+              >
+                <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+                <span className="relative">Регистрация</span>
+              </Link>
+            </>
+          )}
         </div>
 
         {/* Мобильный переключатель */}
@@ -94,20 +111,33 @@ export function SiteHeader() {
           </nav>
 
           <div className="mt-4 flex flex-col gap-2">
-            <Link
-              href="/login"
-              onClick={() => setIsMenuOpen(false)}
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-medium text-slate-200"
-            >
-              Войти
-            </Link>
-            <Link
-              href="/register"
-              onClick={() => setIsMenuOpen(false)}
-              className="rounded-xl bg-brand-gradient px-4 py-3 text-center text-sm font-semibold text-white shadow-glow"
-            >
-              Регистрация
-            </Link>
+            {isAuthenticated ? (
+              <Link
+                href="/dashboard"
+                onClick={() => setIsMenuOpen(false)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-4 py-3 text-center text-sm font-semibold text-white shadow-glow"
+              >
+                <LayoutDashboard className="h-4 w-4" />
+                Личный кабинет
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-medium text-slate-200"
+                >
+                  Войти
+                </Link>
+                <Link
+                  href="/register"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="rounded-xl bg-brand-gradient px-4 py-3 text-center text-sm font-semibold text-white shadow-glow"
+                >
+                  Регистрация
+                </Link>
+              </>
+            )}
           </div>
         </div>
       )}

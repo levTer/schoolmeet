@@ -40,6 +40,24 @@ export function hasPermission(role: Role, permission: string): boolean {
   return ROLE_PERMISSIONS[role].includes(permission);
 }
 
+/** Подписи прав (ru) — чтобы в UI показывать не `meeting:create`, а текст. */
+export const PERMISSION_LABELS: Record<string, string> = {
+  "meeting:create": "Создание уроков",
+  "meeting:delete": "Удаление уроков",
+  "meeting:join": "Вход в урок",
+  "schedule:read": "Просмотр расписания",
+  "schedule:write": "Планирование расписания",
+  "board:view": "Просмотр доски",
+  "board:write": "Работа на доске",
+  "chat:write": "Чат класса",
+  "admin:panel": "Админ-панель",
+};
+
+/** Права роли человекочитаемым списком. */
+export function getPermissionLabels(role: Role): string[] {
+  return ROLE_PERMISSIONS[role].map((permission) => PERMISSION_LABELS[permission] ?? permission);
+}
+
 /* -------------------------------------------------------------------------- */
 /* User                                                                        */
 /* -------------------------------------------------------------------------- */
