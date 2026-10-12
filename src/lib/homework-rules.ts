@@ -144,6 +144,7 @@ export interface CreateHomeworkInput {
   title: string;
   description: string;
   subjectId: string;
+  classId: string;
   grade: GradeCode;
   deadline: Date;
   maxScore: number;
@@ -168,6 +169,9 @@ export function validateCreateHomework(payload: unknown, now: Date): ValidationR
   const subjectId = typeof raw.subjectId === "string" ? raw.subjectId.trim() : "";
   if (!subjectId) fields.subjectId = "Выберите предмет";
 
+  const classId = typeof raw.classId === "string" ? raw.classId.trim() : "";
+  if (!classId) fields.classId = "Выберите класс";
+
   const grade = isGradeCode(raw.grade) ? raw.grade : null;
   if (!grade) fields.grade = "Выберите класс";
 
@@ -183,13 +187,13 @@ export function validateCreateHomework(payload: unknown, now: Date): ValidationR
     fields.maxScore = `Максимальный балл от ${L.maxScoreMin} до ${L.maxScoreMax}`;
   }
 
-  if (Object.keys(fields).length > 0 || !deadline || maxScore === null || !grade) {
+  if (Object.keys(fields).length > 0 || !classId || !deadline || maxScore === null || !grade) {
     return { ok: false, error: "Проверьте правильность заполнения полей", fields };
   }
 
   return {
     ok: true,
-    data: { title, description, subjectId, grade, deadline, maxScore },
+    data: { title, description, subjectId, classId, grade, deadline, maxScore },
   };
 }
 

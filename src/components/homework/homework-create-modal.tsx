@@ -10,18 +10,21 @@ import { TextField } from "@/components/ui/field";
 import { SelectField, TextAreaField } from "@/components/ui/form-controls";
 import { apiRequest } from "@/lib/client-api";
 import { HOMEWORK_LIMITS, validateCreateHomework } from "@/lib/homework-rules";
-import { formatSchoolLocalInput, GRADES, GRADE_LABELS, schoolLocalToDate, type GradeCode } from "@/lib/schedule-rules";
+import { formatSchoolLocalInput, schoolLocalToDate, type GradeCode } from "@/lib/schedule-rules";
+import type { SchoolClassOption } from "@/lib/schools";
 import type { Subject } from "@/types";
 
 interface HomeworkCreateModalProps {
   open: boolean;
   subjects: Subject[];
+  classes: SchoolClassOption[];
   onClose: () => void;
 }
 
 interface FormState {
   title: string;
   subjectId: string;
+  classId: string;
   grade: GradeCode;
   deadline: string;
   maxScore: string;
@@ -34,11 +37,12 @@ function defaultDeadline(): string {
   return formatSchoolLocalInput(date).replace(/T\d{2}:\d{2}$/, "T18:00");
 }
 
-function buildInitialForm(subjects: Subject[]): FormState {
+function buildInitialForm(subjects: Subject[], classes: SchoolClassOption[]): FormState {
   return {
     title: "",
     subjectId: subjects[0]?.id ?? "",
-    grade: "GRADE_5",
+    classId: classes[0]?.id ?? "",
+    grade: classes[0]?.grade ?? "GRADE_5",
     deadline: defaultDeadline(),
     maxScore: String(HOMEWORK_LIMITS.defaultMaxScore),
     description: "",
@@ -46,7 +50,7 @@ function buildInitialForm(subjects: Subject[]): FormState {
 }
 
 /** Кнопка и модалка выдачи задания классу (учитель). */
-export function HomeworkCreateButton({ subjects }: { subjects: Subject[] }) {
+export function HomeworkCreateButton({ subjects, classes }: { subjects: Subject[]; classes: SchoolClassOption[] }) {
   /* Состояние живёт в общем store: о модалке знает и пустышка списка заданий. */
   const open = useHomeworkCreateModal((state) => state.open);
   const setOpen = useHomeworkCreateModal((state) => state.setOpen);
@@ -64,14 +68,14 @@ export function HomeworkCreateButton({ subjects }: { subjects: Subject[] }) {
         <Plus className="h-4 w-4" />
         Новое задание
       </button>
-      <HomeworkCreateModal open={open} subjects={subjects} onClose={() => setOpen(false)} />
+      <HomeworkCreateModal open={open} subjects={subjects} classes={classes} onClose={() => setOpen(false)} />
     </>
   );
 }
 
-export function HomeworkCreateModal({ open, subjects, onClose }: HomeworkCreateModalProps) {
+export function HomeworkCreateModal({ open, subjects, classes, onClose }: HomeworkCreateModalProps) {
   const router = useRouter();
-  const [form, setForm] = useState<FormState>(() => buildInitialForm(subjects));
+  const [form, setForm] = useState<FormState>(() => buildInitialForm(subjects, classes));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const wasOpen = useRef(false);
@@ -84,9 +88,9 @@ export function HomeworkCreateModal({ open, subjects, onClose }: HomeworkCreateM
     if (wasOpen.current) return;
 
     wasOpen.current = true;
-    setForm(buildInitialForm(subjects));
+    setForm(buildInitialForm(subjects, classes));
     setErrors({});
-  }, [open, subjects]);
+  }, [open, subjects, classes]);
 
   useEffect(() => {
     if (!open) return;
@@ -120,6 +124,7 @@ export function HomeworkCreateModal({ open, subjects, onClose }: HomeworkCreateM
       title: form.title,
       description: form.description,
       subjectId: form.subjectId,
+      classId: form.classId,
       grade: form.grade,
       deadline: deadline?.toISOString() ?? form.deadline,
       maxScore: Number(form.maxScore),
@@ -142,7 +147,7 @@ export function HomeworkCreateModal({ open, subjects, onClose }: HomeworkCreateM
     }
 
     toast.success("Задание выдано классу", { description: "Ученики увидят его в разделе «Домашние задания»." });
-    setForm(buildInitialForm(subjects));
+    setForm(buildInitialForm(subjects, classes));
     setErrors({});
     onClose();
     router.refresh();
@@ -206,15 +211,24 @@ export function HomeworkCreateModal({ open, subjects, onClose }: HomeworkCreateM
 
           <SelectField
             label="Класс"
-            value={form.grade}
-            onChange={(event) => update("grade", event.target.value as GradeCode)}
-            error={errors.grade}
+            value={form.classId}
+            onChange={(event) => {
+              const selected = classes.find((schoolClass) => schoolClass.id === event.target.value);
+              if (!selected) return;
+              update("classId", selected.id);
+              update("grade", selected.grade);
+            }}
+            error={errors.classId}
           >
-            {GRADES.map((grade) => (
-              <option key={grade} value={grade} className="bg-ink-900">
-                {GRADE_LABELS[grade]}
-              </option>
-            ))}
+            {classes.length === 0 ? (
+              <option value="" className="bg-ink-900">Нет доступных классов</option>
+            ) : (
+              classes.map((schoolClass) => (
+                <option key={schoolClass.id} value={schoolClass.id} className="bg-ink-900">
+                  {schoolClass.name}
+                </option>
+              ))
+            )}
           </SelectField>
 
           <TextField
@@ -266,7 +280,7 @@ export function HomeworkCreateModal({ open, subjects, onClose }: HomeworkCreateM
             </button>
             <button
               type="submit"
-              disabled={submitting || subjects.length === 0}
+              disabled={submitting || subjects.length === 0 || classes.length === 0}
               className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Выдаём…" : "Выдать задание"}

@@ -8,12 +8,12 @@ import { SelectField } from "@/components/ui/form-controls";
 import { TextField } from "@/components/ui/field";
 import { apiRequest } from "@/lib/client-api";
 import {
-  GRADES,
   GRADE_LABELS,
   validateCreateLesson,
   type GradeCode,
   type ScheduleConflictInfo,
 } from "@/lib/schedule-rules";
+import type { SchoolClassOption } from "@/lib/schools";
 import { subjectTint } from "@/lib/subjects";
 import { cn } from "@/lib/utils";
 import { DAY_LABELS, type DayOfWeek, type Schedule, type Subject } from "@/types";
@@ -21,6 +21,7 @@ import { DAY_LABELS, type DayOfWeek, type Schedule, type Subject } from "@/types
 interface LessonModalProps {
   open: boolean;
   subjects: Subject[];
+  classes: SchoolClassOption[];
   defaultDay: DayOfWeek;
   onClose: () => void;
   onCreated: (lesson: Schedule) => void;
@@ -28,6 +29,7 @@ interface LessonModalProps {
 
 interface FormState {
   subjectId: string;
+  classId: string;
   grade: GradeCode;
   dayOfWeek: string;
   startTime: string;
@@ -43,10 +45,11 @@ const CONFLICT_KIND_LABELS: Record<ScheduleConflictInfo["kind"], string> = {
 
 const WORK_DAYS: DayOfWeek[] = [1, 2, 3, 4, 5, 6];
 
-function buildInitialForm(subjects: Subject[], day: DayOfWeek): FormState {
+function buildInitialForm(subjects: Subject[], classes: SchoolClassOption[], day: DayOfWeek): FormState {
   return {
     subjectId: subjects[0]?.id ?? "",
-    grade: "GRADE_5",
+    classId: classes[0]?.id ?? "",
+    grade: classes[0]?.grade ?? "GRADE_5",
     dayOfWeek: String(day),
     startTime: "08:30",
     endTime: "09:15",
@@ -55,8 +58,8 @@ function buildInitialForm(subjects: Subject[], day: DayOfWeek): FormState {
 }
 
 /** Модалка «+ урок»: предмет, класс, день, время и кабинет. Проверка пересечений — на сервере. */
-export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: LessonModalProps) {
-  const [form, setForm] = useState<FormState>(() => buildInitialForm(subjects, defaultDay));
+export function LessonModal({ open, subjects, classes, defaultDay, onClose, onCreated }: LessonModalProps) {
+  const [form, setForm] = useState<FormState>(() => buildInitialForm(subjects, classes, defaultDay));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [conflicts, setConflicts] = useState<ScheduleConflictInfo[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -72,10 +75,10 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
     if (wasOpen.current) return;
 
     wasOpen.current = true;
-    setForm(buildInitialForm(subjects, defaultDay));
+    setForm(buildInitialForm(subjects, classes, defaultDay));
     setErrors({});
     setConflicts([]);
-  }, [open, subjects, defaultDay]);
+  }, [open, subjects, classes, defaultDay]);
 
   useEffect(() => {
     if (!open) return;
@@ -106,6 +109,7 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
     const selectedSubjectId = new FormData(event.currentTarget).get("subjectId");
     const payload = {
       subjectId: typeof selectedSubjectId === "string" ? selectedSubjectId : "",
+      classId: form.classId,
       grade: form.grade,
       dayOfWeek: Number(form.dayOfWeek),
       startTime: form.startTime,
@@ -143,20 +147,17 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* Затемняющий оверлей — слой ниже диалога (z-90 против z-100). */}
-      <div
-        aria-hidden
-        onClick={() => {
-          if (!submitting) onClose();
-        }}
-        className="absolute inset-0 z-[90] bg-black/60 backdrop-blur"
-      />
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 pt-20 bg-black/70 backdrop-blur-sm"
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !submitting) onClose();
+      }}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="lesson-modal-title"
-        className="ring-gradient glass-card animate-fade-up relative z-[100] max-h-[90vh] w-full max-w-lg overflow-y-auto bg-ink-900/95 p-6 shadow-glow"
+        className="ring-gradient glass-card animate-fade-up relative z-[100] max-h-[85vh] w-full max-w-lg overflow-y-auto bg-ink-900/95 p-6 shadow-glow"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -189,13 +190,19 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
 
           <SelectField
             label="Класс"
-            value={form.grade}
-            onChange={(event) => update("grade", event.target.value as GradeCode)}
-            error={errors.grade}
+            value={form.classId}
+            onChange={(event) => {
+              const selectedClass = classes.find((schoolClass) => schoolClass.id === event.target.value);
+              update("classId", event.target.value);
+              if (selectedClass) update("grade", selectedClass.grade);
+            }}
+            error={errors.classId}
+            hint={classes.length === 0 ? "В школе ещё не созданы классы." : undefined}
           >
-            {GRADES.map((grade) => (
-              <option key={grade} value={grade} className="bg-ink-900">
-                {GRADE_LABELS[grade]}
+            <option value="" className="bg-ink-900">Выберите класс</option>
+            {classes.map((schoolClass) => (
+              <option key={schoolClass.id} value={schoolClass.id} className="bg-ink-900">
+                {schoolClass.name}
               </option>
             ))}
           </SelectField>
@@ -267,7 +274,7 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
             </button>
             <button
               type="submit"
-              disabled={submitting || subjects.length === 0}
+              disabled={submitting || subjects.length === 0 || classes.length === 0}
               className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Сохраняем…" : "Добавить урок"}

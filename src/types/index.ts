@@ -189,7 +189,11 @@ export interface Schedule {
   id: string;
   subjectId: string;
   teacherId: string;
-  /** Класс обучения (зеркалит Prisma `enum ClassGrade`): GRADE_5 … GRADE_11. */
+  /** Школа и конкретная группа; nullable для старых данных. */
+  schoolId?: string | null;
+  classId?: string | null;
+  className?: string | null;
+  /** Параллель для совместимости со старым интерфейсом. */
   grade: GradeCode;
   dayOfWeek: DayOfWeek;
   /** Время начала в формате "HH:mm", например "09:00". */
@@ -238,6 +242,8 @@ export interface HomeworkListItem {
   title: string;
   subject: Subject;
   grade: GradeCode;
+  classId?: string | null;
+  className?: string | null;
   /** ISO-дата дедлайна. */
   deadline: string;
   maxScore: number;
@@ -253,6 +259,8 @@ export interface HomeworkDetailInfo {
   description: string;
   subject: Subject;
   grade: GradeCode;
+  classId?: string | null;
+  className?: string | null;
   deadline: string;
   maxScore: number;
   teacher: { id: string; name: string };

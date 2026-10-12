@@ -30,6 +30,8 @@ import {
   validateCreateHomework,
 } from "../src/lib/homework-rules";
 import { MockAIProvider } from "../src/lib/ai-provider";
+import { validateRegisterInput } from "../src/lib/validation";
+import { gradeFromClassName, normalizeClassName, normalizeSchoolCode } from "../src/lib/school-rules";
 
 const lesson = (dayOfWeek: number, startTime: string, endTime: string, id = `${dayOfWeek}-${startTime}`) => ({
   id,
@@ -39,6 +41,54 @@ const lesson = (dayOfWeek: number, startTime: string, endTime: string, id = `${d
 });
 
 const clock = (dayOfWeek: number, time: string): SchoolClock => ({ dayOfWeek: dayOfWeek as SchoolClock["dayOfWeek"], minutes: parseTime(time)! });
+
+describe("коды школ и названия классов", () => {
+  it("нормализует коды школ и отвергает некорректные", () => {
+    assert.equal(normalizeSchoolCode(" school1 "), "SCHOOL1");
+    assert.equal(normalizeSchoolCode("AB"), null);
+    assert.equal(normalizeSchoolCode("school code"), null);
+  });
+
+  it("нормализует названия классов и определяет параллель", () => {
+    assert.equal(normalizeClassName(" 7 - в "), "7-В");
+    assert.equal(gradeFromClassName("11-Б"), "GRADE_11");
+    assert.equal(gradeFromClassName("12-А"), null);
+  });
+});
+
+describe("регистрация со школой и классом", () => {
+  const valid = {
+    name: "Анна Иванова",
+    email: "anna@example.ru",
+    password: "School123",
+    role: "STUDENT",
+    schoolCode: "school1",
+    classId: "class-5a",
+  };
+
+  it("нормализует код школы и требует класс ученику", () => {
+    const result = validateRegisterInput(valid);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.schoolCode, "SCHOOL1");
+      assert.equal(result.data.classId, "class-5a");
+    }
+
+    const missingClass = validateRegisterInput({ ...valid, classId: "" });
+    assert.equal(missingClass.ok, false);
+    if (!missingClass.ok) assert.ok(missingClass.fields.classId);
+  });
+
+  it("требует код школы и не принимает класс учителю", () => {
+    const missingCode = validateRegisterInput({ ...valid, schoolCode: "" });
+    assert.equal(missingCode.ok, false);
+    if (!missingCode.ok) assert.ok(missingCode.fields.schoolCode);
+
+    const teacherWithClass = validateRegisterInput({ ...valid, role: "TEACHER", classId: "class-5a" });
+    assert.equal(teacherWithClass.ok, false);
+    if (!teacherWithClass.ok) assert.ok(teacherWithClass.fields.classId);
+  });
+});
 
 describe("время и пересечения", () => {
   it("разбирает HH:mm и отвергает некорректные строки", () => {
@@ -111,6 +161,7 @@ describe("статусы уроков и «до следующего урока�
 describe("валидация создания урока", () => {
   const valid = {
     subjectId: "subj-1",
+    classId: "class-8a",
     grade: "GRADE_8",
     dayOfWeek: 2,
     startTime: "09:00",
@@ -182,6 +233,7 @@ describe("валидация домашних заданий", () => {
     title: "Квадратные уравнения",
     description: "Решите уравнение x^2 = 4 и опишите шаги.",
     subjectId: "subj-1",
+    classId: "class-8a",
     grade: "GRADE_8",
     deadline: "2026-10-13T12:00:00Z",
   };
@@ -190,6 +242,12 @@ describe("валидация домашних заданий", () => {
     const result = validateCreateHomework(valid, now);
     assert.equal(result.ok, true);
     if (result.ok) assert.equal(result.data.maxScore, 5);
+  });
+
+  it("требует указать конкретный класс школы", () => {
+    const result = validateCreateHomework({ ...valid, classId: " " }, now);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.ok(result.fields?.classId);
   });
 
   it("отвергает дедлайн в прошлом и слишком короткое условие", () => {

@@ -9,6 +9,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { authOptions } from "@/lib/auth";
 import { listLessonsForViewer, listSubjects } from "@/lib/schedule";
 import { getSchoolViewer } from "@/lib/school-viewer";
+import { listClassesForSchool } from "@/lib/schools";
 import { ROLE_LABELS, hasPermission } from "@/types";
 
 export const metadata: Metadata = {
@@ -34,16 +35,17 @@ export default async function SchedulePage() {
   }
 
   const canEdit = hasPermission(viewer.role, "schedule:write");
-  const [lessons, subjects] = await Promise.all([
+  const [lessons, subjects, classes] = await Promise.all([
     listLessonsForViewer(viewer),
     canEdit ? listSubjects() : Promise.resolve([]),
+    canEdit && viewer.schoolId ? listClassesForSchool(viewer.schoolId) : Promise.resolve([]),
   ]);
 
   const description = canEdit
     ? "Планируйте уроки по классам: предмет, время и кабинет. Каждый урок получает комнату для входа."
     : viewer.role === "STUDENT"
-      ? viewer.grade
-        ? "Уроки вашего класса на неделю. Кнопка «Войти» откроет текущий или ближайший урок."
+      ? viewer.className
+        ? `Расписание класса ${viewer.className} на неделю. Кнопка «Войти» откроет текущий или ближайший урок.`
         : "Класс не назначен — расписание появится после назначения класса."
       : "Расписание школы.";
 
@@ -76,7 +78,8 @@ export default async function SchedulePage() {
         <ScheduleBoard
           lessons={lessons}
           subjects={subjects}
-          viewer={{ id: viewer.id, role: viewer.role, grade: viewer.grade }}
+          classes={classes}
+          viewer={{ id: viewer.id, role: viewer.role, grade: viewer.grade, classId: viewer.classId }}
         />
       </div>
     </AppShell>

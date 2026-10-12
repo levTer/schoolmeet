@@ -1,32 +1,47 @@
 import { prisma } from "@/lib/prisma";
+import { ensureUserSchoolMembership } from "@/lib/schools";
 import type { GradeCode } from "@/lib/schedule-rules";
 import type { Role } from "@/types";
 
-/** Минимальные данные о текущем пользователе, которые нужны расписанию и ДЗ. */
+/** Минимальные данные о текущем пользователе, нужные расписанию и ДЗ. */
 export interface SchoolViewer {
   id: string;
   role: Role;
-  /** Класс ученика; для учителей и администраторов — null. */
+  schoolId: string | null;
+  classId: string | null;
+  className: string | null;
+  /** Параллель остаётся для совместимости с существующими UI и данными. */
   grade: GradeCode | null;
-  /** Аккаунт заблокирован администратором (этап 6). */
+  /** Аккаунт заблокирован администратором. */
   isBanned: boolean;
 }
 
 /**
- * Загружает роль, класс и признак блокировки из БД. Берём их из базы, а не из
- * сессии, чтобы блокировка и смена класса вступали в силу сразу, без
- * перевыпуска JWT.
+ * Загружает роль, школу, класс и блокировку из БД, а не из клиентского запроса.
+ * Если старый аккаунт ещё не привязан к школе, мигрирует его в SCHOOL1.
  */
 export async function getSchoolViewer(userId: string): Promise<SchoolViewer | null> {
+  await ensureUserSchoolMembership(userId);
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true, grade: true, isBanned: true },
+    select: {
+      id: true,
+      role: true,
+      grade: true,
+      schoolId: true,
+      classId: true,
+      schoolClass: { select: { name: true } },
+      isBanned: true,
+    },
   });
   if (!user) return null;
 
   return {
     id: user.id,
     role: user.role as Role,
+    schoolId: user.schoolId,
+    classId: user.classId,
+    className: user.schoolClass?.name ?? null,
     grade: (user.grade as GradeCode | null) ?? null,
     isBanned: user.isBanned,
   };

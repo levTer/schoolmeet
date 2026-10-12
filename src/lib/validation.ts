@@ -1,3 +1,4 @@
+import { normalizeSchoolCode } from "@/lib/school-rules";
 import type { Role } from "@/types";
 
 /* -------------------------------------------------------------------------- */
@@ -30,6 +31,8 @@ export interface FieldErrors {
   password?: string;
   confirmPassword?: string;
   role?: string;
+  schoolCode?: string;
+  classId?: string;
 }
 
 /** Проверенные данные регистрации, готовые к записи в БД. */
@@ -38,6 +41,8 @@ export interface RegisterFields {
   email: string;
   password: string;
   role: PublicRole;
+  schoolCode: string;
+  classId: string | null;
 }
 
 export type ValidationResult<T> =
@@ -162,11 +167,24 @@ export function validateRegisterInput(input: unknown): ValidationResult<Register
     }
   }
 
+  /* Школа и класс -------------------------------------------------------- */
+  const schoolCode = normalizeSchoolCode(raw.schoolCode);
+  if (!schoolCode) fields.schoolCode = "Введите корректный код школы";
+
+  const rawClassId = typeof raw.classId === "string" ? raw.classId.trim() : "";
+  let classId: string | null = null;
+  if (role === "STUDENT") {
+    if (!rawClassId) fields.classId = "Выберите свой класс";
+    else classId = rawClassId;
+  } else if (rawClassId) {
+    fields.classId = "Учителю не нужно выбирать класс";
+  }
+
   if (Object.keys(fields).length > 0) {
     return { ok: false, error: "Проверьте правильность заполнения полей", fields };
   }
 
-  return { ok: true, data: { name, email, password, role } };
+  return { ok: true, data: { name, email, password, role, schoolCode: schoolCode!, classId } };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -177,6 +195,8 @@ export interface RegisterRequest {
   name: string;
   email: string;
   password: string;
+  schoolCode: string;
+  classId?: string | null;
   confirmPassword?: string;
   role?: PublicRole;
 }
@@ -186,6 +206,8 @@ export interface RegisterResponseUser {
   name: string;
   email: string;
   role: Role;
+  schoolId: string;
+  classId: string | null;
   createdAt: string;
 }
 

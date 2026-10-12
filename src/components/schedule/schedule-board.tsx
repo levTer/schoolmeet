@@ -25,6 +25,7 @@ import {
 
 } from "@/lib/schedule-rules";
 import { cn } from "@/lib/utils";
+import type { SchoolClassOption } from "@/lib/schools";
 import { DAY_LABELS, DAY_SHORT_LABELS, type DayOfWeek, type Role, type Schedule, type Subject } from "@/types";
 
 /** Масштаб сетки: пикселей в минуте. */
@@ -39,11 +40,13 @@ export interface ScheduleViewer {
   id: string;
   role: Role;
   grade: GradeCode | null;
+  classId: string | null;
 }
 
 interface ScheduleBoardProps {
   lessons: Schedule[];
   subjects: Subject[];
+  classes: SchoolClassOption[];
   viewer: ScheduleViewer;
 }
 
@@ -113,7 +116,7 @@ function countdownLabel(minutesUntil: number, lesson: Schedule): string {
 /* Компонент                                                                   */
 /* -------------------------------------------------------------------------- */
 
-export function ScheduleBoard({ lessons, subjects, viewer }: ScheduleBoardProps) {
+export function ScheduleBoard({ lessons, subjects, classes, viewer }: ScheduleBoardProps) {
   const router = useRouter();
   const schoolNow = useSchoolClock();
   const clock: SchoolClock | null = schoolNow?.clock ?? null;
@@ -182,7 +185,7 @@ export function ScheduleBoard({ lessons, subjects, viewer }: ScheduleBoardProps)
   const onCreated = useCallback(() => router.refresh(), [router]);
 
   const hasNoLessons = lessons.length === 0;
-  const studentWithoutGrade = viewer.role === "STUDENT" && !viewer.grade;
+  const studentWithoutGrade = viewer.role === "STUDENT" && !viewer.classId;
 
   return (
     <section aria-label="Расписание уроков" className="space-y-5">
@@ -381,6 +384,7 @@ export function ScheduleBoard({ lessons, subjects, viewer }: ScheduleBoardProps)
         <LessonModal
           open={modalOpen}
           subjects={subjects}
+          classes={classes}
           defaultDay={activeDay}
           onClose={() => setModalOpen(false)}
           onCreated={onCreated}
@@ -449,7 +453,7 @@ function LessonCard({ item, status, canDelete, deleting, onDelete, showGrade, sh
 
       {item.height > 56 && (
         <p className="mt-1 truncate text-[11px] text-white/80">
-          {[showGrade ? GRADE_LABELS[lesson.grade] : null, showTeacher ? lesson.teacher?.name : null, lesson.room]
+          {[showGrade ? lesson.className ?? GRADE_LABELS[lesson.grade] : null, showTeacher ? lesson.teacher?.name : null, lesson.room]
             .filter(Boolean)
             .join(" · ")}
         </p>

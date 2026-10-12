@@ -5,6 +5,7 @@ import { badRequest, conflict, forbidden, DomainError, notFound } from "@/lib/ap
 import { findAllowedFileType, getDeadlineIndicator, HOMEWORK_LIMITS, matchesFileSignature, parseGrade, sanitizeFileName, type DeadlineIndicator } from "@/lib/homework-rules";
 import { deleteUpload, readUpload, saveUpload } from "@/lib/file-storage";
 import { prisma } from "@/lib/prisma";
+import { gradeFromClassName } from "@/lib/school-rules";
 import type { SchoolViewer } from "@/lib/school-viewer";
 import { hasPermission, type HomeworkAttachmentInfo, type HomeworkDetailInfo, type HomeworkDetailView, type HomeworkListItem, type HomeworkSubmissionStatus, type StudentSubmissionInfo, type TeacherReviewInfo, type TeacherSubmissionInfo } from "@/types";
 import type { GradeCode } from "@/lib/schedule-rules";
@@ -31,10 +32,27 @@ async function requireStudentHomework(db: Db, homeworkId: string, viewer: School
   if (viewer.role !== "STUDENT") throw forbidden("Сдавать задания могут только ученики");
   const homework = await db.homework.findUnique({
     where: { id: homeworkId },
-    select: { id: true, grade: true, deadline: true, description: true, maxScore: true, teacherId: true },
+    select: {
+      id: true,
+      schoolId: true,
+      classId: true,
+      grade: true,
+      deadline: true,
+      description: true,
+      maxScore: true,
+      teacherId: true,
+    },
   });
-  // Задание чужого класса для ученика «не существует» — не раскрываем его наличие.
-  if (!homework || !viewer.grade || homework.grade !== viewer.grade) throw notFound("Задание не найдено");
+  // Чужая школа или класс для ученика «не существует» — не раскрываем наличие задания.
+  if (
+    !homework ||
+    !viewer.schoolId ||
+    !viewer.classId ||
+    homework.schoolId !== viewer.schoolId ||
+    homework.classId !== viewer.classId
+  ) {
+    throw notFound("Задание не найдено");
+  }
   return homework;
 }
 
@@ -43,9 +61,18 @@ async function requireReviewableHomework(db: Db, homeworkId: string, viewer: Sch
   if (!hasPermission(viewer.role, "homework:review")) throw forbidden("Проверять задания могут только учителя");
   const homework = await db.homework.findUnique({
     where: { id: homeworkId },
-    select: { id: true, teacherId: true, grade: true, deadline: true, description: true, maxScore: true },
+    select: {
+      id: true,
+      teacherId: true,
+      schoolId: true,
+      classId: true,
+      grade: true,
+      deadline: true,
+      description: true,
+      maxScore: true,
+    },
   });
-  if (!homework) throw notFound("Задание не найдено");
+  if (!homework || !viewer.schoolId || homework.schoolId !== viewer.schoolId) throw notFound("Задание не найдено");
   if (viewer.role !== "ADMIN" && homework.teacherId !== viewer.id) {
     throw forbidden("Это задание выдал другой учитель");
   }
@@ -69,6 +96,8 @@ function toHomeworkInfo(homework: {
   title: string;
   description: string;
   grade: string;
+  classId: string | null;
+  schoolClass: { id: string; name: string } | null;
   deadline: Date;
   maxScore: number;
   subject: { id: string; name: string; color: string; emoji: string };
@@ -80,6 +109,8 @@ function toHomeworkInfo(homework: {
     description: homework.description,
     subject: homework.subject,
     grade: homework.grade as GradeCode,
+    classId: homework.classId,
+    className: homework.schoolClass?.name ?? null,
     deadline: homework.deadline.toISOString(),
     maxScore: homework.maxScore,
     teacher: homework.teacher,
@@ -138,13 +169,14 @@ function toTeacherReview(review: {
 /** Список заданий для роли: ученику — свой класс, учителю — свои задания, админу — все. */
 export async function listHomeworkForViewer(viewer: SchoolViewer): Promise<HomeworkListItem[]> {
   if (viewer.role === "STUDENT") {
-    if (!viewer.grade) return [];
+    if (!viewer.schoolId || !viewer.classId) return [];
     const rows = await prisma.homework.findMany({
-      where: { grade: viewer.grade },
+      where: { schoolId: viewer.schoolId, classId: viewer.classId },
       orderBy: { deadline: "asc" },
       include: {
         subject: { select: SUBJECT_SELECT },
         teacher: { select: { id: true, name: true } },
+        schoolClass: { select: { name: true } },
         submissions: {
           where: { studentId: viewer.id },
           select: { status: true, submittedAt: true, review: { select: { grade: true, approvedAt: true } } },
@@ -159,6 +191,8 @@ export async function listHomeworkForViewer(viewer: SchoolViewer): Promise<Homew
         title: row.title,
         subject: row.subject,
         grade: row.grade as GradeCode,
+        classId: row.classId,
+        className: row.schoolClass?.name ?? null,
         deadline: row.deadline.toISOString(),
         maxScore: row.maxScore,
         teacher: row.teacher,
@@ -173,34 +207,38 @@ export async function listHomeworkForViewer(viewer: SchoolViewer): Promise<Homew
     });
   }
 
+  if (!viewer.schoolId) return [];
   const rows = await prisma.homework.findMany({
-    where: viewer.role === "ADMIN" ? {} : { teacherId: viewer.id },
+    where: { schoolId: viewer.schoolId, ...(viewer.role === "ADMIN" ? {} : { teacherId: viewer.id }) },
     orderBy: { deadline: "asc" },
     include: {
       subject: { select: SUBJECT_SELECT },
       teacher: { select: { id: true, name: true } },
+      schoolClass: { select: { name: true } },
       submissions: { select: { status: true } },
     },
   });
 
-  // Сколько учеников в классе — знаменатель для «сдано N из M».
+  // Знаменатель сдачи — число учеников конкретной группы в этой школе.
   const studentCounts = await prisma.user.groupBy({
-    by: ["grade"],
-    where: { role: "STUDENT", grade: { not: null } },
+    by: ["classId"],
+    where: { role: "STUDENT", schoolId: viewer.schoolId, classId: { not: null } },
     _count: { _all: true },
   });
-  const totalByGrade = new Map(studentCounts.map((item) => [item.grade, item._count._all]));
+  const totalByClass = new Map(studentCounts.map((item) => [item.classId, item._count._all]));
 
   return rows.map((row) => ({
     id: row.id,
     title: row.title,
     subject: row.subject,
     grade: row.grade as GradeCode,
+    classId: row.classId,
+    className: row.schoolClass?.name ?? null,
     deadline: row.deadline.toISOString(),
     maxScore: row.maxScore,
     teacher: row.teacher,
     stats: {
-      total: totalByGrade.get(row.grade) ?? 0,
+      total: row.classId ? totalByClass.get(row.classId) ?? 0 : 0,
       submitted: row.submissions.filter((s) => s.status !== "DRAFT").length,
       graded: row.submissions.filter((s) => s.status === "GRADED").length,
     },
@@ -214,12 +252,13 @@ export async function getHomeworkDetailForViewer(homeworkId: string, viewer: Sch
     include: {
       subject: { select: SUBJECT_SELECT },
       teacher: { select: { id: true, name: true } },
+      schoolClass: { select: { id: true, name: true } },
     },
   });
-  if (!homework) return null;
+  if (!homework || !viewer.schoolId || homework.schoolId !== viewer.schoolId) return null;
 
   if (viewer.role === "STUDENT") {
-    if (!viewer.grade || homework.grade !== viewer.grade) return null;
+    if (!viewer.classId || homework.classId !== viewer.classId) return null;
 
     const submission = await prisma.homeworkSubmission.findUnique({
       where: { homeworkId_studentId: { homeworkId, studentId: viewer.id } },
@@ -257,7 +296,7 @@ export async function getHomeworkDetailForViewer(homeworkId: string, viewer: Sch
   }));
 
   const classStudents = await prisma.user.findMany({
-    where: { role: "STUDENT", grade: homework.grade },
+    where: { role: "STUDENT", schoolId: homework.schoolId, classId: homework.classId },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -280,6 +319,7 @@ export interface CreateHomeworkData {
   title: string;
   description: string;
   subjectId: string;
+  classId: string;
   grade: GradeCode;
   deadline: Date;
   maxScore: number;
@@ -287,12 +327,23 @@ export interface CreateHomeworkData {
 
 export async function createHomework(data: CreateHomeworkData, teacher: SchoolViewer): Promise<{ id: string }> {
   if (!hasPermission(teacher.role, "homework:write")) throw forbidden("Выдавать задания могут только учителя");
+  if (!teacher.schoolId) throw forbidden("Аккаунт не привязан к школе");
+
+  const schoolClass = await prisma.class.findFirst({
+    where: { id: data.classId, schoolId: teacher.schoolId },
+    select: { id: true, name: true },
+  });
+  if (!schoolClass) throw badRequest("Класс не найден в вашей школе", { classId: "Выберите класс своей школы" });
+  const grade = gradeFromClassName(schoolClass.name);
+  if (!grade || grade !== data.grade) {
+    throw badRequest("Параллель не совпадает с выбранным классом", { classId: "Обновите список классов" });
+  }
 
   const subject = await prisma.subject.findUnique({ where: { id: data.subjectId }, select: { id: true } });
   if (!subject) throw badRequest("Предмет не найден", { subjectId: "Выберите предмет из списка" });
 
   const homework = await prisma.homework.create({
-    data: { ...data, teacherId: teacher.id },
+    data: { ...data, grade, schoolId: teacher.schoolId, teacherId: teacher.id },
     select: { id: true },
   });
   return homework;
@@ -463,13 +514,25 @@ export async function getAttachmentForDownload(
       fileName: true,
       mimeType: true,
       storageKey: true,
-      submission: { select: { homeworkId: true, studentId: true, homework: { select: { teacherId: true } } } },
+      submission: {
+        select: {
+          homeworkId: true,
+          studentId: true,
+          homework: { select: { teacherId: true, schoolId: true, classId: true } },
+        },
+      },
     },
   });
   if (!attachment || attachment.submission.homeworkId !== homeworkId) throw notFound("Файл не найден");
 
   const { submission } = attachment;
-  if (viewer.role === "STUDENT" && submission.studentId !== viewer.id) throw notFound("Файл не найден");
+  if (!viewer.schoolId || submission.homework.schoolId !== viewer.schoolId) throw notFound("Файл не найден");
+  if (
+    viewer.role === "STUDENT" &&
+    (submission.studentId !== viewer.id || submission.homework.classId !== viewer.classId)
+  ) {
+    throw notFound("Файл не найден");
+  }
   if (viewer.role === "TEACHER" && submission.homework.teacherId !== viewer.id) {
     throw forbidden("Файлы чужих заданий недоступны");
   }
@@ -630,10 +693,11 @@ export interface UrgentHomeworkItem {
  */
 export async function getUrgentHomework(viewer: SchoolViewer, now: Date): Promise<UrgentHomeworkItem[]> {
   if (viewer.role === "STUDENT") {
-    if (!viewer.grade) return [];
+    if (!viewer.schoolId || !viewer.classId) return [];
     const rows = await prisma.homework.findMany({
       where: {
-        grade: viewer.grade,
+        schoolId: viewer.schoolId,
+        classId: viewer.classId,
         OR: [
           { submissions: { none: { studentId: viewer.id } } },
           { submissions: { some: { studentId: viewer.id, status: "DRAFT" } } },
@@ -654,8 +718,10 @@ export async function getUrgentHomework(viewer: SchoolViewer, now: Date): Promis
     }));
   }
 
+  if (!viewer.schoolId) return [];
   const rows = await prisma.homework.findMany({
     where: {
+      schoolId: viewer.schoolId,
       ...(viewer.role === "ADMIN" ? {} : { teacherId: viewer.id }),
       deadline: { gte: now },
     },
@@ -700,9 +766,13 @@ export async function getReviewQueue(viewer: SchoolViewer): Promise<ReviewQueue>
     return { count, items: [] };
   }
 
+  if (!viewer.schoolId) return { count: 0, items: [] };
   const where: Prisma.HomeworkSubmissionWhereInput = {
     status: "SUBMITTED",
-    ...(viewer.role === "ADMIN" ? {} : { homework: { teacherId: viewer.id } }),
+    homework: {
+      schoolId: viewer.schoolId,
+      ...(viewer.role === "ADMIN" ? {} : { teacherId: viewer.id }),
+    },
   };
   const [count, rows] = await Promise.all([
     prisma.homeworkSubmission.count({ where }),
