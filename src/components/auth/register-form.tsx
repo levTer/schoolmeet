@@ -1,16 +1,19 @@
 "use client";
 
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   CheckCircle2,
+  Crown,
   GraduationCap,
   KeyRound,
   Loader2,
+  Lock,
   Mail,
   User,
+  UserCheck,
 } from "lucide-react";
 
 import { FormAlert } from "@/components/ui/form-alert";
@@ -18,6 +21,7 @@ import { PasswordField, TextField } from "@/components/ui/field";
 import { SelectField } from "@/components/ui/form-controls";
 import { normalizeSchoolCode } from "@/lib/school-rules";
 import { GradientButton } from "@/components/ui/gradient-button";
+import { normalizeInviteToken, rolesForInvite, type InviteRole } from "@/lib/invite-rules";
 import {
   getPasswordStrength,
   normalizeEmail,
@@ -25,11 +29,12 @@ import {
   type FieldErrors,
   type RegisterResponse,
 } from "@/lib/validation";
+import { ROLE_LABELS, type Role } from "@/types";
 
-type PublicRole = "STUDENT" | "TEACHER";
+type SelectableRole = "STUDENT" | "TEACHER";
 
 const ROLE_OPTIONS: readonly {
-  value: PublicRole;
+  value: SelectableRole;
   label: string;
   hint: string;
   icon: typeof GraduationCap;
@@ -44,13 +49,14 @@ const ROLE_OPTIONS: readonly {
     value: "TEACHER",
     label: "Я Учитель",
     hint: "Создаю уроки, планирую расписание, веду доску и модерю чат.",
-    icon: User,
+    icon: UserCheck,
   },
 ];
 
 interface SchoolCheckData {
   school: { name: string; code: string };
   classes: Array<{ id: string; name: string; grade: string }>;
+  inviteRole?: InviteRole | null;
 }
 
 interface SchoolCheckResponse {
@@ -59,6 +65,7 @@ interface SchoolCheckResponse {
   data?: SchoolCheckData;
   school?: SchoolCheckData["school"];
   classes?: SchoolCheckData["classes"];
+  inviteRole?: InviteRole | null;
   error?: string;
   fields?: FieldErrors;
 }
@@ -66,7 +73,7 @@ interface SchoolCheckResponse {
 function schoolCheckDataFrom(payload: SchoolCheckResponse): SchoolCheckData | null {
   if (payload.data?.school && Array.isArray(payload.data.classes)) return payload.data;
   if (payload.valid && payload.school && Array.isArray(payload.classes)) {
-    return { school: payload.school, classes: payload.classes };
+    return { school: payload.school, classes: payload.classes, inviteRole: payload.inviteRole ?? null };
   }
   return null;
 }
@@ -78,14 +85,36 @@ const STRENGTH_STYLES = [
   "w-full bg-emerald-400",
 ] as const;
 
-/** Форма регистрации: создаёт аккаунт через `POST /api/auth/register`. */
-export function RegisterForm() {
+interface RegisterFormProps {
+  /** Код школы из ссылки-приглашения (`?code=…`) — подставляется сразу. */
+  initialSchoolCode?: string;
+  /** Секретный токен приглашения (`?invite=…`). */
+  initialInvite?: string;
+  /** Уровень ссылки, проверенный сервером: TEACHER / ADMIN / null (публично). */
+  initialInviteRole?: InviteRole | null;
+}
+
+/**
+ * Форма регистрации: создаёт аккаунт через `POST /api/auth/register`.
+ *
+ * Трёхуровневая система доступа: без секретной ссылки роль всегда STUDENT
+ * (выбор скрыт); `teacherInviteToken` открывает роль TEACHER; `adminInviteToken`
+ * регистрирует сразу с ролью ADMIN. Уровень ссылки проверяет сервер — и при
+ * отправке формы, и в `/api/schools/check`.
+ */
+export function RegisterForm({
+  initialSchoolCode = "",
+  initialInvite = "",
+  initialInviteRole = null,
+}: RegisterFormProps) {
   const router = useRouter();
 
-  const [role, setRole] = useState<PublicRole>("STUDENT");
+  const invite = useMemo(() => normalizeInviteToken(initialInvite), [initialInvite]);
+  const [inviteRole, setInviteRole] = useState<InviteRole | null>(initialInviteRole);
+  const [role, setRole] = useState<SelectableRole>(initialInviteRole === "TEACHER" ? "TEACHER" : "STUDENT");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [schoolCode, setSchoolCode] = useState("");
+  const [schoolCode, setSchoolCode] = useState(initialSchoolCode);
   const [schoolCheck, setSchoolCheck] = useState<SchoolCheckData | null>(null);
   const [classId, setClassId] = useState("");
   const [isCheckingSchool, setIsCheckingSchool] = useState(false);
@@ -98,7 +127,19 @@ export function RegisterForm() {
   const [isCreated, setIsCreated] = useState(false);
 
   const strength = useMemo(() => getPasswordStrength(password), [password]);
-  const activeRole = ROLE_OPTIONS.find((option) => option.value === role) ?? ROLE_OPTIONS[0];
+
+  /** Автопроверка кода школы из ссылки-приглашения при открытии страницы. */
+  const didAutoCheckRef = useRef(false);
+  useEffect(() => {
+    if (didAutoCheckRef.current || !initialSchoolCode.trim()) return;
+    didAutoCheckRef.current = true;
+    void handleCheckSchool();
+    // Проверяем только при монтировании: дальше пользователь жмёт «Проверить код» сам.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Итоговая роль: ADMIN выдаёт только admin-ссылка, TEACHER — teacher-ссылка. */
+  const effectiveRole: Role = inviteRole === "ADMIN" ? "ADMIN" : inviteRole === "TEACHER" ? role : "STUDENT";
 
   function clearFieldError(field: keyof FieldErrors) {
     setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
@@ -124,7 +165,8 @@ export function RegisterForm() {
 
     try {
       // Пробелы по краям снимает сервер (`code.trim()`), поэтому отправляем ввод как есть.
-      const response = await fetch(`/api/schools/check?code=${encodeURIComponent(schoolCode)}`, {
+      const inviteParam = invite ? `&invite=${encodeURIComponent(invite)}` : "";
+      const response = await fetch(`/api/schools/check?code=${encodeURIComponent(schoolCode)}${inviteParam}`, {
         cache: "no-store",
       });
       const payload = (await response.json()) as SchoolCheckResponse;
@@ -132,6 +174,8 @@ export function RegisterForm() {
 
       const data = schoolCheckDataFrom(payload);
       if (!response.ok || payload.ok === false || payload.valid === false || !data) {
+        setInviteRole(null);
+        setRole("STUDENT");
         setFieldErrors((previous) => ({
           ...previous,
           schoolCode: payload.fields?.schoolCode ?? payload.error ?? "Школа с таким кодом не найдена",
@@ -139,8 +183,13 @@ export function RegisterForm() {
         return;
       }
 
+      // Уровень ссылки перепроверяем для каждого кода школы: токен действует
+      // только для своей школы, поэтому после смены кода роль возвращается к STUDENT.
+      const nextInviteRole = data.inviteRole ?? null;
+      setInviteRole(nextInviteRole);
+      setRole(nextInviteRole === "TEACHER" ? "TEACHER" : "STUDENT");
       setSchoolCheck(data);
-      setFieldErrors((previous) => ({ ...previous, schoolCode: undefined, classId: undefined }));
+      setFieldErrors((previous) => ({ ...previous, schoolCode: undefined, classId: undefined, role: undefined }));
     } catch {
       if (schoolLookupRequestRef.current === requestId) {
         setFieldErrors((previous) => ({
@@ -158,20 +207,28 @@ export function RegisterForm() {
 
     const normalizedEmail = normalizeEmail(email);
     const normalizedSchoolCode = normalizeSchoolCode(schoolCode);
-    const validation = validateRegisterInput({
-      name,
-      email: normalizedEmail,
-      password,
-      role,
-      schoolCode,
-      classId: role === "STUDENT" ? classId : null,
-    });
+    const allowedRoles = rolesForInvite(inviteRole);
+    const validation = validateRegisterInput(
+      {
+        name,
+        email: normalizedEmail,
+        password,
+        role: effectiveRole,
+        schoolCode,
+        classId: effectiveRole === "STUDENT" ? classId : null,
+      },
+      { allowedRoles },
+    );
 
     const nextErrors: FieldErrors = validation.ok ? {} : { ...validation.fields };
     if (!schoolCheck || schoolCheck.school.code.toUpperCase() !== normalizedSchoolCode) {
       nextErrors.schoolCode = "Сначала проверьте код школы";
     }
-    if (role === "STUDENT" && schoolCheck && !schoolCheck.classes.some((item) => item.id === classId)) {
+    if (
+      effectiveRole === "STUDENT" &&
+      schoolCheck &&
+      !schoolCheck.classes.some((item) => item.id === classId)
+    ) {
       nextErrors.classId = "Выберите класс из списка школы";
     }
 
@@ -200,9 +257,10 @@ export function RegisterForm() {
           email: normalizedEmail,
           password,
           confirmPassword,
-          role,
+          role: effectiveRole,
           schoolCode,
-          classId: role === "STUDENT" ? classId : null,
+          classId: effectiveRole === "STUDENT" ? classId : null,
+          invite,
         }),
       });
 
@@ -239,8 +297,7 @@ export function RegisterForm() {
         </span>
         <h3 className="text-lg font-semibold text-white">Аккаунт создан</h3>
         <p className="text-sm leading-relaxed text-slate-400">
-          Роль «{role === "TEACHER" ? "Учитель" : "Ученик"}» сохранена. Перенаправляем на страницу
-          входа…
+          Роль «{ROLE_LABELS[effectiveRole]}» сохранена. Перенаправляем на страницу входа…
         </p>
         <p className="inline-flex items-center gap-2 text-xs text-slate-500">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -275,8 +332,12 @@ export function RegisterForm() {
             setSchoolCheck(null);
             setClassId("");
             setIsCheckingSchool(false);
+            // Смена кода обнуляет действие секретной ссылки до новой проверки.
+            setInviteRole(null);
+            setRole("STUDENT");
             clearFieldError("schoolCode");
             clearFieldError("classId");
+            clearFieldError("role");
           }}
         />
         <button
@@ -324,44 +385,67 @@ export function RegisterForm() {
         }}
       />
 
-      {/* Роль: переключатель «Я Ученик» / «Я Учитель» */}
+      {/* Роль: публично — всегда Ученик; по teacher-ссылке — выбор Ученик/Учитель; по admin-ссылке — Администратор */}
       <div className="space-y-2">
         <span className="block text-xs font-medium uppercase tracking-wider text-slate-400">
           Я регистрируюсь как
         </span>
 
-        <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-ink-900/60 p-1">
-          {ROLE_OPTIONS.map((option) => {
-            const isActive = option.value === role;
-            const Icon = option.icon;
+        {inviteRole === "ADMIN" ? (
+          <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 p-1">
+            <div className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 py-2.5 text-sm font-semibold text-white shadow-glow">
+              <Crown className="h-4 w-4" />
+              {ROLE_LABELS.ADMIN}
+            </div>
+          </div>
+        ) : inviteRole === "TEACHER" ? (
+          <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-ink-900/60 p-1">
+            {ROLE_OPTIONS.map((option) => {
+              const isActive = option.value === role;
+              const Icon = option.icon;
 
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  setRole(option.value);
-                  clearFieldError("role");
-                }}
-                aria-pressed={isActive}
-                className={
-                  isActive
-                    ? "relative inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 py-2.5 text-sm font-semibold text-white shadow-glow transition"
-                    : "relative inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white"
-                }
-              >
-                <Icon className="h-4 w-4" />
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    setRole(option.value);
+                    clearFieldError("role");
+                  }}
+                  aria-pressed={isActive}
+                  className={
+                    isActive
+                      ? "relative inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 py-2.5 text-sm font-semibold text-white shadow-glow transition"
+                      : "relative inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white"
+                  }
+                >
+                  <Icon className="h-4 w-4" />
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-white/10 bg-ink-900/60 p-1">
+            <div className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white/[0.06] px-3 py-2.5 text-sm font-semibold text-slate-200">
+              <GraduationCap className="h-4 w-4" />
+              {ROLE_LABELS.STUDENT}
+              <Lock className="h-3.5 w-3.5 text-slate-500" />
+            </div>
+          </div>
+        )}
 
-        <p className="text-xs leading-relaxed text-slate-500">{activeRole.hint}</p>
+        <p className="text-xs leading-relaxed text-slate-500">
+          {inviteRole === "ADMIN"
+            ? "Роль Администратора выдана по секретной ссылке приглашения."
+            : inviteRole === "TEACHER"
+              ? "Ссылка учителя открыла роль «Учитель». Без ссылки доступна только роль ученика."
+              : "Роль по умолчанию — Ученик. Роли Учитель и Администратор выдаются только по специальным ссылкам-приглашениям от администрации школы."}
+        </p>
         {fieldErrors.role && <p className="text-xs text-rose-300">{fieldErrors.role}</p>}
       </div>
 
-      {role === "STUDENT" && schoolCheck ? (
+      {effectiveRole === "STUDENT" && schoolCheck ? (
         <SelectField
           label="Класс"
           value={classId}
@@ -379,7 +463,7 @@ export function RegisterForm() {
             </option>
           ))}
         </SelectField>
-      ) : role === "STUDENT" ? (
+      ) : effectiveRole === "STUDENT" ? (
         <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-xs text-slate-500">
           Сначала подтвердите код школы — затем появится список классов.
         </p>

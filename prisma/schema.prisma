@@ -46,6 +46,12 @@ model School {
   id        String   @id @default(cuid())
   name      String
   code      String   @unique
+  /// Секретная ссылка-приглашение для регистрации учителей
+  /// (`/auth/register?code=…&invite=…`): только с этим токеном выдаётся роль TEACHER.
+  teacherInviteToken String @default(uuid()) @unique
+  /// Секретная ссылка-приглашение для назначения администраторов: только с этим
+  /// токеном выдаётся роль ADMIN (регистрация или повышение уже вошедшего аккаунта).
+  adminInviteToken   String @default(uuid()) @unique
   createdAt DateTime @default(now())
 
   users     User[]

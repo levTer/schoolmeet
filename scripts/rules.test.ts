@@ -32,7 +32,18 @@ import {
 import { MockAIProvider } from "../src/lib/ai-provider";
 import { validateRegisterInput } from "../src/lib/validation";
 import { gradeFromClassName, normalizeClassName, normalizeSchoolCode } from "../src/lib/school-rules";
-import { CONFIGURED_SCHOOLS, DEFAULT_CLASS_NAMES } from "../src/lib/school-config";
+import {
+  CONFIGURED_ADMIN_INVITE_TOKENS,
+  CONFIGURED_SCHOOLS,
+  DEFAULT_CLASS_NAMES,
+  configuredAdminInviteToken,
+} from "../src/lib/school-config";
+import {
+  inviteAllowsRole,
+  normalizeInviteToken,
+  resolveInviteRole,
+  rolesForInvite,
+} from "../src/lib/invite-rules";
 import { buildSchoolRoomId, hasSchoolAccess } from "../src/lib/realtime";
 
 const lesson = (dayOfWeek: number, startTime: string, endTime: string, id = `${dayOfWeek}-${startTime}`) => ({
@@ -113,6 +124,82 @@ describe("регистрация со школой и классом", () => {
     const teacherWithClass = validateRegisterInput({ ...valid, role: "TEACHER", classId: "class-5a" });
     assert.equal(teacherWithClass.ok, false);
     if (!teacherWithClass.ok) assert.ok(teacherWithClass.fields.classId);
+  });
+
+  it("по умолчанию не выдаёт ADMIN и TEACHER, но разрешает их по allowedRoles приглашения", () => {
+    // Без приглашения (allowedRoles по умолчанию) ADMIN недоступен.
+    const adminAttempt = validateRegisterInput({ ...valid, role: "ADMIN", classId: "" });
+    assert.equal(adminAttempt.ok, false);
+    if (!adminAttempt.ok) assert.ok(adminAttempt.fields.role);
+
+    // Ссылка администратора: ADMIN регистрируется без класса.
+    const viaAdminInvite = validateRegisterInput(
+      { ...valid, role: "ADMIN", classId: "" },
+      { allowedRoles: ["STUDENT", "TEACHER", "ADMIN"] },
+    );
+    assert.equal(viaAdminInvite.ok, true);
+    if (viaAdminInvite.ok) {
+      assert.equal(viaAdminInvite.data.role, "ADMIN");
+      assert.equal(viaAdminInvite.data.classId, null);
+    }
+
+    // Ссылка учителя: TEACHER доступен, ADMIN — нет.
+    const viaTeacherInvite = validateRegisterInput(
+      { ...valid, role: "TEACHER", classId: null },
+      { allowedRoles: ["STUDENT", "TEACHER"] },
+    );
+    assert.equal(viaTeacherInvite.ok, true);
+    if (viaTeacherInvite.ok) assert.equal(viaTeacherInvite.data.role, "TEACHER");
+
+    const adminViaTeacherInvite = validateRegisterInput(
+      { ...valid, role: "ADMIN", classId: "" },
+      { allowedRoles: ["STUDENT", "TEACHER"] },
+    );
+    assert.equal(adminViaTeacherInvite.ok, false);
+    if (!adminViaTeacherInvite.ok) assert.ok(adminViaTeacherInvite.fields.role);
+  });
+});
+
+describe("секретные ссылки-приглашения", () => {
+  const school = { teacherInviteToken: "teacher-token-1", adminInviteToken: "admin-sinlycem-2026" };
+
+  it("определяет роль по токену и отвергает чужие и пустые", () => {
+    assert.equal(resolveInviteRole(school, "teacher-token-1"), "TEACHER");
+    assert.equal(resolveInviteRole(school, "admin-sinlycem-2026"), "ADMIN");
+    assert.equal(resolveInviteRole(school, " admin-sinlycem-2026 "), "ADMIN");
+    assert.equal(resolveInviteRole(school, "wrong-token"), null);
+    assert.equal(resolveInviteRole(school, ""), null);
+    assert.equal(resolveInviteRole(school, undefined), null);
+    assert.equal(resolveInviteRole({}, "teacher-token-1"), null);
+    // При коллизии токенов побеждает более привилегированная роль.
+    assert.equal(resolveInviteRole({ teacherInviteToken: "same", adminInviteToken: "same" }, "same"), "ADMIN");
+    assert.equal(normalizeInviteToken("  tok  "), "tok");
+    assert.equal(normalizeInviteToken(42), "");
+  });
+
+  it("выдаёт роли по уровню ссылки: публично — всегда только STUDENT", () => {
+    assert.deepEqual([...rolesForInvite(null)], ["STUDENT"]);
+    assert.deepEqual([...rolesForInvite("TEACHER")], ["STUDENT", "TEACHER"]);
+    assert.deepEqual([...rolesForInvite("ADMIN")], ["STUDENT", "TEACHER", "ADMIN"]);
+
+    assert.equal(inviteAllowsRole(null, "STUDENT"), true);
+    assert.equal(inviteAllowsRole(null, "TEACHER"), false);
+    assert.equal(inviteAllowsRole(null, "ADMIN"), false);
+    assert.equal(inviteAllowsRole("TEACHER", "TEACHER"), true);
+    assert.equal(inviteAllowsRole("TEACHER", "ADMIN"), false);
+    assert.equal(inviteAllowsRole("ADMIN", "ADMIN"), true);
+  });
+
+  it("задаёт предустановленные admin-токены трёх школ", () => {
+    assert.deepEqual({ ...CONFIGURED_ADMIN_INVITE_TOKENS }, {
+      Sinlycem26: "admin-sinlycem-2026",
+      Fulhouseteem26: "admin-fulhouse-2026",
+      "Anna.Terentieva77": "admin-annat-2026",
+    });
+    assert.equal(configuredAdminInviteToken("Sinlycem26"), "admin-sinlycem-2026");
+    assert.equal(configuredAdminInviteToken("sinlycem26"), "admin-sinlycem-2026");
+    assert.equal(configuredAdminInviteToken("Anna.Terentieva77"), "admin-annat-2026");
+    assert.equal(configuredAdminInviteToken("UnknownSchool"), undefined);
   });
 });
 

@@ -19,6 +19,7 @@ import {
 
 import { AnnouncementModalButton } from "@/components/admin/announcement-modal";
 import { AdminBarChart } from "@/components/admin/charts";
+import { InviteLinksPanel } from "@/components/admin/invite-links-panel";
 import { SchoolSettingsPanel } from "@/components/admin/school-settings-panel";
 import { StatCard } from "@/components/admin/stat-card";
 import { FormAlert } from "@/components/ui/form-alert";
@@ -27,10 +28,10 @@ import { getAdminOverview, getAdminSecondaryMetrics, type AdminOverview } from "
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
 import { getSchoolViewer } from "@/lib/school-viewer";
 import {
-  getSchoolSummary,
+  getSchoolInviteSummary,
   listClassesForSchool,
   type SchoolClassOption,
-  type SchoolSummary,
+  type SchoolInviteSummary,
 } from "@/lib/schools";
 import { cn } from "@/lib/utils";
 
@@ -82,13 +83,13 @@ export default async function AdminPage() {
 
   let overview: AdminOverview | null = null;
   let secondary: { pendingReview: number; banned: number; todayJoins: number } | null = null;
-  let schoolSettings: { school: SchoolSummary; classes: SchoolClassOption[] } | null = null;
+  let schoolSettings: { school: SchoolInviteSummary; classes: SchoolClassOption[] } | null = null;
   let databaseError = false;
 
   try {
     const viewer = await getSchoolViewer(session.user.id);
     if (viewer?.schoolId) {
-      const school = await getSchoolSummary(viewer.schoolId);
+      const school = await getSchoolInviteSummary(viewer.schoolId);
       if (school) {
         schoolSettings = {
           school,
@@ -122,7 +123,10 @@ export default async function AdminPage() {
   return (
     <div className="space-y-8">
       {schoolSettings ? (
-        <SchoolSettingsPanel school={schoolSettings.school} initialClasses={schoolSettings.classes} />
+        <>
+          <SchoolSettingsPanel school={schoolSettings.school} initialClasses={schoolSettings.classes} />
+          <InviteLinksPanel school={schoolSettings.school} />
+        </>
       ) : (
         <FormAlert variant="error">Не удалось загрузить код школы и список классов.</FormAlert>
       )}
