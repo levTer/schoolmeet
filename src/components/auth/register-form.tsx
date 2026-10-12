@@ -54,10 +54,21 @@ interface SchoolCheckData {
 }
 
 interface SchoolCheckResponse {
-  ok: boolean;
+  ok?: boolean;
+  valid?: boolean;
   data?: SchoolCheckData;
+  school?: SchoolCheckData["school"];
+  classes?: SchoolCheckData["classes"];
   error?: string;
   fields?: FieldErrors;
+}
+
+function schoolCheckDataFrom(payload: SchoolCheckResponse): SchoolCheckData | null {
+  if (payload.data?.school && Array.isArray(payload.data.classes)) return payload.data;
+  if (payload.valid && payload.school && Array.isArray(payload.classes)) {
+    return { school: payload.school, classes: payload.classes };
+  }
+  return null;
 }
 
 const STRENGTH_STYLES = [
@@ -112,13 +123,15 @@ export function RegisterForm() {
     setFormError(null);
 
     try {
-      const response = await fetch(`/api/schools/check?code=${encodeURIComponent(normalizedCode)}`, {
+      // Пробелы по краям снимает сервер (`code.trim()`), поэтому отправляем ввод как есть.
+      const response = await fetch(`/api/schools/check?code=${encodeURIComponent(schoolCode)}`, {
         cache: "no-store",
       });
       const payload = (await response.json()) as SchoolCheckResponse;
       if (schoolLookupRequestRef.current !== requestId) return;
 
-      if (!response.ok || !payload.ok || !payload.data) {
+      const data = schoolCheckDataFrom(payload);
+      if (!response.ok || payload.ok === false || payload.valid === false || !data) {
         setFieldErrors((previous) => ({
           ...previous,
           schoolCode: payload.fields?.schoolCode ?? payload.error ?? "Школа с таким кодом не найдена",
@@ -126,7 +139,7 @@ export function RegisterForm() {
         return;
       }
 
-      setSchoolCheck(payload.data);
+      setSchoolCheck(data);
       setFieldErrors((previous) => ({ ...previous, schoolCode: undefined, classId: undefined }));
     } catch {
       if (schoolLookupRequestRef.current === requestId) {
