@@ -133,6 +133,75 @@ export function UsersTable({ initial, actor }: UsersTableProps) {
 
   const pageCount = Math.max(1, data.pageCount);
 
+  const renderUserActions = (user: AdminUserRow, mobile = false) => {
+    const rowCapabilities = adminCapabilities(actor, { id: user.id, role: user.role });
+    const awaitingBanConfirm = confirmBanId === user.id;
+
+    return (
+      <div className={cn("items-center gap-2", mobile ? "grid grid-cols-2" : "flex flex-wrap justify-end")}>
+        <button
+          type="button"
+          onClick={() => setEditing(user)}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/10",
+            mobile && "w-full justify-center px-2",
+          )}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Изменить
+        </button>
+
+        {rowCapabilities["users.ban"] ? (
+          <button
+            type="button"
+            disabled={pendingId === user.id}
+            onClick={() => {
+              if (user.isBanned) {
+                void toggleBan(user);
+                return;
+              }
+              if (awaitingBanConfirm) {
+                void toggleBan(user);
+                return;
+              }
+              setConfirmBanId(user.id);
+              window.setTimeout(() => setConfirmBanId((current) => (current === user.id ? null : current)), 5000);
+            }}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:opacity-50",
+              mobile && "w-full justify-center px-2",
+              user.isBanned
+                ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
+                : awaitingBanConfirm
+                  ? "border-rose-400/50 bg-rose-500/25 text-rose-100"
+                  : "border-rose-400/25 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20",
+            )}
+          >
+            {user.isBanned ? (
+              <>
+                <Unlock className="h-3.5 w-3.5 shrink-0" />
+                Разблокировать
+              </>
+            ) : (
+              <>
+                <Ban className="h-3.5 w-3.5 shrink-0" />
+                {awaitingBanConfirm ? "Точно?" : "Заблокировать"}
+              </>
+            )}
+          </button>
+        ) : (
+          <span className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-1.5 text-xs text-slate-500",
+            mobile && "col-span-2 justify-center",
+          )}>
+            <Users className="h-3.5 w-3.5" />
+            Только просмотр
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <section className="space-y-5">
       {/* Панель фильтров */}
@@ -252,7 +321,68 @@ export function UsersTable({ initial, actor }: UsersTableProps) {
             Ничего не найдено. Измените фильтры или создайте нового пользователя.
           </p>
         ) : (
-          <div className={cn("overflow-x-auto transition-opacity", loading && "opacity-60")}>
+          <>
+            <div className={cn("divide-y divide-white/5 transition-opacity md:hidden", loading && "opacity-60")}>
+              {data.items.map((user) => (
+                <article
+                  key={user.id}
+                  className={cn("p-4", user.isBanned && "bg-rose-500/[0.05]")}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-xs font-semibold text-white">
+                      {getInitials(user.name) || "SM"}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="min-w-0 truncate text-sm font-medium text-white">{user.name}</p>
+                        <span className={cn(
+                          "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                          ROLE_BADGES[user.role],
+                        )}>
+                          {ROLE_LABELS[user.role]}
+                        </span>
+                      </div>
+                      <p className="mt-1 break-all text-xs text-slate-500">{user.email}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {user.isBanned ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-400/30 bg-rose-500/15 px-2.5 py-1 text-[11px] font-medium text-rose-200">
+                        <Ban className="h-3 w-3" />
+                        Заблокирован
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200">
+                        <ShieldCheck className="h-3 w-3" />
+                        Активен
+                      </span>
+                    )}
+                    {user.isOnline && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-400/30 bg-accent-500/10 px-2.5 py-1 text-[11px] font-medium text-accent-200">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-400" />
+                        В уроке
+                      </span>
+                    )}
+                  </div>
+
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <dt className="text-slate-500">Класс</dt>
+                      <dd className="mt-1 text-slate-300">{user.grade ? GRADE_LABELS[user.grade] : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Создан</dt>
+                      <dd className="mt-1 text-slate-300">{formatDate(user.createdAt)}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-4">{renderUserActions(user, true)}</div>
+                </article>
+              ))}
+            </div>
+
+            <div className={cn("hidden overflow-x-auto transition-opacity md:block", loading && "opacity-60")}>
             <table className="w-full min-w-[52rem] text-left text-sm">
               <thead className="text-xs uppercase tracking-wider text-slate-500">
                 <tr className="border-b border-white/5">
@@ -266,9 +396,6 @@ export function UsersTable({ initial, actor }: UsersTableProps) {
               </thead>
               <tbody>
                 {data.items.map((user) => {
-                  const rowCapabilities = adminCapabilities(actor, { id: user.id, role: user.role });
-                  const awaitingBanConfirm = confirmBanId === user.id;
-
                   return (
                     <tr
                       key={user.id}
@@ -328,72 +455,18 @@ export function UsersTable({ initial, actor }: UsersTableProps) {
 
                       <td className="px-4 py-3.5 text-slate-500">{formatDate(user.createdAt)}</td>
 
-                      <td className="px-6 py-3.5">
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setEditing(user)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/10"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            Изменить
-                          </button>
-
-                          {rowCapabilities["users.ban"] ? (
-                            <button
-                              type="button"
-                              disabled={pendingId === user.id}
-                              onClick={() => {
-                                if (user.isBanned) {
-                                  void toggleBan(user);
-                                  return;
-                                }
-                                if (awaitingBanConfirm) {
-                                  void toggleBan(user);
-                                  return;
-                                }
-                                setConfirmBanId(user.id);
-                                window.setTimeout(() => setConfirmBanId((current) => (current === user.id ? null : current)), 5000);
-                              }}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:opacity-50",
-                                user.isBanned
-                                  ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
-                                  : awaitingBanConfirm
-                                    ? "border-rose-400/50 bg-rose-500/25 text-rose-100"
-                                    : "border-rose-400/25 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20",
-                              )}
-                            >
-                              {user.isBanned ? (
-                                <>
-                                  <Unlock className="h-3.5 w-3.5" />
-                                  Разблокировать
-                                </>
-                              ) : (
-                                <>
-                                  <Ban className="h-3.5 w-3.5" />
-                                  {awaitingBanConfirm ? "Точно?" : "Заблокировать"}
-                                </>
-                              )}
-                            </button>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-1.5 text-xs text-slate-500">
-                              <Users className="h-3.5 w-3.5" />
-                              Только просмотр
-                            </span>
-                          )}
-                        </div>
-                      </td>
+                      <td className="px-6 py-3.5">{renderUserActions(user)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
 
         {/* Пагинация */}
-        <div className="flex items-center justify-between gap-3 border-t border-white/5 px-6 py-4">
+        <div className="flex items-center justify-between gap-3 border-t border-white/5 px-3 py-4 md:px-6">
           <span className="text-xs text-slate-500">
             {data.total === 0
               ? "Нет записей"

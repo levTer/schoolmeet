@@ -129,12 +129,13 @@ export function UserModal({ mode, user, actor, onClose, onSaved }: UserModalProp
       role="dialog"
       aria-modal="true"
       aria-label={isEdit ? "Редактирование пользователя" : "Новый пользователь"}
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur sm:items-center"
+      className="fixed inset-0 z-[100] flex items-end justify-center overflow-y-auto bg-black/60 px-0 pb-0 pt-0 backdrop-blur md:items-center md:p-4"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="glass-strong animate-fade-up my-auto w-full max-w-xl rounded-3xl p-6 shadow-glow sm:p-7">
+      <div className="glass-strong animate-fade-up my-0 max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-t-3xl rounded-b-none p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-glow md:my-auto md:max-h-none md:overflow-visible md:rounded-3xl md:p-7 md:pb-7">
+        <div aria-hidden className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/20 md:hidden" />
         <div className="flex items-start gap-3">
           <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand-gradient shadow-glow">
             {isEdit ? <UserRound className="h-5 w-5 text-white" /> : <UserPlus className="h-5 w-5 text-white" />}
