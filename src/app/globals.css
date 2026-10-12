@@ -383,3 +383,20 @@
     animation: none;
   }
 }
+
+/* Телефон: удобные touch-target и поля >=16px (без автоматического zoom в iOS Safari). */
+@media (max-width: 767px) {
+  button,
+  [role="button"],
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    min-height: 46px;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

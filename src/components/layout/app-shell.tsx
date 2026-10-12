@@ -38,7 +38,7 @@ export async function AppShell({ children, className }: AppShellProps) {
 
       <main
         className={cn(
-          "mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-8 sm:py-9 pb-20 md:pb-9",
+          "mx-auto w-full max-w-7xl flex-1 px-4 py-6 pb-24 sm:px-8 sm:py-9 sm:pb-24 md:pb-9",
           className,
         )}
       >
@@ -50,7 +50,7 @@ export async function AppShell({ children, className }: AppShellProps) {
       </footer>
 
       {/* Нижняя навигация для мобильных устройств */}
-      <BottomNav />
+      <BottomNav role={session?.user?.role ?? null} />
     </div>
   );
 }

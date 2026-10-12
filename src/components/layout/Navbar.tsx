@@ -11,10 +11,8 @@ import {
   ClipboardList,
   LayoutDashboard,
   LogOut,
-  Menu,
   ShieldCheck,
   Video,
-  X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -58,9 +56,10 @@ const ROLE_BADGES: Record<Role, string> = {
  */
 export function Navbar({ user }: { user: Session["user"] | null }) {
   const pathname = usePathname();
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isMobileProfileOpen, setIsMobileProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const mobileProfileRef = useRef<HTMLDivElement>(null);
 
   const role: Role | null = user?.role ?? null;
   const isAuthenticated = Boolean(user && role);
@@ -73,8 +72,8 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
 
   /* Закрываем меню при переходе на другую страницу. */
   useEffect(() => {
-    setIsMobileOpen(false);
     setIsProfileOpen(false);
+    setIsMobileProfileOpen(false);
   }, [pathname]);
 
   /* Закрытие выпадающего профиля по клику вне и по Escape. */
@@ -98,13 +97,33 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
     };
   }, [isProfileOpen]);
 
+  useEffect(() => {
+    if (!isMobileProfileOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (mobileProfileRef.current && !mobileProfileRef.current.contains(event.target as Node)) {
+        setIsMobileProfileOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsMobileProfileOpen(false);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isMobileProfileOpen]);
+
   const handleSignOut = () => {
     void signOut({ callbackUrl: "/" });
   };
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-ink-950/75 backdrop-blur-2xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-5 sm:px-8">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-8 md:h-16">
         <div className="flex items-center gap-6">
           <Logo size="sm" />
         </div>
@@ -241,86 +260,70 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
           )}
         </div>
 
-        {/* Настройки и навигация (мобильная версия) */}
+        {/* Компактная мобильная шапка: логотип, профиль и настройки. */}
         <div className="flex items-center gap-2 md:hidden">
-          <AppearanceSettingsMenu />
-          <button
-            type="button"
-            onClick={() => setIsMobileOpen((open) => !open)}
-            aria-label={isMobileOpen ? "Закрыть меню" : "Открыть меню"}
-            aria-expanded={isMobileOpen}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
-          >
-            {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Мобильное меню */}
-      {isMobileOpen && (
-        <div className="animate-fade-in border-t border-white/10 bg-ink-950/95 px-5 py-4 backdrop-blur-2xl md:hidden">
           {isAuthenticated && user && role ? (
-            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5">
-              <Avatar name={user.name} image={user.image} size="lg" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">
-                  {user.name ?? "Пользователь"}
-                </p>
-                <p className="truncate text-xs text-slate-400">{user.email}</p>
-                <span
-                  className={cn(
-                    "mt-1.5 inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
-                    ROLE_BADGES[role],
-                  )}
-                >
-                  {ROLE_LABELS[role]} · {role}
-                </span>
-              </div>
-            </div>
-          ) : null}
-
-          <nav className="flex flex-col gap-1">
-            {visibleItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-center gap-3 rounded-xl px-4 py-3 text-base text-slate-200 transition hover:bg-white/5 hover:text-white"
-              >
-                <item.icon className="h-4 w-4 text-slate-400" />
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-
-          <div className="mt-4 flex flex-col gap-2">
-            {isAuthenticated ? (
+            <div ref={mobileProfileRef} className="relative">
               <button
                 type="button"
-                onClick={handleSignOut}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm font-medium text-rose-200 transition hover:bg-rose-500/20"
+                onClick={() => setIsMobileProfileOpen((open) => !open)}
+                aria-label="Открыть профиль"
+                aria-expanded={isMobileProfileOpen}
+                aria-haspopup="menu"
+                className="inline-flex min-h-[46px] min-w-[46px] items-center justify-center rounded-full ring-offset-2 ring-offset-ink-950 transition hover:ring-2 hover:ring-brand-400/50"
               >
-                <LogOut className="h-4 w-4" />
-                Выйти
+                <Avatar name={user.name} image={user.image} />
               </button>
-            ) : (
-              <>
-                <Link
-                  href="/login"
-                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-medium text-slate-200"
+
+              {isMobileProfileOpen && (
+                <div
+                  role="menu"
+                  className="animate-fade-up absolute right-0 top-full z-[70] mt-2 w-64 overflow-hidden rounded-2xl border border-white/10 bg-ink-900/95 shadow-glow backdrop-blur-2xl"
                 >
-                  Войти
-                </Link>
-                <Link
-                  href="/register"
-                  className="rounded-xl bg-brand-gradient px-4 py-3 text-center text-sm font-semibold text-white shadow-glow"
-                >
-                  Регистрация
-                </Link>
-              </>
-            )}
-          </div>
+                  <div className="border-b border-white/5 p-4">
+                    <p className="truncate text-sm font-medium text-white">{user.name ?? "Пользователь"}</p>
+                    <p className="truncate text-xs text-slate-400">{user.email}</p>
+                    <span className={cn(
+                      "mt-2 inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
+                      ROLE_BADGES[role],
+                    )}>
+                      {ROLE_LABELS[role]} · {role}
+                    </span>
+                  </div>
+                  <div className="p-1.5">
+                    <Link
+                      href="/dashboard#profile"
+                      role="menuitem"
+                      onClick={() => setIsMobileProfileOpen(false)}
+                      className="flex min-h-[46px] items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 hover:text-white"
+                    >
+                      <LayoutDashboard className="h-4 w-4" />
+                      Профиль
+                    </Link>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleSignOut}
+                      className="mt-0.5 flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-rose-300 transition hover:bg-rose-500/10 hover:text-rose-200"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Выйти
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="inline-flex min-h-10 items-center rounded-xl px-3 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
+            >
+              Войти
+            </Link>
+          )}
+          <AppearanceSettingsMenu />
         </div>
-      )}
+      </div>
     </header>
   );
 }

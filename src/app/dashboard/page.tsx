@@ -171,7 +171,7 @@ export default async function DashboardPage({
         {/* Профиль */}
         <section
           id="profile"
-          className="ring-gradient glass-card animate-fade-up h-fit p-5 sm:p-6"
+          className="ring-gradient glass-card animate-fade-up h-fit scroll-mt-20 p-5 sm:p-6 md:scroll-mt-24"
         >
           <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
             <UserRound className="h-4 w-4" />
