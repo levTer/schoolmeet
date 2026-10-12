@@ -260,7 +260,13 @@ export async function ensureUserSchoolMembership(userId: string) {
 export async function findSchoolByCode(value: unknown): Promise<SchoolSummary | null> {
   const code = normalizeSchoolCode(value);
   if (!code) return null;
-  await ensureDefaultSchool();
+  // Подготовка тенантов не должна ронять проверку/регистрацию, если школа уже есть
+  // или её только что создал `/api/schools/check`.
+  try {
+    await ensureDefaultSchool();
+  } catch (error) {
+    console.error("[schools] Не удалось подготовить школы, ищем код напрямую:", error);
+  }
   return prisma.school.findFirst({
     where: { code: { equals: code, mode: "insensitive" } },
     select: { id: true, name: true, code: true },
