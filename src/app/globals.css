@@ -117,6 +117,18 @@
     --shadow-neon-ring: 0 0 0 2px rgb(var(--accent-rgb) / 0.85), 0 0 26px 4px rgb(var(--accent-rgb) / 0.45);
   }
 
+  :root[data-text-size="small"] {
+    font-size: 14px;
+  }
+
+  :root[data-text-size="normal"] {
+    font-size: 16px;
+  }
+
+  :root[data-text-size="large"] {
+    font-size: 18px;
+  }
+
   * {
     @apply border-white/10;
   }

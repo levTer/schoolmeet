@@ -2,7 +2,15 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 
 import { Providers } from "@/components/providers";
-import { DEFAULT_THEME, THEME_OPTIONS, THEME_STORAGE_KEY } from "@/lib/theme";
+import {
+  DEFAULT_TEXT_SIZE,
+  DEFAULT_THEME,
+  LEGACY_THEME_STORAGE_KEY,
+  TEXT_SIZE_OPTIONS,
+  TEXT_SIZE_STORAGE_KEY,
+  THEME_OPTIONS,
+  THEME_STORAGE_KEY,
+} from "@/lib/theme";
 
 import "katex/dist/katex.min.css";
 import "./globals.css";
@@ -19,20 +27,30 @@ const geistMono = localFont({
   weight: "100 900",
 });
 
-const themeBootstrapScript = `(() => {
+const appearanceBootstrapScript = `(() => {
+  const themes = ${JSON.stringify(
+    Object.fromEntries(THEME_OPTIONS.map(({ id, background }) => [id, background])),
+  )};
+  const textSizes = ${JSON.stringify(TEXT_SIZE_OPTIONS.map(({ id }) => id))};
+  let theme = ${JSON.stringify(DEFAULT_THEME)};
+  let textSize = ${JSON.stringify(DEFAULT_TEXT_SIZE)};
+
   try {
-    const themes = ${JSON.stringify(
-      Object.fromEntries(THEME_OPTIONS.map(({ id, background }) => [id, background])),
-    )};
-    const savedTheme = window.localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
-    const theme = Object.prototype.hasOwnProperty.call(themes, savedTheme)
-      ? savedTheme
-      : ${JSON.stringify(DEFAULT_THEME)};
-    document.documentElement.dataset.theme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themes[theme]);
+    let savedTheme = window.localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
+    if (!Object.prototype.hasOwnProperty.call(themes, savedTheme)) {
+      savedTheme = window.localStorage.getItem(${JSON.stringify(LEGACY_THEME_STORAGE_KEY)});
+    }
+    if (Object.prototype.hasOwnProperty.call(themes, savedTheme)) theme = savedTheme;
+
+    const savedTextSize = window.localStorage.getItem(${JSON.stringify(TEXT_SIZE_STORAGE_KEY)});
+    if (textSizes.includes(savedTextSize)) textSize = savedTextSize;
   } catch {
-    // Keep the server-rendered default when browser storage is unavailable.
+    // Keep server-rendered defaults when browser storage is unavailable.
   }
+
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.textSize = textSize;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themes[theme]);
 })();`;
 
 export const metadata: Metadata = {
@@ -87,11 +105,12 @@ export default function RootLayout({
     <html
       lang="ru"
       data-theme={DEFAULT_THEME}
+      data-text-size={DEFAULT_TEXT_SIZE}
       suppressHydrationWarning
       className="dark scroll-smooth"
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
+        <script dangerouslySetInnerHTML={{ __html: appearanceBootstrapScript }} />
         {/* iOS PWA: полноэкранный режим, иконка на рабочем столе */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

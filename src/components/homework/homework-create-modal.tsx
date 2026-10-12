@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarPlus, Plus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -74,12 +74,18 @@ export function HomeworkCreateModal({ open, subjects, onClose }: HomeworkCreateM
   const [form, setForm] = useState<FormState>(() => buildInitialForm(subjects));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const wasOpen = useRef(false);
 
   useEffect(() => {
-    if (open) {
-      setForm(buildInitialForm(subjects));
-      setErrors({});
+    if (!open) {
+      wasOpen.current = false;
+      return;
     }
+    if (wasOpen.current) return;
+
+    wasOpen.current = true;
+    setForm(buildInitialForm(subjects));
+    setErrors({});
   }, [open, subjects]);
 
   useEffect(() => {
@@ -136,25 +142,24 @@ export function HomeworkCreateModal({ open, subjects, onClose }: HomeworkCreateM
     }
 
     toast.success("Задание выдано классу", { description: "Ученики увидят его в разделе «Домашние задания»." });
+    setForm(buildInitialForm(subjects));
+    setErrors({});
     onClose();
     router.refresh();
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* Оверлей — z-[90], диалог — z-[100]: ни фон, ни навбар не перекрывают модалку. */}
-      <div
-        aria-hidden
-        onClick={() => {
-          if (!submitting) onClose();
-        }}
-        className="absolute inset-0 z-[90] bg-black/60 backdrop-blur"
-      />
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 pt-20 bg-black/70 backdrop-blur-sm"
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !submitting) onClose();
+      }}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="homework-modal-title"
-        className="ring-gradient glass-card animate-fade-up relative z-[100] max-h-[90vh] w-full max-w-2xl overflow-y-auto bg-ink-900/95 p-6 shadow-glow"
+        className="ring-gradient glass-card animate-fade-up relative z-[100] max-h-[85vh] w-full max-w-2xl overflow-y-auto bg-ink-900/95 p-6 shadow-glow"
       >
         <div className="flex items-start justify-between gap-4">
           <div>

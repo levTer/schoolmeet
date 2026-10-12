@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { LayoutDashboard, Menu, ShieldCheck, X } from "lucide-react";
 
-import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
+import { AppearanceSettingsMenu } from "@/components/theme/AppearanceSettingsMenu";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
 
@@ -55,7 +55,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
-          <ThemeSwitcher compact />
+          <AppearanceSettingsMenu />
 
           {isAuthenticated ? (
             <Link
@@ -85,25 +85,24 @@ export function SiteHeader() {
           )}
         </div>
 
-        {/* Мобильный переключатель */}
-        <button
-          type="button"
-          onClick={() => setIsMenuOpen((open) => !open)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 md:hidden"
-          aria-label={isMenuOpen ? "Закрыть меню" : "Открыть меню"}
-          aria-expanded={isMenuOpen}
-        >
-          {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        {/* Настройки и навигация (мобильная версия) */}
+        <div className="flex items-center gap-2 md:hidden">
+          <AppearanceSettingsMenu />
+          <button
+            type="button"
+            onClick={() => setIsMenuOpen((open) => !open)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+            aria-label={isMenuOpen ? "Закрыть меню" : "Открыть меню"}
+            aria-expanded={isMenuOpen}
+          >
+            {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Мобильное меню */}
       {isMenuOpen && (
         <div className="animate-fade-in border-t border-white/10 bg-ink-950/95 px-5 py-5 backdrop-blur-xl md:hidden">
-          <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5">
-            <ThemeSwitcher />
-          </div>
-
           <nav className="flex flex-col gap-1">
             {NAV_LINKS.map((link) => (
               <a

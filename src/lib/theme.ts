@@ -1,5 +1,8 @@
-export const THEME_STORAGE_KEY = "schoolmeet-theme";
+export const THEME_STORAGE_KEY = "sm-theme";
+export const LEGACY_THEME_STORAGE_KEY = "schoolmeet-theme";
+export const TEXT_SIZE_STORAGE_KEY = "sm-text-size";
 export const DEFAULT_THEME = "emerald" as const;
+export const DEFAULT_TEXT_SIZE = "normal" as const;
 
 export const THEME_OPTIONS = [
   {
@@ -30,8 +33,20 @@ export const THEME_OPTIONS = [
 
 export type ThemeId = (typeof THEME_OPTIONS)[number]["id"];
 
+export const TEXT_SIZE_OPTIONS = [
+  { id: "small", label: "Мелкий" },
+  { id: "normal", label: "Стандарт" },
+  { id: "large", label: "Крупный" },
+] as const;
+
+export type TextSize = (typeof TEXT_SIZE_OPTIONS)[number]["id"];
+
 export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === "string" && THEME_OPTIONS.some((theme) => theme.id === value);
+}
+
+export function isTextSize(value: unknown): value is TextSize {
+  return typeof value === "string" && TEXT_SIZE_OPTIONS.some((size) => size.id === value);
 }
 
 export function getThemeOption(themeId: ThemeId) {
