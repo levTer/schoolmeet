@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AlertTriangle, CalendarPlus, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -61,9 +61,17 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
   const [conflicts, setConflicts] = useState<ScheduleConflictInfo[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Каждое открытие начинаем с чистой формы и текущего дня.
+  // Сбрасываем форму только при открытии. Обновление списка предметов или дня
+  // пока модалка открыта не должно затирать выбор пользователя.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    if (wasOpen.current) return;
+
+    wasOpen.current = true;
     setForm(buildInitialForm(subjects, defaultDay));
     setErrors({});
     setConflicts([]);
@@ -93,8 +101,11 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
     event.preventDefault();
     if (submitting) return;
 
+    // Берём subjectId из отмеченной radio-карточки, а остальные поля — из
+    // контролируемого состояния формы. Так в запрос не попадёт старый выбор.
+    const selectedSubjectId = new FormData(event.currentTarget).get("subjectId");
     const payload = {
-      subjectId: form.subjectId,
+      subjectId: typeof selectedSubjectId === "string" ? selectedSubjectId : "",
       grade: form.grade,
       dayOfWeek: Number(form.dayOfWeek),
       startTime: form.startTime,
@@ -273,9 +284,8 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
 /* -------------------------------------------------------------------------- */
 
 /**
- * Сетка карточек предметов: крупные кликабельные плитки с эмодзи и фирменным
- * цветом предмета. Один клик надёжно фиксирует `subjectId` в форме (кнопки
- * внутри `radiogroup`), поэтому урок всегда уходит в API с выбранным предметом.
+ * Сетка нативных radio-карточек: выбор управляется через `checked`/`onChange`,
+ * поэтому одновременно синхронизированы состояние формы, подсветка и `FormData`.
  */
 function SubjectPicker({
   subjects,
@@ -291,7 +301,7 @@ function SubjectPicker({
   const selected = subjects.find((subject) => subject.id === value) ?? null;
 
   return (
-    <fieldset>
+    <fieldset aria-describedby={error ? "lesson-subject-error" : undefined}>
       <legend className="mb-2 flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-wider text-slate-400">
         Предмет
         {selected ? (
@@ -308,21 +318,13 @@ function SubjectPicker({
           наполнить его командой <span className="font-mono">npm run db:seed</span>.
         </p>
       ) : (
-        <div
-          role="radiogroup"
-          aria-label="Предмет"
-          className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:max-h-64 sm:grid-cols-3"
-        >
+        <div className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:max-h-64 sm:grid-cols-3">
           {subjects.map((subject) => {
             const isSelected = subject.id === value;
 
             return (
-              <button
+              <label
                 key={subject.id}
-                type="button"
-                role="radio"
-                aria-checked={isSelected}
-                onClick={() => onChange(subject.id)}
                 style={
                   isSelected
                     ? {
@@ -333,12 +335,20 @@ function SubjectPicker({
                     : { borderColor: subjectTint(subject.color, 0.35) }
                 }
                 className={cn(
-                  "flex items-center gap-2 rounded-2xl border px-2.5 py-2 text-left transition",
+                  "flex cursor-pointer items-center gap-2 rounded-2xl border px-2.5 py-2 text-left transition focus-within:ring-2 focus-within:ring-brand-400/70",
                   isSelected
                     ? "text-white"
                     : "border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]",
                 )}
               >
+                <input
+                  type="radio"
+                  name="subjectId"
+                  value={subject.id}
+                  checked={isSelected}
+                  onChange={(event) => onChange(event.currentTarget.value)}
+                  className="sr-only"
+                />
                 <span
                   aria-hidden
                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-base"
@@ -352,13 +362,17 @@ function SubjectPicker({
                 {isSelected ? (
                   <Check className="h-4 w-4 shrink-0" style={{ color: subject.color }} />
                 ) : null}
-              </button>
+              </label>
             );
           })}
         </div>
       )}
 
-      {error ? <p className="mt-2 text-xs text-rose-300">{error}</p> : null}
+      {error ? (
+        <p id="lesson-subject-error" role="alert" className="mt-2 text-xs text-rose-300">
+          {error}
+        </p>
+      ) : null}
     </fieldset>
   );
 }
