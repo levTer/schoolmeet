@@ -3,7 +3,8 @@ import { randomBytes } from "node:crypto";
 
 import { prisma } from "@/lib/prisma";
 import { buildLessonCodeCandidate } from "@/lib/lesson-code";
-import { CHAT_HISTORY_LIMIT, type ChatEnvelope } from "@/lib/realtime";
+import { CHAT_HISTORY_LIMIT, hasSchoolAccess, type ChatEnvelope } from "@/lib/realtime";
+import { ensureUserSchoolMembership, getMeetingSchoolId } from "@/lib/schools";
 import type { Role } from "@/types";
 
 /**
@@ -19,15 +20,18 @@ export interface MeetingWithHost {
   meetingCode: string;
   encryptionKey: string;
   hostId: string;
+  schoolId: string | null;
   isActive: boolean;
   startTime: Date;
   /** Заполняется при завершении урока (в том числе принудительном). */
   endTime: Date | null;
-  host: { id: string; name: string; role: Role };
+  host: { id: string; name: string; role: Role; schoolId: string | null };
+  schedule: { schoolId: string | null } | null;
 }
 
 const meetingInclude = {
-  host: { select: { id: true, name: true, role: true } },
+  host: { select: { id: true, name: true, role: true, schoolId: true } },
+  schedule: { select: { schoolId: true } },
 } as const;
 
 export async function findMeetingByCode(meetingCode: string): Promise<MeetingWithHost | null> {
@@ -36,6 +40,16 @@ export async function findMeetingByCode(meetingCode: string): Promise<MeetingWit
     include: meetingInclude,
   });
   return meeting as MeetingWithHost | null;
+}
+
+/** Return a lesson only if its owning school matches the authenticated tenant. */
+export async function findMeetingByCodeInSchool(
+  meetingCode: string,
+  schoolId: string,
+): Promise<MeetingWithHost | null> {
+  const meeting = await findMeetingByCode(meetingCode);
+  if (!meeting || !hasSchoolAccess(schoolId, getMeetingSchoolId(meeting))) return null;
+  return meeting;
 }
 
 /** Случайный ключ комнаты: 256 бит в hex (64 символа) для AES-256. */
@@ -48,6 +62,9 @@ export function generateRoomEncryptionKey(): string {
  * а при гонке двух запросов (P2002 на уникальном индексе) повторяет попытку.
  */
 export async function createMeeting(params: { title: string; hostId: string }): Promise<MeetingWithHost> {
+  const hostMembership = await ensureUserSchoolMembership(params.hostId);
+  if (!hostMembership) throw new Error("MEETING_HOST_NOT_FOUND");
+
   for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt += 1) {
     const meetingCode = buildLessonCodeCandidate(params.title, attempt);
 
@@ -60,6 +77,7 @@ export async function createMeeting(params: { title: string; hostId: string }): 
           title: params.title,
           meetingCode,
           hostId: params.hostId,
+          schoolId: hostMembership.schoolId,
           encryptionKey: generateRoomEncryptionKey(),
         },
         include: meetingInclude,
@@ -80,6 +98,14 @@ export async function saveChatMessage(params: {
   userId: string;
   ciphertext: string;
 }): Promise<ChatEnvelope> {
+  const [user, meeting] = await Promise.all([
+    prisma.user.findUnique({ where: { id: params.userId }, select: { schoolId: true } }),
+    prisma.meeting.findUnique({ where: { id: params.meetingId }, include: meetingInclude }),
+  ]);
+  if (!user || !meeting || !hasSchoolAccess(user.schoolId, getMeetingSchoolId(meeting))) {
+    throw new Error("CHAT_SCHOOL_MISMATCH");
+  }
+
   const message = await prisma.chatMessage.create({
     data: {
       meetingId: params.meetingId,
@@ -94,7 +120,16 @@ export async function saveChatMessage(params: {
 }
 
 /** Последние сообщения урока в хронологическом порядке (только шифротекст). */
-export async function loadRecentMessages(meetingId: string, limit = CHAT_HISTORY_LIMIT): Promise<ChatEnvelope[]> {
+export async function loadRecentMessages(
+  meetingId: string,
+  schoolId: string,
+  limit = CHAT_HISTORY_LIMIT,
+): Promise<ChatEnvelope[]> {
+  const meeting = await prisma.meeting.findUnique({ where: { id: meetingId }, include: meetingInclude });
+  if (!meeting || !hasSchoolAccess(schoolId, getMeetingSchoolId(meeting))) {
+    throw new Error("CHAT_SCHOOL_MISMATCH");
+  }
+
   const messages = await prisma.chatMessage.findMany({
     where: { meetingId },
     orderBy: { createdAt: "desc" },

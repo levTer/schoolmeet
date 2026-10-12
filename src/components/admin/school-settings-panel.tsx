@@ -94,13 +94,13 @@ export function SchoolSettingsPanel({
       <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-300">Школа</p>
-          <h2 id="school-settings-title" className="mt-1 text-xl font-semibold text-white">
+          <h2 id="school-settings-title" className="mt-1 whitespace-pre-wrap text-xl font-semibold text-white">
             {school.name}
           </h2>
           <p className="mt-2 text-sm text-slate-400">Код для регистрации учеников и учителей</p>
         </div>
 
-        <div className="flex items-center gap-3 rounded-2xl border border-brand-400/20 bg-brand-500/10 p-3 sm:p-4">
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-brand-400/20 bg-brand-500/10 p-3 sm:p-4">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-wider text-brand-200">Код вашей школы</p>
             <p className="mt-1 font-mono text-2xl font-bold tracking-[0.14em] text-white sm:text-3xl">
@@ -110,11 +110,12 @@ export function SchoolSettingsPanel({
           <button
             type="button"
             onClick={() => void handleCopyCode()}
-            aria-label={copied ? "Код скопирован" : "Скопировать код школы"}
-            title={copied ? "Скопировано" : "Скопировать код"}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+            aria-label={copied ? "Код скопирован" : "Копировать код"}
+            title={copied ? "Скопировано" : "Копировать код"}
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-slate-200 transition hover:bg-white/10"
           >
             {copied ? <Check className="h-4 w-4 text-emerald-300" /> : <Copy className="h-4 w-4" />}
+            {copied ? "Скопировано" : "Копировать код"}
           </button>
         </div>
       </div>

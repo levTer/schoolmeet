@@ -155,6 +155,7 @@ export interface AttendanceRow {
 }
 
 export interface ListAttendanceOptions {
+  schoolId: string;
   meetingId?: string;
   userId?: string;
   grade?: GradeCode;
@@ -163,7 +164,7 @@ export interface ListAttendanceOptions {
 }
 
 /** Таблица посещаемости для админ-панели (свежие записи сверху). */
-export async function listAttendance(options: ListAttendanceOptions = {}): Promise<{
+export async function listAttendance(options: ListAttendanceOptions): Promise<{
   items: AttendanceRow[];
   total: number;
   limit: number;
@@ -173,6 +174,7 @@ export async function listAttendance(options: ListAttendanceOptions = {}): Promi
   const offset = Math.max(options.offset ?? 0, 0);
 
   const where = {
+    meeting: { is: { schoolId: options.schoolId } },
     ...(options.meetingId ? { meetingId: options.meetingId } : {}),
     ...(options.userId ? { userId: options.userId } : {}),
     ...(options.grade ? { user: { grade: options.grade } } : {}),

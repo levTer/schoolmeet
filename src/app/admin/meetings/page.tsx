@@ -8,6 +8,7 @@ import { canAdmin } from "@/lib/admin-permissions";
 import { listActiveMeetings, type ActiveMeetingsSummary } from "@/lib/admin-meetings";
 import { listAttendance, type AttendanceRow } from "@/lib/attendance";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
+import { getSchoolViewer } from "@/lib/school-viewer";
 
 export const metadata: Metadata = {
   title: "Активные уроки",
@@ -31,7 +32,13 @@ export default async function AdminMeetingsPage() {
   let attendance: { items: AttendanceRow[]; total: number } | null = null;
 
   try {
-    [meetings, attendance] = await Promise.all([listActiveMeetings(), listAttendance({ limit: 25 })]);
+    const viewer = await getSchoolViewer(session.user.id);
+    if (viewer?.schoolId) {
+      [meetings, attendance] = await Promise.all([
+        listActiveMeetings(viewer.schoolId),
+        listAttendance({ schoolId: viewer.schoolId, limit: 25 }),
+      ]);
+    }
   } catch (error) {
     console.error("[admin/meetings] Не удалось загрузить уроки:", error);
   }

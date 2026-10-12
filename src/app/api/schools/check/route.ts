@@ -12,7 +12,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     const codeParam = new URL(request.url).searchParams.get("code");
     const code = normalizeSchoolCode(codeParam);
     if (!code) return jsonError(422, "INVALID_SCHOOL_CODE", "Введите корректный код школы", {
-      fields: { schoolCode: "Код должен содержать от 3 до 32 латинских букв, цифр или дефисов" },
+      fields: { schoolCode: "Код должен содержать от 3 до 32 латинских букв, цифр, точки, дефиса или подчёркивания" },
     });
 
     const school = await findSchoolByCode(code);

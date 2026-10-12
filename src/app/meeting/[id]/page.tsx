@@ -6,7 +6,8 @@ import { ArrowLeft, SearchX } from "lucide-react";
 
 import { MeetingRoom } from "@/components/meeting/MeetingRoom";
 import { authOptions } from "@/lib/auth";
-import { findMeetingByCode } from "@/lib/meetings";
+import { findMeetingByCodeInSchool } from "@/lib/meetings";
+import { getSchoolViewer } from "@/lib/school-viewer";
 import { isValidRoomCode } from "@/lib/realtime";
 
 export const metadata: Metadata = {
@@ -36,7 +37,10 @@ export default async function MeetingRoomPage({ params }: MeetingRoomPageProps) 
     notFound();
   }
 
-  const meeting = await findMeetingByCode(params.id);
+  const viewer = await getSchoolViewer(session.user.id);
+  const meeting = viewer?.schoolId
+    ? await findMeetingByCodeInSchool(params.id, viewer.schoolId)
+    : null;
   if (!meeting) {
     return <MeetingNotFound code={params.id} />;
   }

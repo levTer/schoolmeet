@@ -182,6 +182,7 @@ export async function createLesson(input: CreateLessonInput, teacher: SchoolView
           title,
           meetingCode,
           hostId: teacher.id,
+          schoolId: teacher.schoolId,
           encryptionKey: generateRoomEncryptionKey(),
         },
       });

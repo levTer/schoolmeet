@@ -52,6 +52,7 @@ model School {
   classes   Class[]
   lessons   Schedule[]
   homeworks Homework[]
+  meetings  Meeting[]
 
   @@map("schools")
 }
@@ -121,9 +122,12 @@ model Meeting {
   endTime       DateTime?
   isActive      Boolean   @default(false)
   encryptionKey String // ключ комнаты для AES-256 шифрования чата
+  /// Школа-владелец комнаты; nullable только для миграции старых записей.
+  schoolId      String?
 
   // Связи
   host     User              @relation("MeetingHost", fields: [hostId], references: [id], onDelete: Cascade)
+  school   School?           @relation(fields: [schoolId], references: [id], onDelete: SetNull)
   messages ChatMessage[]
   schedule Schedule?
   attendance AttendanceRecord[]
@@ -132,6 +136,7 @@ model Meeting {
   updatedAt DateTime @updatedAt
 
   @@index([hostId])
+  @@index([schoolId])
   @@index([isActive])
   @@map("meetings")
 }

@@ -18,7 +18,7 @@ export interface SchoolViewer {
 
 /**
  * Загружает роль, школу, класс и блокировку из БД, а не из клиентского запроса.
- * Если старый аккаунт ещё не привязан к школе, мигрирует его в SCHOOL1.
+ * Если старый аккаунт ещё не привязан к школе, мигрирует его в основную школу.
  */
 export async function getSchoolViewer(userId: string): Promise<SchoolViewer | null> {
   await ensureUserSchoolMembership(userId);

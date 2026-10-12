@@ -15,6 +15,8 @@ import { PrismaClient, type ClassGrade, type Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 import { slugifyTitle } from "../src/lib/lesson-code";
+import { provisionConfiguredSchools } from "../src/lib/schools";
+import { DEFAULT_SCHOOL, DEFAULT_CLASS_NAMES } from "../src/lib/school-config";
 import { DEFAULT_SUBJECTS } from "../src/lib/subjects";
 
 const prisma = new PrismaClient();
@@ -132,12 +134,27 @@ $$x_{1,2} = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$
   ];
 }
 
-async function seedAccounts(passwordHash: string): Promise<void> {
+async function seedAccounts(passwordHash: string, schoolId: string): Promise<void> {
+  const classes = await prisma.class.findMany({
+    where: { schoolId, name: { in: DEFAULT_CLASS_NAMES } },
+    select: { id: true, name: true },
+  });
+  const classByName = new Map(classes.map((schoolClass) => [schoolClass.name, schoolClass.id]));
+
   for (const account of ACCOUNTS) {
+    const className = account.grade ? `${account.grade.replace("GRADE_", "")}-А` : null;
+    const classId = className ? classByName.get(className) ?? null : null;
     const user = await prisma.user.upsert({
       where: { email: account.email },
-      update: { name: account.name, role: account.role, grade: account.grade, password: passwordHash },
-      create: { ...account, password: passwordHash },
+      update: {
+        name: account.name,
+        role: account.role,
+        grade: account.grade,
+        password: passwordHash,
+        schoolId,
+        classId,
+      },
+      create: { ...account, password: passwordHash, schoolId, classId },
       select: { email: true, role: true, grade: true },
     });
     const gradeText = user.grade ? ` · ${user.grade}` : "";
@@ -157,13 +174,26 @@ async function seedSubjects(): Promise<Map<string, string>> {
   return new Map(rows.map((row) => [row.name, row.id]));
 }
 
-async function seedSchedule(subjectIds: Map<string, string>, teacherIds: Map<TeacherKey, string>): Promise<void> {
+async function seedSchedule(
+  subjectIds: Map<string, string>,
+  teacherIds: Map<TeacherKey, string>,
+  schoolId: string,
+): Promise<void> {
   if ((await prisma.schedule.count()) > 0) {
     console.log("• Расписание уже есть — пропускаем");
     return;
   }
 
+  const classes = await prisma.class.findMany({
+    where: { schoolId, name: { in: DEFAULT_CLASS_NAMES } },
+    select: { id: true, name: true },
+  });
+  const classByName = new Map(classes.map((schoolClass) => [schoolClass.name, schoolClass.id]));
+
   for (const [grade, lessons] of Object.entries(SCHEDULE_SEED) as [ClassGrade, LessonSeed[]][]) {
+    const classId = classByName.get(`${grade.replace("GRADE_", "")}-А`);
+    if (!classId) throw new Error(`Нет класса для ${grade} в школе ${DEFAULT_SCHOOL.name}`);
+
     for (const [dayOfWeek, startTime, endTime, subjectName, teacherKey, room] of lessons) {
       const subjectId = subjectIds.get(subjectName);
       const teacherId = teacherIds.get(teacherKey);
@@ -175,24 +205,38 @@ async function seedSchedule(subjectIds: Map<string, string>, teacherIds: Map<Tea
           title: `${subjectName} · ${grade}`,
           meetingCode,
           hostId: teacherId,
+          schoolId,
           encryptionKey: randomBytes(32).toString("hex"),
         },
       });
       await prisma.schedule.create({
-        data: { subjectId, teacherId, grade, dayOfWeek, startTime, endTime, room, meetingCode },
+        data: { subjectId, teacherId, grade, schoolId, classId, dayOfWeek, startTime, endTime, room, meetingCode },
       });
     }
   }
   console.log("• Расписание для 8 и 9 классов создано");
 }
 
-async function seedHomework(subjectIds: Map<string, string>, teacherIds: Map<TeacherKey, string>): Promise<void> {
+async function seedHomework(
+  subjectIds: Map<string, string>,
+  teacherIds: Map<TeacherKey, string>,
+  schoolId: string,
+): Promise<void> {
   if ((await prisma.homework.count()) > 0) {
     console.log("• Домашние задания уже есть — пропускаем");
     return;
   }
 
+  const classes = await prisma.class.findMany({
+    where: { schoolId, name: { in: DEFAULT_CLASS_NAMES } },
+    select: { id: true, name: true },
+  });
+  const classByName = new Map(classes.map((schoolClass) => [schoolClass.name, schoolClass.id]));
+
   for (const item of homeworkSeed(new Date())) {
+    const classId = classByName.get(`${item.grade.replace("GRADE_", "")}-А`);
+    if (!classId) throw new Error(`Нет класса для ${item.grade} в школе ${DEFAULT_SCHOOL.name}`);
+
     await prisma.homework.create({
       data: {
         title: item.title,
@@ -200,6 +244,8 @@ async function seedHomework(subjectIds: Map<string, string>, teacherIds: Map<Tea
         subjectId: subjectIds.get(item.subject) ?? "",
         teacherId: teacherIds.get(item.teacher) ?? "",
         grade: item.grade,
+        schoolId,
+        classId,
         deadline: item.deadline,
         maxScore: item.maxScore,
       },
@@ -258,7 +304,7 @@ async function seedAnnouncements(adminId: string): Promise<void> {
  * Демо-оценки за домашние задания: без них график «Успеваемость по классам»
  * в админ-панели выглядел бы пустым.
  */
-async function seedGradedHomework(): Promise<void> {
+async function seedGradedHomework(schoolId: string): Promise<void> {
   if ((await prisma.homeworkSubmission.count()) > 0) {
     console.log("• Ответы на ДЗ уже есть — пропускаем");
     return;
@@ -266,17 +312,20 @@ async function seedGradedHomework(): Promise<void> {
 
   const random = createRandom(20261011);
   const homeworks = await prisma.homework.findMany({
-    select: { id: true, grade: true, deadline: true, maxScore: true },
+    where: { schoolId },
+    select: { id: true, grade: true, deadline: true, maxScore: true, classId: true },
   });
   const students = await prisma.user.findMany({
-    where: { role: "STUDENT", grade: { not: null } },
-    select: { id: true, grade: true },
+    where: { role: "STUDENT", schoolId, grade: { not: null } },
+    select: { id: true, grade: true, classId: true },
   });
 
   let created = 0;
 
   for (const homework of homeworks) {
-    const classmates = students.filter((student) => student.grade === homework.grade);
+    const classmates = students.filter(
+      (student) => student.grade === homework.grade && student.classId === homework.classId,
+    );
     for (const student of classmates) {
       const grade = 3 + Math.floor(random() * 3); // 3, 4 или 5 — детерминированно
       const submittedAt = new Date(homework.deadline.getTime() - 90 * 60 * 1000);
@@ -317,7 +366,7 @@ async function seedGradedHomework(): Promise<void> {
  * Демо-посещаемость за последние три недели.
  * Используется графиком «Активность звонков по дням недели».
  */
-async function seedAttendance(): Promise<void> {
+async function seedAttendance(schoolId: string): Promise<void> {
   if ((await prisma.attendanceRecord.count()) > 0) {
     console.log("• Записи посещаемости уже есть — пропускаем");
     return;
@@ -325,8 +374,8 @@ async function seedAttendance(): Promise<void> {
 
   const random = createRandom(42);
   const lessons = await prisma.schedule.findMany({
-    where: { grade: { in: ["GRADE_8", "GRADE_9"] } },
-    select: { grade: true, startTime: true, meetingCode: true },
+    where: { schoolId, grade: { in: ["GRADE_8", "GRADE_9"] } },
+    select: { grade: true, classId: true, startTime: true, meetingCode: true },
     orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
   });
   const meetings = await prisma.meeting.findMany({
@@ -336,8 +385,8 @@ async function seedAttendance(): Promise<void> {
   const meetingByCode = new Map(meetings.map((meeting) => [meeting.meetingCode, meeting.id]));
 
   const students = await prisma.user.findMany({
-    where: { role: "STUDENT", grade: { in: ["GRADE_8", "GRADE_9"] } },
-    select: { id: true, grade: true },
+    where: { role: "STUDENT", schoolId, grade: { in: ["GRADE_8", "GRADE_9"] } },
+    select: { id: true, grade: true, classId: true },
   });
 
   const records: {
@@ -368,7 +417,7 @@ async function seedAttendance(): Promise<void> {
       if (joinedAt.getTime() > Date.now()) continue;
 
       for (const student of students) {
-        if (student.grade !== lesson.grade) continue;
+        if (student.grade !== lesson.grade || student.classId !== lesson.classId) continue;
         if (random() > 0.75) continue; // кто-то иногда пропускает урок
 
         const durationMinutes = 20 + Math.floor(random() * 40);
@@ -394,8 +443,11 @@ async function seedAttendance(): Promise<void> {
 
 async function main(): Promise<void> {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
+  const schools = await provisionConfiguredSchools(prisma);
+  const primarySchool = schools.get(DEFAULT_SCHOOL.code);
+  if (!primarySchool) throw new Error(`Не удалось создать школу ${DEFAULT_SCHOOL.name}`);
 
-  await seedAccounts(passwordHash);
+  await seedAccounts(passwordHash, primarySchool.id);
   const subjectIds = await seedSubjects();
 
   const teachers = await prisma.user.findMany({
@@ -407,8 +459,8 @@ async function main(): Promise<void> {
     ["teacher2", teachers.find((t) => t.email === "teacher2@schoolmeet.dev")?.id ?? ""],
   ]);
 
-  await seedSchedule(subjectIds, teacherIds);
-  await seedHomework(subjectIds, teacherIds);
+  await seedSchedule(subjectIds, teacherIds, primarySchool.id);
+  await seedHomework(subjectIds, teacherIds, primarySchool.id);
 
   const admin = await prisma.user.findUnique({
     where: { email: "admin@schoolmeet.dev" },
@@ -416,8 +468,8 @@ async function main(): Promise<void> {
   });
 
   await seedAnnouncements(admin?.id ?? teacherIds.get("teacher") ?? "");
-  await seedGradedHomework();
-  await seedAttendance();
+  await seedGradedHomework(primarySchool.id);
+  await seedAttendance(primarySchool.id);
 
   console.log("\nДемо-данные готовы. Админ-панель: /admin — только для роли ADMIN.");
 }
