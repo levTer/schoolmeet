@@ -119,6 +119,11 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
     event.preventDefault();
     if (submitting) return;
 
+    if (!form.title.trim()) {
+      setErrors((current) => ({ ...current, title: "Введите название задания" }));
+      return;
+    }
+
     const deadline = schoolLocalToDate(form.deadline);
     const payload = {
       title: form.title,
@@ -188,7 +193,7 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
         <form onSubmit={handleSubmit} noValidate className="mt-5 grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <TextField
-              label="Название"
+              label="Название задания"
               value={form.title}
               maxLength={HOMEWORK_LIMITS.titleMax}
               onChange={(event) => update("title", event.target.value)}
@@ -283,7 +288,7 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
               disabled={submitting || subjects.length === 0 || classes.length === 0}
               className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting ? "Выдаём…" : "Выдать задание"}
+              {submitting ? "Создание..." : "Выдать задание"}
             </button>
           </div>
         </form>
