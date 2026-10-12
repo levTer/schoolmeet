@@ -1,6 +1,6 @@
 import type { NextResponse } from "next/server";
 
-import { handleRouteError, jsonOk } from "@/lib/api";
+import { handleRouteError, jsonError, jsonOk } from "@/lib/api";
 import { listActiveMeetings } from "@/lib/admin-meetings";
 import { finishStaleAttendance } from "@/lib/attendance";
 import { requireCapability, requireViewer } from "@/lib/session-viewer";
@@ -20,10 +20,11 @@ export async function GET(): Promise<NextResponse> {
   try {
     const viewer = await requireViewer();
     requireCapability(viewer, "meetings.view");
+    if (!viewer.schoolId) return jsonError(409, "SCHOOL_REQUIRED", "Аккаунт не привязан к школе");
 
     await finishStaleAttendance();
 
-    const summary = await listActiveMeetings();
+    const summary = await listActiveMeetings(viewer.schoolId);
     return jsonOk(summary);
   } catch (error) {
     return handleRouteError(error, "api/admin/meetings GET");

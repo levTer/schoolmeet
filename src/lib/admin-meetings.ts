@@ -61,7 +61,7 @@ function majorityStudentGrade(grades: (GradeCode | null)[]): GradeCode | null {
 }
 
 /** Список текущих уроков: кто ведёт, какой класс и предмет, сколько в комнате. */
-export async function listActiveMeetings(): Promise<ActiveMeetingsSummary> {
+export async function listActiveMeetings(schoolId: string): Promise<ActiveMeetingsSummary> {
   const control = getRealtimeControl();
   const liveRooms = control?.listLiveRooms() ?? [];
 
@@ -75,6 +75,7 @@ export async function listActiveMeetings(): Promise<ActiveMeetingsSummary> {
 
   const meetings = await prisma.meeting.findMany({
     where: {
+      schoolId,
       OR: [
         { id: { in: Array.from(liveByMeeting.keys()) } },
         {

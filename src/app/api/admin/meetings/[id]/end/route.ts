@@ -28,9 +28,9 @@ export async function POST(request: Request, { params }: RouteContext): Promise<
 
     const meeting = await prisma.meeting.findUnique({
       where: { id: params.id },
-      select: { id: true, title: true, meetingCode: true, hostId: true },
+      select: { id: true, title: true, meetingCode: true, hostId: true, schoolId: true },
     });
-    if (!meeting) {
+    if (!meeting || !viewer.schoolId || meeting.schoolId !== viewer.schoolId) {
       return jsonError(404, "NOT_FOUND", "Урок не найден");
     }
 

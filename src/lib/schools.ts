@@ -1,17 +1,20 @@
+import type { PrismaClient } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { GRADES, type GradeCode } from "@/lib/schedule-rules";
 import { gradeFromClassName, normalizeSchoolCode } from "@/lib/school-rules";
+import {
+  CONFIGURED_SCHOOLS,
+  DEFAULT_CLASS_NAMES,
+  DEFAULT_SCHOOL,
+  LEGACY_DEFAULT_SCHOOL_CODE,
+} from "@/lib/school-config";
 
 export { gradeFromClassName, normalizeClassName, normalizeSchoolCode } from "@/lib/school-rules";
+export { CONFIGURED_SCHOOLS, DEFAULT_CLASS_NAMES } from "@/lib/school-config";
 
-export const DEFAULT_SCHOOL_NAME = "Тестовая Школа";
-export const DEFAULT_SCHOOL_CODE = "SCHOOL1";
-
-const DEFAULT_CLASS_LETTERS = ["А", "Б"] as const;
-const DEFAULT_CLASS_NAMES = GRADES.flatMap((grade) => {
-  const number = grade.replace("GRADE_", "");
-  return DEFAULT_CLASS_LETTERS.map((letter) => `${number}-${letter}`);
-});
+export const DEFAULT_SCHOOL_NAME = DEFAULT_SCHOOL.name;
+export const DEFAULT_SCHOOL_CODE = DEFAULT_SCHOOL.code;
 
 export interface SchoolClassOption {
   id: string;
@@ -32,9 +35,110 @@ function classNameForGrade(grade: GradeCode): string {
 let defaultSchoolPromise: Promise<SchoolSummary> | null = null;
 
 /**
- * Creates a single default school for existing installations and safely assigns
- * legacy records with no school/class to that tenant. Nullable schema fields let
- * this run against an upgraded database without invalidating existing accounts.
+ * Idempotently creates the configured schools and their standard classes.
+ * Existing SCHOOL1 installations are migrated/merged into the primary school,
+ * preserving user, class, schedule, homework, and meeting references.
+ */
+export async function provisionConfiguredSchools(db: PrismaClient = prisma): Promise<Map<string, SchoolSummary>> {
+  const schools = new Map<string, SchoolSummary>();
+
+  for (const definition of CONFIGURED_SCHOOLS) {
+    let school = await db.school.findUnique({
+      where: { code: definition.code },
+      select: { id: true, name: true, code: true },
+    });
+
+    // Reuse the old default-school row when migrating a single-tenant database.
+    if (!school && definition.code === DEFAULT_SCHOOL.code) {
+      const legacySchool = await db.school.findUnique({
+        where: { code: LEGACY_DEFAULT_SCHOOL_CODE },
+        select: { id: true, name: true, code: true },
+      });
+      if (legacySchool) {
+        school = await db.school.update({
+          where: { id: legacySchool.id },
+          data: { name: definition.name, code: definition.code },
+          select: { id: true, name: true, code: true },
+        });
+      }
+    }
+
+    if (school) {
+      school = await db.school.update({
+        where: { id: school.id },
+        data: { name: definition.name },
+        select: { id: true, name: true, code: true },
+      });
+    } else {
+      school = await db.school.upsert({
+        where: { code: definition.code },
+        update: { name: definition.name },
+        create: { name: definition.name, code: definition.code },
+        select: { id: true, name: true, code: true },
+      });
+    }
+
+    if (!school) throw new Error(`Не удалось создать школу ${definition.name}`);
+
+    await db.class.createMany({
+      data: DEFAULT_CLASS_NAMES.map((name) => ({ schoolId: school.id, name })),
+      skipDuplicates: true,
+    });
+    schools.set(school.code, school);
+  }
+
+  const primarySchool = schools.get(DEFAULT_SCHOOL.code);
+  const legacySchool = await db.school.findUnique({
+    where: { code: LEGACY_DEFAULT_SCHOOL_CODE },
+    select: { id: true },
+  });
+  if (primarySchool && legacySchool && primarySchool.id !== legacySchool.id) {
+    await mergeSchoolData(db, legacySchool.id, primarySchool.id);
+  }
+
+  return schools;
+}
+
+/** Move legacy tenant data without losing class links or deleting records. */
+async function mergeSchoolData(db: PrismaClient, sourceSchoolId: string, targetSchoolId: string): Promise<void> {
+  await db.$transaction(async (tx) => {
+    const source = await tx.school.findUnique({ where: { id: sourceSchoolId }, select: { id: true } });
+    if (!source || source.id === targetSchoolId) return;
+
+    const sourceClasses = await tx.class.findMany({
+      where: { schoolId: sourceSchoolId },
+      select: { id: true, name: true },
+    });
+    const targetClasses = await tx.class.findMany({
+      where: { schoolId: targetSchoolId },
+      select: { id: true, name: true },
+    });
+    const targetClassByName = new Map(targetClasses.map((schoolClass) => [schoolClass.name, schoolClass.id]));
+
+    for (const sourceClass of sourceClasses) {
+      const targetClassId = targetClassByName.get(sourceClass.name);
+      if (targetClassId) {
+        await tx.user.updateMany({ where: { classId: sourceClass.id }, data: { classId: targetClassId } });
+        await tx.schedule.updateMany({ where: { classId: sourceClass.id }, data: { classId: targetClassId } });
+        await tx.homework.updateMany({ where: { classId: sourceClass.id }, data: { classId: targetClassId } });
+        await tx.class.delete({ where: { id: sourceClass.id } });
+      } else {
+        await tx.class.update({ where: { id: sourceClass.id }, data: { schoolId: targetSchoolId } });
+      }
+    }
+
+    await tx.user.updateMany({ where: { schoolId: sourceSchoolId }, data: { schoolId: targetSchoolId } });
+    await tx.schedule.updateMany({ where: { schoolId: sourceSchoolId }, data: { schoolId: targetSchoolId } });
+    await tx.homework.updateMany({ where: { schoolId: sourceSchoolId }, data: { schoolId: targetSchoolId } });
+    await tx.meeting.updateMany({ where: { schoolId: sourceSchoolId }, data: { schoolId: targetSchoolId } });
+    await tx.school.delete({ where: { id: sourceSchoolId } });
+  });
+}
+
+/**
+ * Creates the configured tenants and safely assigns legacy records with no
+ * school/class to the primary school. Nullable schema fields let this run
+ * against installations upgraded from the original single-school version.
  */
 export function ensureDefaultSchool(): Promise<SchoolSummary> {
   if (!defaultSchoolPromise) {
@@ -47,31 +151,9 @@ export function ensureDefaultSchool(): Promise<SchoolSummary> {
 }
 
 async function ensureDefaultSchoolAndBackfill(): Promise<SchoolSummary> {
-  let school = await prisma.school.findUnique({
-    where: { code: DEFAULT_SCHOOL_CODE },
-    select: { id: true, name: true, code: true },
-  });
-
-  // If another school was provisioned first, use the oldest one for legacy data.
-  if (!school) {
-    school = await prisma.school.findFirst({
-      orderBy: { createdAt: "asc" },
-      select: { id: true, name: true, code: true },
-    });
-  }
-  if (!school) {
-    school = await prisma.school.upsert({
-      where: { code: DEFAULT_SCHOOL_CODE },
-      update: {},
-      create: { name: DEFAULT_SCHOOL_NAME, code: DEFAULT_SCHOOL_CODE },
-      select: { id: true, name: true, code: true },
-    });
-  }
-
-  await prisma.class.createMany({
-    data: DEFAULT_CLASS_NAMES.map((name) => ({ schoolId: school.id, name })),
-    skipDuplicates: true,
-  });
+  const schools = await provisionConfiguredSchools();
+  const school = schools.get(DEFAULT_SCHOOL_CODE);
+  if (!school) throw new Error("Не удалось создать основную школу");
 
   const classes = await prisma.class.findMany({
     where: { schoolId: school.id },
@@ -118,13 +200,34 @@ async function ensureDefaultSchoolAndBackfill(): Promise<SchoolSummary> {
     await tx.user.updateMany({ where: { schoolId: null }, data: { schoolId: school.id } });
     await tx.schedule.updateMany({ where: { schoolId: null }, data: { schoolId: school.id } });
     await tx.homework.updateMany({ where: { schoolId: null }, data: { schoolId: school.id } });
+
+    // Backfill the explicit tenant on existing meetings before allowing joins.
+    const meetings = await tx.meeting.findMany({
+      where: { schoolId: null },
+      select: {
+        id: true,
+        host: { select: { schoolId: true } },
+        schedule: { select: { schoolId: true } },
+      },
+    });
+    for (const meeting of meetings) {
+      const meetingSchoolId = meeting.schedule?.schoolId ?? meeting.host.schoolId;
+      if (!meetingSchoolId) continue;
+      await tx.meeting.updateMany({
+        where: { id: meeting.id, schoolId: null },
+        data: { schoolId: meetingSchoolId },
+      });
+    }
   });
 
   return school;
 }
 
-/** Persist the default tenant assignment for a legacy user before issuing a session. */
+/** Persist a user's tenant assignment before issuing a session or socket. */
 export async function ensureUserSchoolMembership(userId: string) {
+  // Ensures all configured schools/classes exist even when the seed was skipped.
+  await ensureDefaultSchool();
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, schoolId: true, classId: true, grade: true, role: true },
@@ -158,8 +261,8 @@ export async function findSchoolByCode(value: unknown): Promise<SchoolSummary | 
   const code = normalizeSchoolCode(value);
   if (!code) return null;
   await ensureDefaultSchool();
-  return prisma.school.findUnique({
-    where: { code },
+  return prisma.school.findFirst({
+    where: { code: { equals: code, mode: "insensitive" } },
     select: { id: true, name: true, code: true },
   });
 }
@@ -180,4 +283,13 @@ export async function getSchoolSummary(schoolId: string): Promise<SchoolSummary 
     where: { id: schoolId },
     select: { id: true, name: true, code: true },
   });
+}
+
+/** Resolve the tenant for a legacy meeting as well as for newly tenant-scoped meetings. */
+export function getMeetingSchoolId(meeting: {
+  schoolId: string | null;
+  host: { schoolId: string | null };
+  schedule?: { schoolId: string | null } | null;
+}): string | null {
+  return meeting.schoolId ?? meeting.schedule?.schoolId ?? meeting.host.schoolId;
 }

@@ -99,7 +99,7 @@ export function RegisterForm() {
       setSchoolCheck(null);
       setFieldErrors((previous) => ({
         ...previous,
-        schoolCode: "Введите корректный код школы (например, SCHOOL1)",
+        schoolCode: "Введите корректный код школы, выданный администратором",
       }));
       return;
     }
@@ -155,7 +155,7 @@ export function RegisterForm() {
     });
 
     const nextErrors: FieldErrors = validation.ok ? {} : { ...validation.fields };
-    if (!schoolCheck || schoolCheck.school.code !== normalizedSchoolCode) {
+    if (!schoolCheck || schoolCheck.school.code.toUpperCase() !== normalizedSchoolCode) {
       nextErrors.schoolCode = "Сначала проверьте код школы";
     }
     if (role === "STUDENT" && schoolCheck && !schoolCheck.classes.some((item) => item.id === classId)) {
@@ -252,7 +252,7 @@ export function RegisterForm() {
           label="Код школы"
           name="schoolCode"
           autoComplete="off"
-          placeholder="Например, SCHOOL1"
+          placeholder="Код, выданный администратором"
           value={schoolCode}
           error={fieldErrors.schoolCode}
           onChange={(event) => {

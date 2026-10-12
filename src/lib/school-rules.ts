@@ -4,11 +4,11 @@ const GRADE_BY_NUMBER = Object.fromEntries(
   GRADES.map((grade) => [grade.replace("GRADE_", ""), grade]),
 ) as Record<string, GradeCode>;
 
-/** Normalize and validate a school invite code. */
+/** Normalize and validate a school invite code (periods support legacy/custom codes). */
 export function normalizeSchoolCode(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const code = value.trim().toUpperCase();
-  return /^[A-Z0-9][A-Z0-9_-]{2,31}$/.test(code) ? code : null;
+  return /^[A-Z0-9][A-Z0-9._-]{2,31}$/.test(code) ? code : null;
 }
 
 /** Canonical class label, e.g. "7-В". */

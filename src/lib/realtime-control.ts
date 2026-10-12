@@ -30,6 +30,7 @@ export interface LiveParticipant {
 }
 
 export interface LiveRoom {
+  /** Namespaced Socket.IO ID: `room:${schoolId}:${lessonId}`. */
   roomId: string;
   meetingId: string | null;
   participants: LiveParticipant[];
@@ -49,7 +50,7 @@ export interface CloseRoomOptions {
 export interface RealtimeControl {
   /** Комнаты, в которых прямо сейчас есть участники. */
   listLiveRooms(): LiveRoom[];
-  /** Сколько человек в комнате (по коду урока). */
+  /** Сколько человек в namespaced Socket.IO-комнате. */
   countParticipants(roomId: string): number;
   /**
    * Закрывает все комнаты урока: участники получают `room-closed` и покидают

@@ -32,6 +32,8 @@ import {
 import { MockAIProvider } from "../src/lib/ai-provider";
 import { validateRegisterInput } from "../src/lib/validation";
 import { gradeFromClassName, normalizeClassName, normalizeSchoolCode } from "../src/lib/school-rules";
+import { CONFIGURED_SCHOOLS, DEFAULT_CLASS_NAMES } from "../src/lib/school-config";
+import { buildSchoolRoomId, hasSchoolAccess } from "../src/lib/realtime";
 
 const lesson = (dayOfWeek: number, startTime: string, endTime: string, id = `${dayOfWeek}-${startTime}`) => ({
   id,
@@ -43,10 +45,30 @@ const lesson = (dayOfWeek: number, startTime: string, endTime: string, id = `${d
 const clock = (dayOfWeek: number, time: string): SchoolClock => ({ dayOfWeek: dayOfWeek as SchoolClock["dayOfWeek"], minutes: parseTime(time)! });
 
 describe("коды школ и названия классов", () => {
-  it("нормализует коды школ и отвергает некорректные", () => {
+  it("нормализует коды школ, включая точку, и отвергает некорректные", () => {
     assert.equal(normalizeSchoolCode(" school1 "), "SCHOOL1");
+    assert.equal(normalizeSchoolCode(" Anna.Terentieva77 "), "ANNA.TERENTIEVA77");
     assert.equal(normalizeSchoolCode("AB"), null);
     assert.equal(normalizeSchoolCode("school code"), null);
+  });
+
+  it("содержит три точных секрета и стандартные классы 5-А … 11-Б", () => {
+    assert.deepEqual(CONFIGURED_SCHOOLS, [
+      { name: "Лицей Сингулярити", code: "Sinlycem26" },
+      { name: "Fullhouse Teem  ", code: "Fulhouseteem26" },
+      { name: "Школа Душа", code: "Anna.Terentieva77" },
+    ]);
+    assert.deepEqual(DEFAULT_CLASS_NAMES, [
+      "5-А", "5-Б", "6-А", "6-Б", "7-А", "7-Б", "8-А", "8-Б", "9-А", "9-Б", "10-А", "10-Б", "11-А", "11-Б",
+    ]);
+  });
+
+  it("строит Socket.IO-комнату с tenant namespace и не допускает чужую школу", () => {
+    assert.equal(buildSchoolRoomId("school-a", "lesson-123"), "room:school-a:lesson-123");
+    assert.notEqual(buildSchoolRoomId("school-a", "lesson-123"), buildSchoolRoomId("school-b", "lesson-123"));
+    assert.equal(hasSchoolAccess("school-a", "school-a"), true);
+    assert.equal(hasSchoolAccess("school-a", "school-b"), false);
+    assert.equal(hasSchoolAccess("school-a", null), false);
   });
 
   it("нормализует названия классов и определяет параллель", () => {
@@ -73,6 +95,10 @@ describe("регистрация со школой и классом", () => {
       assert.equal(result.data.schoolCode, "SCHOOL1");
       assert.equal(result.data.classId, "class-5a");
     }
+
+    const punctuatedCode = validateRegisterInput({ ...valid, schoolCode: "Anna.Terentieva77" });
+    assert.equal(punctuatedCode.ok, true);
+    if (punctuatedCode.ok) assert.equal(punctuatedCode.data.schoolCode, "ANNA.TERENTIEVA77");
 
     const missingClass = validateRegisterInput({ ...valid, classId: "" });
     assert.equal(missingClass.ok, false);

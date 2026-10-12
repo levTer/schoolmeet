@@ -42,6 +42,19 @@ export function isValidRoomCode(value: unknown): value is string {
   return typeof value === "string" && value.length >= 3 && value.length <= 48 && ROOM_CODE_REGEX.test(value);
 }
 
+/** The physical Socket.IO room is always namespaced by school and lesson ID. */
+export function buildSchoolRoomId(schoolId: string, lessonId: string): string {
+  return `room:${schoolId}:${lessonId}`;
+}
+
+/** Fail closed when either tenant is absent or the lesson belongs to another school. */
+export function hasSchoolAccess(
+  userSchoolId: string | null | undefined,
+  resourceSchoolId: string | null | undefined,
+): boolean {
+  return Boolean(userSchoolId && resourceSchoolId && userSchoolId === resourceSchoolId);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Общие типы                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -187,6 +200,7 @@ export interface SocketUser {
   id: string;
   name: string;
   role: Role;
+  schoolId: string;
   grade: GradeCode | null;
 }
 

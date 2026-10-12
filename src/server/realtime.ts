@@ -14,6 +14,8 @@ import {
   WHITEBOARD_MAX_OBJECT_JSON,
   WHITEBOARD_MAX_PAGES,
   WHITEBOARD_RATE_LIMIT_PER_SECOND,
+  buildSchoolRoomId,
+  hasSchoolAccess,
   isValidRoomCode,
   type Ack,
   type ClientToServerEvents,
@@ -32,6 +34,7 @@ import {
 } from "@/lib/realtime";
 import { closeAttendance, openAttendance } from "@/lib/attendance";
 import { findMeetingByCode, loadRecentMessages, saveChatMessage } from "@/lib/meetings";
+import { getMeetingSchoolId, ensureUserSchoolMembership } from "@/lib/schools";
 import { prisma } from "@/lib/prisma";
 import { consumeRateLimitForIp, getClientIpFromNodeHeaders } from "@/lib/rate-limit";
 import {
@@ -89,8 +92,6 @@ interface SocketData {
 type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 type RealtimeSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
-const roomKey = (roomId: string) => `meeting:${roomId}`;
-
 /* -------------------------------------------------------------------------- */
 /* Аутентификация                                                              */
 /* -------------------------------------------------------------------------- */
@@ -108,7 +109,9 @@ function parseCookieHeader(header: string): Record<string, string> {
 }
 
 /** Достаёт пользователя из подписанного JWT-cookie NextAuth. `null` — сессии нет. */
-export async function authenticateHandshake(headers: IncomingHttpHeaders): Promise<SocketUser | null> {
+export async function authenticateHandshake(
+  headers: IncomingHttpHeaders,
+): Promise<Pick<SocketUser, "id" | "name" | "role"> | null> {
   const cookieHeader = typeof headers.cookie === "string" ? headers.cookie : "";
   if (!cookieHeader) return null;
 
@@ -126,8 +129,6 @@ export async function authenticateHandshake(headers: IncomingHttpHeaders): Promi
     id,
     name: typeof token.name === "string" && token.name ? token.name : "Участник",
     role: (token.role as Role | undefined) ?? "STUDENT",
-    // Класс уточняется из БД на рукопожатии (см. `io.use`).
-    grade: null,
   };
 }
 
@@ -180,7 +181,7 @@ function toParticipant(socket: { id: string; data: SocketData }): RoomParticipan
 }
 
 async function listParticipants(io: RealtimeServer, roomId: string): Promise<RoomParticipant[]> {
-  const sockets = await io.in(roomKey(roomId)).fetchSockets();
+  const sockets = await io.in(roomId).fetchSockets();
   return sockets.map((socket) => toParticipant(socket));
 }
 
@@ -189,8 +190,8 @@ function leaveCurrentRoom(socket: RealtimeSocket): void {
   const { roomId } = socket.data;
   if (!roomId) return;
 
-  void socket.leave(roomKey(roomId));
-  socket.to(roomKey(roomId)).emit("user-left", { socketId: socket.id });
+  void socket.leave(roomId);
+  socket.to(roomId).emit("user-left", { socketId: socket.id });
 
   // Закрываем запись посещаемости: фиксируем выход и считаем минуты.
   if (socket.data.attendanceId) {
@@ -378,7 +379,7 @@ function toLiveParticipant(socket: RealtimeSocket): LiveParticipant {
 /** Публикует для API админ-панели управление живыми сессиями. */
 function buildRealtimeControl(io: RealtimeServer): RealtimeControl {
   const socketsInRoom = (roomId: string): RealtimeSocket[] => {
-    const ids = io.sockets.adapter.rooms.get(roomKey(roomId));
+    const ids = io.sockets.adapter.rooms.get(roomId);
     if (!ids) return [];
 
     const sockets: RealtimeSocket[] = [];
@@ -542,14 +543,19 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           return;
         }
 
-        // Роль и блокировка — из БД: забаненный аккаунт не подключается вовсе,
-        // а смена роли применяется со следующего соединения, без ожидания JWT.
+        // Tenant, роль и блокировка берутся из БД, а не из JWT-cookie.
+        const membership = await ensureUserSchoolMembership(user.id);
+        if (!membership) {
+          next(new Error("UNAUTHORIZED"));
+          return;
+        }
+
         const dbUser = await prisma.user.findUnique({
           where: { id: user.id },
-          select: { name: true, role: true, grade: true, isBanned: true },
+          select: { name: true, role: true, grade: true, schoolId: true, isBanned: true },
         });
 
-        if (!dbUser) {
+        if (!dbUser || !dbUser.schoolId) {
           next(new Error("UNAUTHORIZED"));
           return;
         }
@@ -563,6 +569,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
             id: user.id,
             name: dbUser.name || user.name,
             role: dbUser.role as Role,
+            schoolId: dbUser.schoolId,
             grade: (dbUser.grade as GradeCode | null) ?? null,
           },
           media: { ...DEFAULT_MEDIA_STATE },
@@ -582,17 +589,33 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
   io.on("connection", (socket: RealtimeSocket) => {
     socket.on("join-room", async (payload, ack) => {
       try {
-        const roomId = payload?.roomId;
-        if (!isValidRoomCode(roomId)) {
+        const lessonCode = payload?.roomId;
+        if (!isValidRoomCode(lessonCode)) {
           reply<JoinRoomResult>(ack, { ok: false, code: "BAD_ROOM", error: "Некорректный код урока" });
           return;
         }
 
-        const meeting = await findMeetingByCode(roomId);
+        const meeting = await findMeetingByCode(lessonCode);
         if (!meeting) {
           reply<JoinRoomResult>(ack, { ok: false, code: "NOT_FOUND", error: "Урок с таким кодом не найден" });
           return;
         }
+
+        const meetingSchoolId = getMeetingSchoolId(meeting);
+        if (!hasSchoolAccess(socket.data.user.schoolId, meetingSchoolId)) {
+          // Acknowledge first, then drop the socket so it cannot keep probing rooms.
+          reply<JoinRoomResult>(ack, {
+            ok: false,
+            code: "SCHOOL_MISMATCH",
+            error: "Этот урок принадлежит другой школе",
+          });
+          setTimeout(() => socket.disconnect(true), 100).unref();
+          return;
+        }
+
+        // The physical Socket.IO room is `room:${user.schoolId}:${lessonId}`.
+        const lessonId = meeting.meetingCode;
+        const roomId = buildSchoolRoomId(socket.data.user.schoolId, lessonId);
 
         // Урок закрыт администратором: пускаем только ведущего и администратора,
         // и только в течение «карантина» — иначе комната снова станет открытой.
@@ -617,7 +640,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         socket.data.meetingId = meeting.id;
         socket.data.meetingTitle = meeting.title;
         socket.data.joinedAt = Date.now();
-        await socket.join(roomKey(roomId));
+        await socket.join(roomId);
         addRoomMember(roomId);
 
         // Посещаемость: открываем запись входа (переиспользуем свежую при
@@ -625,11 +648,11 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         socket.data.attendanceId =
           (await openAttendance({ meetingId: meeting.id, userId: socket.data.user.id })) ?? undefined;
 
-        socket.to(roomKey(roomId)).emit("user-joined", toParticipant(socket));
+        socket.to(roomId).emit("user-joined", toParticipant(socket));
 
         const [participants, history] = await Promise.all([
           listParticipants(io, roomId),
-          loadRecentMessages(meeting.id),
+          loadRecentMessages(meeting.id, socket.data.user.schoolId),
         ]);
 
         reply<JoinRoomResult>(ack, {
@@ -664,7 +687,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       if (!roomId) return;
 
       socket.data.handRaised = Boolean(payload?.raised);
-      io.in(roomKey(roomId)).emit("raise-hand", { socketId: socket.id, raised: socket.data.handRaised });
+      io.in(roomId).emit("raise-hand", { socketId: socket.id, raised: socket.data.handRaised });
     });
 
     socket.on("media-state", (payload) => {
@@ -672,7 +695,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       if (!roomId || !isMediaState(payload)) return;
 
       socket.data.media = { audio: payload.audio, video: payload.video, screen: payload.screen };
-      socket.to(roomKey(roomId)).emit("media-state", { socketId: socket.id, media: socket.data.media });
+      socket.to(roomId).emit("media-state", { socketId: socket.id, media: socket.data.media });
     });
 
     socket.on("chat-message", async (payload, ack) => {
@@ -699,7 +722,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           userId: socket.data.user.id,
           ciphertext,
         });
-        io.in(roomKey(roomId)).emit("chat-message", envelope);
+        io.in(roomId).emit("chat-message", envelope);
         reply(ack, { ok: true, data: { id: envelope.id } });
       } catch (error) {
         console.error("[realtime] chat-message:", error);
@@ -737,7 +760,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       }
 
       page.set(payload.id, payload.json);
-      socket.to(roomKey(roomId)).emit("whiteboard-add", payload);
+      socket.to(roomId).emit("whiteboard-add", payload);
       reply(ack, { ok: true, data: undefined });
     });
 
@@ -763,7 +786,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       const state = getWhiteboardState(roomId);
       ensurePages(state, payload.page);
       state.pages[payload.page].set(payload.id, payload.json);
-      socket.to(roomKey(roomId)).emit("whiteboard-modify", payload);
+      socket.to(roomId).emit("whiteboard-modify", payload);
       reply(ack, { ok: true, data: undefined });
     });
 
@@ -791,7 +814,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const page = state.pages[payload.page];
         for (const id of payload.objectIds) page.delete(id);
       }
-      socket.to(roomKey(roomId)).emit("whiteboard-delete", payload);
+      socket.to(roomId).emit("whiteboard-delete", payload);
       reply(ack, { ok: true, data: undefined });
     });
 
@@ -821,7 +844,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       } else if (payload.page < state.pages.length) {
         state.pages[payload.page] = new Map();
       }
-      socket.to(roomKey(roomId)).emit("whiteboard-clear", payload);
+      socket.to(roomId).emit("whiteboard-clear", payload);
       reply(ack, { ok: true, data: undefined });
     });
 
@@ -830,7 +853,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       if (!roomId || !isWhiteboardCursorPayload(payload)) return;
       if (!takeToken(socket, "wbCursor", WHITEBOARD_CURSOR_RATE_LIMIT_PER_SECOND)) return;
 
-      socket.to(roomKey(roomId)).emit("whiteboard-cursor", {
+      socket.to(roomId).emit("whiteboard-cursor", {
         socketId: socket.id,
         name: socket.data.user.name,
         page: payload.page,
@@ -859,7 +882,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       const state = getWhiteboardState(roomId);
       state.drawPolicy = drawPolicy;
       // Политика рассылается всем, включая инициатора, — UI остаётся единым.
-      io.in(roomKey(roomId)).emit("whiteboard-access", { drawPolicy });
+      io.in(roomId).emit("whiteboard-access", { drawPolicy });
       reply(ack, { ok: true, data: undefined });
     });
 
@@ -881,7 +904,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       const state = getWhiteboardState(roomId);
       ensurePages(state, payload.page);
       state.page = payload.page;
-      io.in(roomKey(roomId)).emit("whiteboard-page", { page: payload.page });
+      io.in(roomId).emit("whiteboard-page", { page: payload.page });
       reply(ack, { ok: true, data: undefined });
     });
 

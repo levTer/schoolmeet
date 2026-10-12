@@ -1,7 +1,7 @@
 import type { NextResponse } from "next/server";
 
 import { listAttendance } from "@/lib/attendance";
-import { handleRouteError, jsonOk, parseIntParam } from "@/lib/api";
+import { handleRouteError, jsonError, jsonOk, parseIntParam } from "@/lib/api";
 import { parseGrade } from "@/lib/admin-users";
 import { requireCapability, requireViewer } from "@/lib/session-viewer";
 
@@ -17,9 +17,11 @@ export async function GET(request: Request): Promise<NextResponse> {
   try {
     const viewer = await requireViewer();
     requireCapability(viewer, "attendance.view");
+    if (!viewer.schoolId) return jsonError(409, "SCHOOL_REQUIRED", "Аккаунт не привязан к школе");
 
     const { searchParams } = new URL(request.url);
     const result = await listAttendance({
+      schoolId: viewer.schoolId,
       meetingId: searchParams.get("meetingId") ?? undefined,
       grade: parseGrade(searchParams.get("grade")),
       limit: parseIntParam(searchParams.get("limit"), 30, 1, 200),

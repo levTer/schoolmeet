@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/auth";
-import { findMeetingByCode } from "@/lib/meetings";
+import { findMeetingByCodeInSchool } from "@/lib/meetings";
+import { getSchoolViewer } from "@/lib/school-viewer";
 import { isValidRoomCode } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,10 @@ export async function GET(
   }
 
   try {
-    const meeting = await findMeetingByCode(params.code);
+    const viewer = await getSchoolViewer(session.user.id);
+    const meeting = viewer?.schoolId
+      ? await findMeetingByCodeInSchool(params.code, viewer.schoolId)
+      : null;
     if (!meeting) {
       return NextResponse.json(
         { ok: false, error: "Урок с таким кодом не найден", code: "NOT_FOUND" },
