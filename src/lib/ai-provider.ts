@@ -13,11 +13,16 @@
  *   • запрос с изображением доски (распознавание формулы)
  *       → Gemini Vision → OpenRouter Vision → Mock;
  *   • текстовый запрос (конспект, решение, чертёж, проверка ДЗ)
- *       → Groq (14 400 запросов/день бесплатно) → OpenRouter :free
+ *       → Groq (gpt-oss-120b/20b, бесплатный тариф) → OpenRouter :free
  *       → Gemini Flash → Mock;
  *   • провайдер без ключа или с ошибкой (лимит, сеть, 5xx) — автоматически
  *     пропускается, API школы не падает НИКОГДА: последнее звено Mock
  *     работает полностью локально.
+ *
+ * ВНУТРИ ПРОВАЙДЕРА МОДЕЛИ ТОЖЕ ПЕРЕБИРАЮТСЯ: если вендор снял модель с
+ * обслуживания (404 `model_not_found` / `NOT_FOUND`, 400
+ * `model_decommissioned`), запрос в том же вызове уходит на следующую модель
+ * списка, а школа этого не замечает.
  *
  * Принудительный выбор одного провайдера — переменная `AI_PROVIDER`
  * (`groq` | `gemini` | `openrouter` | `mock` | `auto`, по умолчанию `auto`).
@@ -41,12 +46,14 @@ export {
   GROQ_API_URL,
   GROQ_DEFAULT_MODEL,
   GROQ_DEFAULT_REASONING_MODEL,
+  GROQ_FALLBACK_MODELS,
 } from "./ai-providers/groq";
 export {
   GeminiProvider,
   GEMINI_API_BASE,
   GEMINI_DEFAULT_MODEL,
   GEMINI_FALLBACK_MODELS,
+  geminiGenerateContentUrl,
 } from "./ai-providers/gemini";
 export {
   OpenRouterProvider,
@@ -54,7 +61,7 @@ export {
   OPENROUTER_DEFAULT_MODEL,
   OPENROUTER_DEFAULT_VISION_MODEL,
 } from "./ai-providers/openrouter";
-export { AIProviderError } from "./ai-providers/shared";
+export { AIProviderError, isModelUnavailableError } from "./ai-providers/shared";
 
 import { GeminiProvider } from "./ai-providers/gemini";
 import { GroqProvider } from "./ai-providers/groq";
@@ -181,7 +188,7 @@ export class AutoAIProvider implements AIProvider {
 
     return [
       describe("groq", this.registry.groq, this.modelOf("groq"), textIndex("groq"), visionIndex("groq"),
-        this.registry.groq ? undefined : "нет GROQ_API_KEY (console.groq.com — 14 400 запросов/день бесплатно)"),
+        this.registry.groq ? undefined : "нет GROQ_API_KEY (console.groq.com — бесплатный тариф: openai/gpt-oss-120b)"),
       describe("gemini", this.registry.gemini, this.modelOf("gemini"), textIndex("gemini"), visionIndex("gemini"),
         this.registry.gemini ? undefined : "нет GEMINI_API_KEY (aistudio.google.com — бесплатно, без карты)"),
       describe("openrouter", this.registry.openrouter, this.modelOf("openrouter"), textIndex("openrouter"), visionIndex("openrouter"),

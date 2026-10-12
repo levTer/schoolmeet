@@ -9,8 +9,10 @@
  *  2. `parseDrawingInstructions` отбрасывает некорректный JSON;
  *  3. `latexToReadableText` превращает LaTeX в читаемый Unicode-текст;
  *  4. утилиты парсинга ответов (extractJsonObject / extractLatex / stripThinkTags);
- *  5. GroqProvider: модель по действию, JSON-чертёж, отказ от изображений;
- *  6. GeminiProvider: inline_data для Vision, LaTeX из ответа, фоллбэк моделей при 404;
+ *  5. GroqProvider: модель по действию, JSON-чертёж, отказ от изображений,
+ *     мгновенный перебор моделей при 404/`model_decommissioned`;
+ *  6. GeminiProvider: inline_data для Vision, LaTeX из ответа, v1beta REST-URL
+ *     с ключом в `?key=`, перебор моделей при 404 NOT_FOUND;
  *  7. OpenRouterProvider: text/vision-модели, image_url в сообщении;
  *  8. AutoAIProvider: waterfall-цепочки (текст → Groq, изображение → Gemini),
  *     авто-переключение при сбоях, работа БЕЗ ключей на локальном Mock;
@@ -22,11 +24,16 @@ import {
   AI_ACTIONS,
   AIProviderError,
   AutoAIProvider,
+  GEMINI_DEFAULT_MODEL,
+  GEMINI_FALLBACK_MODELS,
+  GROQ_FALLBACK_MODELS,
   GeminiProvider,
   GroqProvider,
   MockAIProvider,
   OpenRouterProvider,
+  geminiGenerateContentUrl,
   getAIProvider,
+  isModelUnavailableError,
   latexToReadableText,
   setAIProvider,
   type AIAction,
@@ -72,11 +79,6 @@ function failingFetch(message: string) {
   return async (): Promise<Response> => {
     throw new Error(message);
   };
-}
-
-/** fetchImpl, возвращающий произвольный статус. */
-function statusFetch(status: number, text = "") {
-  return async (): Promise<Response> => new Response(text || `HTTP ${status}`, { status });
 }
 
 const chatResponse = (content: string) => ({ choices: [{ message: { content } }] });
@@ -196,6 +198,16 @@ async function main(): Promise<void> {
   check("extractLatex: из $$…$$", extractLatex("Смотрите: $$a^2 + b^2 = c^2$$ верно") === "a^2 + b^2 = c^2");
   check("extractLatex: из ```latex-блока", extractLatex("```latex\nF = ma\n```") === "F = ma");
   check("stripThinkTags: убирает размышления", stripThinkTags("<think>разбор</think>Ответ") === "Ответ");
+  check(
+    "isModelUnavailableError: 404 / model_decommissioned → снятая модель, 429 / сеть → нет",
+    isModelUnavailableError(new AIProviderError("Groq: HTTP 404 — model_not_found", { status: 404 })) &&
+      isModelUnavailableError(
+        new AIProviderError("Groq: HTTP 400 — model_decommissioned, use openai/gpt-oss-120b", { status: 400 }),
+      ) &&
+      isModelUnavailableError(new AIProviderError("Gemini: HTTP 404 — NOT_FOUND", { status: 404 })) &&
+      !isModelUnavailableError(new AIProviderError("Groq: HTTP 429 — rate limit", { status: 429 })) &&
+      !isModelUnavailableError(new AIProviderError("Groq: сетевая ошибка", { retryable: true })),
+  );
 
   console.log("5. GroqProvider (stub fetch)");
   const groqCalls: FetchCall[] = [];
@@ -206,11 +218,70 @@ async function main(): Promise<void> {
   const groqText = await groq.complete({ action: "summary", prompt: "Теорема Пифагора" });
   check("текстовый ответ распарсен", groqText.text.includes("Конспект"));
   check("providerId = groq", groqText.providerId === "groq");
-  check("модель текста = llama-3.3-70b-versatile", groqText.model === "llama-3.3-70b-versatile", groqText.model ?? "");
+  check("модель текста = openai/gpt-oss-120b", groqText.model === "openai/gpt-oss-120b", groqText.model ?? "");
   check("URL = api.groq.com", groqCalls[0]?.url.includes("api.groq.com/openai/v1/chat/completions") === true);
 
   const groqSolve = await groq.complete({ action: "solve", prompt: "x² − 5x + 6 = 0" });
-  check("solve → reasoning-модель DeepSeek R1", groqSolve.model === "deepseek-r1-distill-llama-70b", groqSolve.model ?? "");
+  check("solve → reasoning-модель gpt-oss-120b", groqSolve.model === "openai/gpt-oss-120b", groqSolve.model ?? "");
+
+  // Перебор моделей: снятый вендором ID не ломает запрос (fix 404 model_not_found).
+  const groqChainCalls: string[] = [];
+  const groqChain = new GroqProvider({
+    apiKey: "gsk_test",
+    fetchImpl: async (url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string };
+      groqChainCalls.push(String(body.model));
+      if (groqChainCalls.length === 1) {
+        return new Response(
+          '{"error":{"message":"The model `openai/gpt-oss-120b` does not exist or you do not have access to it.","code":"model_not_found"}}',
+          { status: 404 },
+        );
+      }
+      return new Response(JSON.stringify(chatResponse("## Конспект по резервной модели")), { status: 200 });
+    },
+  });
+  const chained = await groqChain.complete({ action: "summary", prompt: "Теорема Пифагора" });
+  check(
+    "404 первой модели → мгновенный переход ко второй",
+    chained.model === GROQ_FALLBACK_MODELS[0] && groqChainCalls.length === 2,
+    groqChainCalls.join(" → "),
+  );
+  const chainedAgain = await groqChain.complete({ action: "summary", prompt: "Теорема Пифагора" });
+  check(
+    "снятая модель запоминается и больше не опрашивается",
+    chainedAgain.model === GROQ_FALLBACK_MODELS[0] && groqChainCalls.length === 3,
+    groqChainCalls.join(" → "),
+  );
+
+  // 400 model_decommissioned — второе «лицо» той же проблемы у Groq.
+  const groqDecomCalls: string[] = [];
+  const groqDecom = new GroqProvider({
+    apiKey: "gsk_test",
+    fetchImpl: async (url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string };
+      groqDecomCalls.push(String(body.model));
+      if (groqDecomCalls.length === 1) {
+        return new Response(
+          '{"error":{"message":"The model `openai/gpt-oss-120b` has been decommissioned and is no longer supported.","code":"model_decommissioned"}}',
+          { status: 400 },
+        );
+      }
+      return new Response(JSON.stringify(chatResponse("## Решение")), { status: 200 });
+    },
+  });
+  const decomResult = await groqDecom.complete({ action: "solve", prompt: "x² − 5x + 6 = 0" });
+  check(
+    "400 model_decommissioned → перебор продолжается",
+    decomResult.model === GROQ_FALLBACK_MODELS[0] && groqDecomCalls.length === 2,
+    groqDecomCalls.join(" → "),
+  );
+  check(
+    "список моделей Groq: живые ID первыми, legacy-ID из ТЗ сохранены",
+    GROQ_FALLBACK_MODELS[0] === "openai/gpt-oss-20b" &&
+      ["llama-3.3-70b-versatile", "llama3-70b-8192", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"].every(
+        (model) => GROQ_FALLBACK_MODELS.includes(model),
+      ),
+  );
 
   const groqDrawCalls: FetchCall[] = [];
   const groqDraw = new GroqProvider({
@@ -246,13 +317,21 @@ async function main(): Promise<void> {
   );
 
   let rateLimited: unknown = null;
-  const groq429 = new GroqProvider({ apiKey: "gsk_test", fetchImpl: statusFetch(429, "rate limit") });
+  let groq429Calls = 0;
+  const groq429 = new GroqProvider({
+    apiKey: "gsk_test",
+    fetchImpl: async () => {
+      groq429Calls += 1;
+      return new Response("rate limit", { status: 429 });
+    },
+  });
   try {
     await groq429.complete({ action: "summary", prompt: "тест" });
   } catch (error) {
     rateLimited = error;
   }
   check("HTTP 429 → retryable-ошибка", rateLimited instanceof AIProviderError && rateLimited.retryable === true);
+  check("429 (лимит, а не снятая модель) не запускает перебор моделей", groq429Calls === 1, `запросов: ${groq429Calls}`);
   check("Groq без ключа не создаётся", !GroqProvider.isAvailable({} as NodeJS.ProcessEnv));
 
   console.log("6. GeminiProvider (stub fetch)");
@@ -270,7 +349,16 @@ async function main(): Promise<void> {
   check("formula: markdown-обёртка с latex-блоком", formula.text.includes("```latex"));
   check("formula: providerId = gemini", formula.providerId === "gemini");
   const geminiUrl = geminiCalls[0]?.url ?? "";
-  check("URL содержит :generateContent", geminiUrl.includes(":generateContent") && geminiUrl.includes("gemini-2.0-flash"));
+  check(
+    "URL содержит :generateContent и модель по умолчанию",
+    geminiUrl.includes(":generateContent") && geminiUrl.includes(GEMINI_DEFAULT_MODEL),
+    geminiUrl,
+  );
+  check(
+    "v1beta REST-URL с ключом в параметре key",
+    geminiUrl === geminiGenerateContentUrl(GEMINI_DEFAULT_MODEL, "AIza_test"),
+    geminiUrl,
+  );
   const geminiParts = JSON.stringify(geminiCalls[0]?.body);
   check("изображение передано как inline_data (base64)", geminiParts.includes("inline_data") && geminiParts.includes("iVBORw0KGgo"));
   check("systemInstruction присутствует", geminiParts.includes("systemInstruction"));
@@ -288,7 +376,44 @@ async function main(): Promise<void> {
     },
   });
   const fallbackResult = await geminiFallback.complete({ action: "summary", prompt: "тема" });
-  check("404 модели → авто-переключение на gemini-1.5-flash", requestIndex === 2 && fallbackResult.model === "gemini-1.5-flash", fallbackResult.model ?? "");
+  check(
+    `404 модели → авто-переключение на ${GEMINI_FALLBACK_MODELS[0]}`,
+    requestIndex === 2 && fallbackResult.model === GEMINI_FALLBACK_MODELS[0],
+    fallbackResult.model ?? "",
+  );
+  const fallbackAgain = await geminiFallback.complete({ action: "summary", prompt: "тема" });
+  check(
+    "снятая модель Gemini не опрашивается повторно",
+    fallbackAgain.model === GEMINI_FALLBACK_MODELS[0] && requestIndex === 3,
+    `запросов: ${requestIndex}`,
+  );
+  check(
+    "список моделей Gemini: актуальные ID первыми, legacy-ID из ТЗ сохранены",
+    GEMINI_FALLBACK_MODELS[0] === "gemini-3.6-flash" &&
+      ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro"].every((model) => GEMINI_FALLBACK_MODELS.includes(model)),
+  );
+
+  // Квота (429) — это не снятая модель: перебора нет, решает AutoAIProvider.
+  let geminiQuotaCalls = 0;
+  const geminiQuota = new GeminiProvider({
+    apiKey: "AIza_test",
+    fetchImpl: async () => {
+      geminiQuotaCalls += 1;
+      return new Response("quota exceeded", { status: 429 });
+    },
+  });
+  let quotaError: unknown = null;
+  try {
+    await geminiQuota.complete({ action: "summary", prompt: "тема" });
+  } catch (error) {
+    quotaError = error;
+  }
+  check(
+    "Gemini 429 → retryable-ошибка без перебора моделей",
+    quotaError instanceof AIProviderError && geminiQuotaCalls === 1,
+    `запросов: ${geminiQuotaCalls}`,
+  );
+  check("Gemini без ключа не создаётся", !GeminiProvider.isAvailable({} as NodeJS.ProcessEnv));
 
   console.log("7. OpenRouterProvider (stub fetch)");
   const orCalls: FetchCall[] = [];

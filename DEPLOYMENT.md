@@ -37,8 +37,8 @@
 
 | Провайдер | Модели | Бесплатный лимит | Роль в SchoolMeet |
 |---|---|---|---|
-| **Groq Cloud** | Llama 3.3 70B, DeepSeek R1 Distill Llama 70B | **14 400 запросов/день** | Конспекты, решения задач, формулы, JSON-чертежи, черновики проверки ДЗ |
-| **Google Gemini** | Gemini 2.0 / 1.5 Flash (Vision) | **1 500 запросов/день** | Распознавание рукописных формул с изображения доски |
+| **Groq Cloud** | GPT-OSS 120B / GPT-OSS 20B (+ `qwen3.8-27b`) | **1 000 запросов/день на модель** | Конспекты, решения задач, формулы, JSON-чертежи, черновики проверки ДЗ |
+| **Google Gemini** | Gemini 3.8 Flash (Vision) + резерв 3.6/3.5/3.1/2.5 | **бесплатная дневная квота** (AI Studio, без карты) | Распознавание рукописных формул с изображения доски |
 | **OpenRouter** | любые `:free` модели | ~50–1000 запросов/день (зависит от модели) | Резервное звено цепочки |
 | **MockAI (локально)** | заготовленные русские шаблоны | ∞ | Гарант работоспособности без ключей |
 
@@ -84,23 +84,35 @@
 Оба ключа **необязательны** для запуска — без них ИИ-панель работает на локальном MockAIProvider.
 Но чтобы получить настоящий ИИ бесплатно, выполните 2–3 минуты:
 
-### 2.1 Groq Cloud — 14 400 запросов/день бесплатно
+### 2.1 Groq Cloud — бесплатный тариф (1 000 запросов/день на модель)
 
 1. Откройте **[console.groq.com](https://console.groq.com)** → войдите через Google/GitHub (карта не требуется).
 2. Слева выберите **API Keys** → **Create API Key** → имя `schoolmeet` → **Submit**.
 3. Скопируйте ключ вида `gsk_...` — это `GROQ_API_KEY`. Ключ показывается один раз!
 
 Модели уже настроены в коде (переопределяются переменными `GROQ_MODEL` / `GROQ_REASONING_MODEL`):
-- `llama-3.3-70b-versatile` — конспекты, формулы, чертежи;
-- `deepseek-r1-distill-llama-70b` — пошаговые решения и проверка задач (reasoning).
+- `openai/gpt-oss-120b` — конспекты, формулы, чертежи, пошаговые решения и проверка задач
+  (reasoning), 500 t/s, 131k контекста;
+- резерв — `openai/gpt-oss-20b` (1000 t/s) и `qwen/qwen3.8-27b`.
 
-### 2.2 Google Gemini — 1 500 запросов/день бесплатно (Vision)
+Groq регулярно снимает модели с обслуживания, поэтому SchoolMeet **сам перебирает**
+список `GROQ_FALLBACK_MODELS`: если модель ответила 404 `model_not_found` или
+400 `model_decommissioned`, запрос в том же вызове уходит на следующую, а снятую
+ID движок запоминает и больше не опрашивает (актуальный список —
+[console.groq.com/docs/deprecations](https://console.groq.com/docs/deprecations)).
+
+### 2.2 Google Gemini — бесплатная дневная квота (Vision)
 
 1. Откройте **[aistudio.google.com](https://aistudio.google.com)** → войдите в Google-аккаунт (карта не требуется).
 2. Нажмите **Get API key** → **Create API key** → скопируйте ключ вида `AIza...` — это `GEMINI_API_KEY`.
 
-Gemini Vision распознаёт рукописные формулы с доски. Модель по умолчанию — `gemini-2.0-flash`;
-если в вашем аккаунте её нет (ошибка 404), код **автоматически** откатится на `gemini-1.5-flash`.
+Gemini Vision распознаёт рукописные формулы с доски. Модель по умолчанию — `gemini-3.8-flash`
+(свежая стабильная Flash-модель); если в аккаунте её нет (404 `NOT_FOUND`), код
+**автоматически** — в том же запросе — перебирает `GEMINI_FALLBACK_MODELS`:
+`gemini-3.6-flash` → `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite` → `gemini-2.5-flash`
+→ `gemini-2.5-flash-lite`. Модели Gemini 1.5 и 2.0 Google окончательно выключил
+(29.09.2025 и 01.06.2026) — они лежат в конце списка как аварийный резерв и не
+расходуют запросы.
 
 ### 2.3 OpenRouter (необязательно, третий резерв)
 
@@ -295,11 +307,11 @@ bubblewrap build        # на выходе: app-release-signed.apk и .aab
 | `DATABASE_URL` | Neon.tech / Supabase (шаг 1) | PostgreSQL (pooled + SSL для облака) |
 | `NEXTAUTH_SECRET` | `openssl rand -base64 32` | подпись JWT-сессий |
 | `NEXTAUTH_URL` | адрес деплоя Vercel | колбэки NextAuth, OpenRouter-атрибуция |
-| `GROQ_API_KEY` | console.groq.com (шаг 2.1) | текстовый ИИ, 14 400 запросов/день |
-| `GEMINI_API_KEY` | aistudio.google.com (шаг 2.2) | Vision-распознавание формул, 1 500/день |
+| `GROQ_API_KEY` | console.groq.com (шаг 2.1) | текстовый ИИ, бесплатный тариф |
+| `GEMINI_API_KEY` | aistudio.google.com (шаг 2.2) | Vision-распознавание формул |
 | `OPENROUTER_API_KEY` | openrouter.ai (шаг 2.3) | резервные `:free` модели |
-| `GROQ_MODEL` / `GROQ_REASONING_MODEL` | — | переопределение моделей Groq |
-| `GEMINI_MODEL` | — | переопределение модели Gemini |
+| `GROQ_MODEL` / `GROQ_REASONING_MODEL` | — | переопределение моделей Groq (по умолчанию `openai/gpt-oss-120b`) |
+| `GEMINI_MODEL` | — | переопределение модели Gemini (по умолчанию `gemini-3.8-flash`) |
 | `OPENROUTER_MODEL` / `OPENROUTER_VISION_MODEL` | — | переопределение моделей OpenRouter |
 | `AI_PROVIDER` | — | `auto` (по умолчанию) / `groq` / `gemini` / `openrouter` / `mock` |
 | `AI_TIMEOUT_MS` | — | таймаут внешнего ИИ-вызова (по умолчанию 30000) |
@@ -329,12 +341,14 @@ bubblewrap build        # на выходе: app-release-signed.apk и .aab
 |---|---|---|
 | Ответы помечены `mock` | ключи не заданы или `AI_PROVIDER=mock` | добавьте `GROQ_API_KEY`/`GEMINI_API_KEY` → Redeploy |
 | Groq отвечает ошибкой 429 | дневной/минутный лимит исчерпан | подождите; запросы уже уходят в OpenRouter/Mock автоматически |
-| Gemini 404 NOT_FOUND | модель недоступна в аккаунте | код сам откатится на `gemini-1.5-flash`; либо задайте `GEMINI_MODEL` |
+| Gemini 404 NOT_FOUND | модель недоступна в аккаунте | код сам откатится на `gemini-3.6-flash` и далее по `GEMINI_FALLBACK_MODELS`; либо задайте `GEMINI_MODEL` |
+| Groq 404 `model_not_found` / 400 `model_decommissioned` | модель снята вендором | код мгновенно переходит на следующую из `GROQ_FALLBACK_MODELS`; при желании задайте `GROQ_MODEL` (актуальные ID: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`) |
 | Формулы не распознаются | нет `GEMINI_API_KEY` | добавьте ключ; Vision-цепочка: Gemini → OpenRouter Vision → Mock |
 | Видео не соединяется в школьной сети | симметричный NAT, нет TURN | задайте `NEXT_PUBLIC_TURN_SERVERS` (metered.ca или coturn) |
 
-Локальная проверка движка без сети и базы: `npm run test:ai` (72 смоук-проверки: парсинг
-ответов Groq/Gemini/OpenRouter, waterfall-переключения, STUN/TURN-конфиг).
+Локальная проверка движка без сети и базы: `npm run test:ai` (84 смоук-проверки: парсинг
+ответов Groq/Gemini/OpenRouter, мгновенный перебор моделей при 404/`model_decommissioned`,
+waterfall-переключения, STUN/TURN-конфиг).
 
 ---
 

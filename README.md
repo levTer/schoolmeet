@@ -4,10 +4,10 @@
 (аналог Zoom, адаптированный под школу). **Проект завершён: этапы 1–8 в main.**
 
 🚀 **Этап 8 (финал)** — 100% бесплатный ИИ-движок и деплой:
-- **Groq Cloud** (Llama 3.3 70B + DeepSeek R1 Distill, 14 400 запросов/день бесплатно) — конспекты,
-  решения задач, формулы, JSON-чертежи, черновики проверки ДЗ;
-- **Google Gemini Flash** (Vision, 1 500 запросов/день бесплатно, ключ без карты) — распознавание
-  рукописных формул с изображения доски;
+- **Groq Cloud** (GPT-OSS 120B / 20B, бесплатный тариф) — конспекты, решения задач, формулы,
+  JSON-чертежи, черновики проверки ДЗ; если вендор снял модель — мгновенный перебор списка;
+- **Google Gemini Flash** (Vision, бесплатная квота, ключ без карты) — распознавание рукописных
+  формул с изображения доски; при 404 модель автоматически заменяется резервной;
 - **OpenRouter** (`:free` модели) — резервное звено; **MockAIProvider** — локальный гарант
   работоспособности без единого ключа;
 - **AutoAIProvider** — waterfall-цепочка авто-выбора и переключения: изображение → Gemini Vision,
@@ -135,8 +135,8 @@ src/lib/ai-provider.ts             Контракт ИИ + AutoAIProvider: water
                                    → Gemini Vision → OpenRouter Vision → Mock), latexToReadableText
 src/lib/ai-providers/types.ts      Общий контракт: AIRequest/AIResponse/DrawingInstruction/статусы
 src/lib/ai-providers/shared.ts     Нативный fetch с таймаутом, парсеры JSON/LaTeX, русские промпты
-src/lib/ai-providers/groq.ts       Groq Cloud: Llama 3.3 70B + DeepSeek R1 Distill (14 400/день)
-src/lib/ai-providers/gemini.ts     Gemini Flash Vision: распознавание формул с доски (1 500/день)
+src/lib/ai-providers/groq.ts       Groq Cloud: GPT-OSS 120B/20B + мгновенный перебор моделей
+src/lib/ai-providers/gemini.ts     Gemini Flash Vision: формулы с доски, v1beta + перебор моделей
 src/lib/ai-providers/openrouter.ts OpenRouter: резервные :free-модели (текст и vision)
 src/lib/ai-providers/mock.ts       MockAIProvider: локальные ответы без сети — гарант работоспособности
 src/lib/drawing-engine.ts          JSON-инструкции ИИ → фигуры Fabric.js (треугольники, графики…)
@@ -260,9 +260,10 @@ src/types/next-auth.d.ts           Расширение типов сессии 
   (`AuditLog`) и rate-limit в middleware. Демо-данные: `npm run db:seed`.
 - ✅ **Этап 7** — дашборд, мобильная адаптация и PWA: нижняя навигация, manifest.json, иконки,
   «Добавить на главный экран» (см. DEPLOYMENT.md, шаг 5).
-- ✅ **Этап 8 (ФИНАЛ)** — 100% бесплатный ИИ-движок: Groq (Llama 3.3 70B + DeepSeek R1 Distill,
-  14 400 запросов/день) для текста и JSON-чертежей, Gemini Flash Vision (1 500 запросов/день) для
-  распознавания формул с доски, OpenRouter `:free` как резерв, локальный Mock как гарант;
+- ✅ **Этап 8 (ФИНАЛ)** — 100% бесплатный ИИ-движок: Groq (GPT-OSS 120B/20B, бесплатный тариф)
+  для текста и JSON-чертежей, Gemini Flash Vision для распознавания формул с доски, OpenRouter
+  `:free` как резерв, локальный Mock как гарант; устаревшие ID моделей перебираются автоматически
+  (404 `model_not_found` → следующая модель в том же запросе);
   `AutoAIProvider` — waterfall-автопереключение без падения API; серверный прокси на Vercel —
   ИИ доступен в РФ без VPN; WebRTC: STUN-пул Google + `NEXT_PUBLIC_TURN_SERVERS`; `vercel.json`;
   руководство деплоя [DEPLOYMENT.md](DEPLOYMENT.md). Смоук-тесты движка: `npm run test:ai`.
