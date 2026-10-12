@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -15,6 +15,8 @@ import {
 
 import { FormAlert } from "@/components/ui/form-alert";
 import { PasswordField, TextField } from "@/components/ui/field";
+import { SelectField } from "@/components/ui/form-controls";
+import { normalizeSchoolCode } from "@/lib/school-rules";
 import { GradientButton } from "@/components/ui/gradient-button";
 import {
   getPasswordStrength,
@@ -46,6 +48,18 @@ const ROLE_OPTIONS: readonly {
   },
 ];
 
+interface SchoolCheckData {
+  school: { name: string; code: string };
+  classes: Array<{ id: string; name: string; grade: string }>;
+}
+
+interface SchoolCheckResponse {
+  ok: boolean;
+  data?: SchoolCheckData;
+  error?: string;
+  fields?: FieldErrors;
+}
+
 const STRENGTH_STYLES = [
   "w-0 bg-transparent",
   "w-1/3 bg-rose-500",
@@ -60,6 +74,11 @@ export function RegisterForm() {
   const [role, setRole] = useState<PublicRole>("STUDENT");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [schoolCode, setSchoolCode] = useState("");
+  const [schoolCheck, setSchoolCheck] = useState<SchoolCheckData | null>(null);
+  const [classId, setClassId] = useState("");
+  const [isCheckingSchool, setIsCheckingSchool] = useState(false);
+  const schoolLookupRequestRef = useRef(0);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -74,13 +93,74 @@ export function RegisterForm() {
     setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
   }
 
+  async function handleCheckSchool() {
+    const normalizedCode = normalizeSchoolCode(schoolCode);
+    if (!normalizedCode) {
+      setSchoolCheck(null);
+      setFieldErrors((previous) => ({
+        ...previous,
+        schoolCode: "Введите корректный код школы (например, SCHOOL1)",
+      }));
+      return;
+    }
+
+    const requestId = ++schoolLookupRequestRef.current;
+    setIsCheckingSchool(true);
+    setSchoolCheck(null);
+    setClassId("");
+    clearFieldError("schoolCode");
+    setFormError(null);
+
+    try {
+      const response = await fetch(`/api/schools/check?code=${encodeURIComponent(normalizedCode)}`, {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as SchoolCheckResponse;
+      if (schoolLookupRequestRef.current !== requestId) return;
+
+      if (!response.ok || !payload.ok || !payload.data) {
+        setFieldErrors((previous) => ({
+          ...previous,
+          schoolCode: payload.fields?.schoolCode ?? payload.error ?? "Школа с таким кодом не найдена",
+        }));
+        return;
+      }
+
+      setSchoolCheck(payload.data);
+      setFieldErrors((previous) => ({ ...previous, schoolCode: undefined, classId: undefined }));
+    } catch {
+      if (schoolLookupRequestRef.current === requestId) {
+        setFieldErrors((previous) => ({
+          ...previous,
+          schoolCode: "Не удалось проверить код школы. Попробуйте ещё раз.",
+        }));
+      }
+    } finally {
+      if (schoolLookupRequestRef.current === requestId) setIsCheckingSchool(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const normalizedEmail = normalizeEmail(email);
-    const validation = validateRegisterInput({ name, email: normalizedEmail, password, role });
+    const normalizedSchoolCode = normalizeSchoolCode(schoolCode);
+    const validation = validateRegisterInput({
+      name,
+      email: normalizedEmail,
+      password,
+      role,
+      schoolCode,
+      classId: role === "STUDENT" ? classId : null,
+    });
 
     const nextErrors: FieldErrors = validation.ok ? {} : { ...validation.fields };
+    if (!schoolCheck || schoolCheck.school.code !== normalizedSchoolCode) {
+      nextErrors.schoolCode = "Сначала проверьте код школы";
+    }
+    if (role === "STUDENT" && schoolCheck && !schoolCheck.classes.some((item) => item.id === classId)) {
+      nextErrors.classId = "Выберите класс из списка школы";
+    }
 
     /* Подтверждение пароля проверяем здесь: в БД оно не нужно. */
     if (!confirmPassword) {
@@ -108,6 +188,8 @@ export function RegisterForm() {
           password,
           confirmPassword,
           role,
+          schoolCode,
+          classId: role === "STUDENT" ? classId : null,
         }),
       });
 
@@ -164,6 +246,41 @@ export function RegisterForm() {
           {formError}
         </FormAlert>
       )}
+
+      <div className="space-y-2">
+        <TextField
+          label="Код школы"
+          name="schoolCode"
+          autoComplete="off"
+          placeholder="Например, SCHOOL1"
+          value={schoolCode}
+          error={fieldErrors.schoolCode}
+          onChange={(event) => {
+            const value = event.target.value;
+            schoolLookupRequestRef.current += 1;
+            setSchoolCode(value);
+            setSchoolCheck(null);
+            setClassId("");
+            setIsCheckingSchool(false);
+            clearFieldError("schoolCode");
+            clearFieldError("classId");
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => void handleCheckSchool()}
+          disabled={isCheckingSchool || !schoolCode.trim()}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-400/25 bg-brand-500/10 px-4 py-2.5 text-sm font-medium text-brand-100 transition hover:bg-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isCheckingSchool ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          {isCheckingSchool ? "Проверяем…" : "Проверить код"}
+        </button>
+        {schoolCheck ? (
+          <p role="status" className="text-xs text-emerald-300">
+            Школа подтверждена: {schoolCheck.school.name}
+          </p>
+        ) : null}
+      </div>
 
       <TextField
         label="Имя и фамилия"
@@ -230,6 +347,30 @@ export function RegisterForm() {
         <p className="text-xs leading-relaxed text-slate-500">{activeRole.hint}</p>
         {fieldErrors.role && <p className="text-xs text-rose-300">{fieldErrors.role}</p>}
       </div>
+
+      {role === "STUDENT" && schoolCheck ? (
+        <SelectField
+          label="Класс"
+          value={classId}
+          error={fieldErrors.classId}
+          hint={schoolCheck.classes.length === 0 ? "В школе пока не созданы классы. Обратитесь к администратору." : undefined}
+          onChange={(event) => {
+            setClassId(event.target.value);
+            clearFieldError("classId");
+          }}
+        >
+          <option value="" className="bg-ink-900">Выберите свой класс</option>
+          {schoolCheck.classes.map((schoolClass) => (
+            <option key={schoolClass.id} value={schoolClass.id} className="bg-ink-900">
+              {schoolClass.name}
+            </option>
+          ))}
+        </SelectField>
+      ) : role === "STUDENT" ? (
+        <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-xs text-slate-500">
+          Сначала подтвердите код школы — затем появится список классов.
+        </p>
+      ) : null}
 
       <div className="space-y-2">
         <PasswordField

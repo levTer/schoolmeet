@@ -11,13 +11,17 @@ declare module "next-auth" {
     user: {
       id: string;
       role: Role;
-      /** Аккаунт заблокирован администратором (этап 6). */
+      schoolId: string | null;
+      classId: string | null;
+      /** Аккаунт заблокирован администратором. */
       banned: boolean;
     } & DefaultSession["user"];
   }
 
   interface User {
     role: Role;
+    schoolId?: string | null;
+    classId?: string | null;
   }
 }
 
@@ -25,6 +29,8 @@ declare module "next-auth/jwt" {
   interface JWT {
     id: string;
     role: Role;
+    schoolId?: string | null;
+    classId?: string | null;
     /** Кешированный признак блокировки (обновляется раз в минуту). */
     banned?: boolean;
     /** Когда роль и блокировка последний раз сверялись с БД. */

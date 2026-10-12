@@ -61,7 +61,7 @@ export function SiteFooter() {
             </p>
 
             <div className="mt-5 flex items-center gap-2 text-xs text-slate-500">
-              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <ShieldCheck className="h-4 w-4 text-brand-300" />
               Шифрование AES-256 · ФЗ-152
             </div>
           </div>

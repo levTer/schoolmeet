@@ -41,7 +41,7 @@ export function HomeworkCard({ item, viewerRole, index }: HomeworkCardProps) {
         </span>
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wider text-slate-400">
-            {item.subject.name} · {GRADE_LABELS[item.grade as GradeCode]}
+            {item.subject.name} · {item.className ?? GRADE_LABELS[item.grade as GradeCode]}
           </p>
           <h3 className="mt-0.5 truncate text-base font-semibold text-white">{item.title}</h3>
           <p className="mt-0.5 text-xs text-slate-500">

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { Logo } from "@/components/landing/logo";
+import { AppearanceSettingsMenu } from "@/components/theme/AppearanceSettingsMenu";
 import { ROLE_LABELS, type Role } from "@/types";
 import { cn, getInitials } from "@/lib/utils";
 
@@ -132,7 +133,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
           })}
         </nav>
 
-        {/* Профиль (десктоп) */}
+        {/* Настройки внешнего вида и профиль (десктоп) */}
         <div className="hidden items-center gap-3 md:flex">
           {!isAuthenticated && (
             <>
@@ -148,6 +149,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
               >
                 Регистрация
               </Link>
+              <AppearanceSettingsMenu />
             </>
           )}
 
@@ -225,6 +227,8 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                 )}
               </div>
 
+              <AppearanceSettingsMenu />
+
               <button
                 type="button"
                 onClick={handleSignOut}
@@ -237,16 +241,19 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
           )}
         </div>
 
-        {/* Мобильный переключатель */}
-        <button
-          type="button"
-          onClick={() => setIsMobileOpen((open) => !open)}
-          aria-label={isMobileOpen ? "Закрыть меню" : "Открыть меню"}
-          aria-expanded={isMobileOpen}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 md:hidden"
-        >
-          {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        {/* Настройки и навигация (мобильная версия) */}
+        <div className="flex items-center gap-2 md:hidden">
+          <AppearanceSettingsMenu />
+          <button
+            type="button"
+            onClick={() => setIsMobileOpen((open) => !open)}
+            aria-label={isMobileOpen ? "Закрыть меню" : "Открыть меню"}
+            aria-expanded={isMobileOpen}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+          >
+            {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Мобильное меню */}

@@ -222,6 +222,7 @@ export interface ScheduleConflictInfo {
 
 export interface CreateLessonInput {
   subjectId: string;
+  classId: string;
   grade: GradeCode;
   dayOfWeek: DayOfWeek;
   startTime: string;
@@ -243,6 +244,9 @@ export function validateCreateLesson(payload: unknown): ValidationResult<CreateL
   const subjectId = typeof raw.subjectId === "string" ? raw.subjectId.trim() : "";
   if (!subjectId) fields.subjectId = "Выберите предмет";
 
+  const classId = typeof raw.classId === "string" ? raw.classId.trim() : "";
+  if (!classId) fields.classId = "Выберите класс";
+
   const grade = isGradeCode(raw.grade) ? raw.grade : null;
   if (!grade) fields.grade = "Выберите класс";
 
@@ -258,7 +262,7 @@ export function validateCreateLesson(payload: unknown): ValidationResult<CreateL
   const roomRaw = typeof raw.room === "string" ? raw.room.trim() : "";
   if (roomRaw.length > ROOM_MAX_LENGTH) fields.room = `Не длиннее ${ROOM_MAX_LENGTH} символов`;
 
-  if (Object.keys(fields).length > 0 || !grade || !dayOfWeek) {
+  if (Object.keys(fields).length > 0 || !classId || !grade || !dayOfWeek) {
     return { ok: false, error: "Проверьте правильность заполнения полей", fields };
   }
 
@@ -266,6 +270,7 @@ export function validateCreateLesson(payload: unknown): ValidationResult<CreateL
     ok: true,
     data: {
       subjectId,
+      classId,
       grade,
       dayOfWeek,
       startTime,

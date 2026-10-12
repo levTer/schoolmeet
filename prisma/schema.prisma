@@ -41,14 +41,49 @@ enum HomeworkSubmissionStatus {
   GRADED
 }
 
+/// Организация-арендатор: пользователи и учебные данные изолированы по школе.
+model School {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  createdAt DateTime @default(now())
+
+  users     User[]
+  classes   Class[]
+  lessons   Schedule[]
+  homeworks Homework[]
+
+  @@map("schools")
+}
+
+/// Учебная группа школы, например «5-А» или «11-Б».
+model Class {
+  id        String   @id @default(cuid())
+  name      String
+  schoolId  String
+  createdAt DateTime @default(now())
+
+  school    School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  users     User[]
+  lessons   Schedule[]
+  homeworks Homework[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@map("classes")
+}
+
 model User {
   id        String      @id @default(cuid())
   email     String      @unique
   password  String // bcrypt-хеш, никогда не отдаётся клиенту
   name      String
   role      Role        @default(STUDENT)
-  /// Класс ученика. Для учителей и администраторов — null.
+  /// Класс ученика (параллель сохраняется для старых интерфейсов и миграции).
   grade     ClassGrade?
+  /// Школа и конкретный учебный класс. Nullable для безопасного расширения старой БД.
+  schoolId  String?
+  classId   String?
   avatar    String?
   /// Блокировка аккаунта администратором: вход запрещён, живые сокет-сессии
   /// разрываются (см. `src/lib/realtime-control.ts`).
@@ -66,9 +101,13 @@ model User {
   announcements  Announcement[]
   attendance     AttendanceRecord[]
   auditLogs      AuditLog[]
+  school         School?              @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  schoolClass    Class?                @relation(fields: [classId], references: [id], onDelete: SetNull)
 
   @@index([role])
   @@index([grade])
+  @@index([schoolId, role])
+  @@index([classId])
   @@index([isBanned])
   @@map("users")
 }
@@ -117,7 +156,10 @@ model Schedule {
   id          String     @id @default(cuid())
   subjectId   String
   teacherId   String
+  /// Параллель сохранена для обратной совместимости; новые записи дополнительно привязаны к классу.
   grade       ClassGrade
+  schoolId    String?
+  classId     String?
   dayOfWeek   Int // 1 = понедельник ... 7 = воскресенье (ISO-8601)
   startTime   String // "HH:mm", например "09:00"
   endTime     String // "HH:mm", например "09:45"
@@ -125,15 +167,19 @@ model Schedule {
   /// Комната урока (Meeting.meetingCode), создаётся вместе со слотом.
   meetingCode String     @unique
 
-  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
-  teacher User    @relation("ScheduleTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
-  meeting Meeting @relation(fields: [meetingCode], references: [meetingCode], onDelete: Cascade)
+  subject     Subject  @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teacher     User     @relation("ScheduleTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  meeting     Meeting  @relation(fields: [meetingCode], references: [meetingCode], onDelete: Cascade)
+  school      School?  @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  schoolClass Class?   @relation(fields: [classId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([grade, dayOfWeek])
   @@index([teacherId, dayOfWeek])
+  @@index([schoolId, classId, dayOfWeek])
+  @@index([classId])
   @@map("schedules")
 }
 
@@ -145,13 +191,18 @@ model Homework {
   description String
   subjectId   String
   teacherId   String
+  /// Параллель оставлена для совместимости, новые задания адресуются конкретному классу.
   grade       ClassGrade
+  schoolId    String?
+  classId     String?
   deadline    DateTime
   /// Максимальный балл (по умолчанию пятибалльная шкала).
   maxScore    Int        @default(5)
 
   subject     Subject              @relation(fields: [subjectId], references: [id], onDelete: Restrict)
   teacher     User                 @relation("HomeworkTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  school      School?              @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  schoolClass Class?               @relation(fields: [classId], references: [id], onDelete: SetNull)
   submissions HomeworkSubmission[]
 
   createdAt DateTime @default(now())
@@ -159,6 +210,8 @@ model Homework {
 
   @@index([grade, deadline])
   @@index([teacherId])
+  @@index([schoolId, classId, deadline])
+  @@index([classId])
   @@map("homeworks")
 }
 

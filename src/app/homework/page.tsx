@@ -11,8 +11,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { authOptions } from "@/lib/auth";
 import { listHomeworkForViewer } from "@/lib/homework";
 import { listSubjects } from "@/lib/schedule";
+import { listClassesForSchool } from "@/lib/schools";
 import { getSchoolViewer } from "@/lib/school-viewer";
-import { GRADE_LABELS, type GradeCode } from "@/lib/schedule-rules";
 import { hasPermission, type HomeworkListItem } from "@/types";
 
 export const metadata: Metadata = {
@@ -34,9 +34,10 @@ export default async function HomeworkPage() {
   if (!viewer) redirect("/login?callbackUrl=/homework");
 
   const canWrite = hasPermission(viewer.role, "homework:write");
-  const [homeworks, subjects] = await Promise.all([
+  const [homeworks, subjects, classes] = await Promise.all([
     listHomeworkForViewer(viewer),
     canWrite ? listSubjects() : Promise.resolve([]),
+    canWrite && viewer.schoolId ? listClassesForSchool(viewer.schoolId) : Promise.resolve([]),
   ]);
 
   const role = viewer.role as "STUDENT" | "TEACHER" | "ADMIN";
@@ -58,13 +59,13 @@ export default async function HomeworkPage() {
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
             {role === "STUDENT"
-              ? viewer.grade
-                ? `Задания для ${GRADE_LABELS[viewer.grade as GradeCode]}. Цвет индикатора показывает, сколько осталось до дедлайна.`
+              ? viewer.className
+                ? `Задания для класса ${viewer.className}. Цвет индикатора показывает, сколько осталось до дедлайна.`
                 : "Класс не назначен — задания появятся после назначения класса."
               : "Выданные задания, сроки и проверка работ. Черновики ИИ видите только вы."}
           </p>
         </div>
-        {canWrite && <HomeworkCreateButton subjects={subjects} />}
+        {canWrite && <HomeworkCreateButton subjects={subjects} classes={classes} />}
       </header>
 
       {role === "STUDENT" ? (

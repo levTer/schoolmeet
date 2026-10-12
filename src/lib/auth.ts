@@ -4,6 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { LOGIN_ERROR } from "@/lib/auth-errors";
 import { verifyPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
+import { ensureUserSchoolMembership } from "@/lib/schools";
 import { normalizeEmail } from "@/lib/validation";
 import type { Role } from "@/types";
 
@@ -89,12 +90,18 @@ export const authOptions: NextAuthOptions = {
           throw new Error(LOGIN_ERROR.accountBanned);
         }
 
-        // Пароль-хеш наружу не отдаём: в сессию уходят только id/role/имя.
+        // Мигрируем старые аккаунты в школу по умолчанию до выпуска JWT.
+        const membership = await ensureUserSchoolMembership(user.id);
+        if (!membership) throw new Error(LOGIN_ERROR.userNotFound);
+
+        // Пароль-хеш наружу не отдаём; в сессию попадают только данные членства.
         return {
           id: user.id,
           email: user.email,
           name: user.name,
           role: user.role as Role,
+          schoolId: membership.schoolId,
+          classId: membership.classId,
           image: user.avatar ?? null,
         };
       },
@@ -110,6 +117,8 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.role = (user.role as Role) ?? "STUDENT";
+        token.schoolId = user.schoolId ?? null;
+        token.classId = user.classId ?? null;
         token.name = user.name ?? token.name;
         token.email = user.email ?? token.email;
         token.picture = user.image ?? null;
@@ -120,7 +129,10 @@ export const authOptions: NextAuthOptions = {
 
       const userId = typeof token.id === "string" && token.id ? token.id : token.sub;
       const needsSync =
-        !token.role || Date.now() - (typeof token.syncedAt === "number" ? token.syncedAt : 0) > SESSION_REFRESH_MS;
+        !token.role ||
+        token.schoolId === undefined ||
+        token.classId === undefined ||
+        Date.now() - (typeof token.syncedAt === "number" ? token.syncedAt : 0) > SESSION_REFRESH_MS;
 
       /**
        * Сверка с БД: смена роли, имени и блокировка применяются к уже вошедшим
@@ -129,14 +141,24 @@ export const authOptions: NextAuthOptions = {
        */
       if (userId && needsSync) {
         try {
-          const dbUser = await prisma.user.findUnique({
+          let dbUser = await prisma.user.findUnique({
             where: { id: userId },
-            select: { role: true, name: true, avatar: true, isBanned: true },
+            select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true },
           });
+
+          if (dbUser && (!dbUser.schoolId || (dbUser.role === "STUDENT" && !dbUser.classId))) {
+            await ensureUserSchoolMembership(userId);
+            dbUser = await prisma.user.findUnique({
+              where: { id: userId },
+              select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true },
+            });
+          }
 
           if (dbUser) {
             token.id = userId;
             token.role = dbUser.role as Role;
+            token.schoolId = dbUser.schoolId;
+            token.classId = dbUser.classId;
             token.name = dbUser.name;
             token.picture = dbUser.avatar ?? null;
             token.banned = dbUser.isBanned;
@@ -156,6 +178,8 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = (token.id as string | undefined) ?? token.sub ?? "";
         session.user.role = (token.role as Role | undefined) ?? "STUDENT";
+        session.user.schoolId = typeof token.schoolId === "string" ? token.schoolId : null;
+        session.user.classId = typeof token.classId === "string" ? token.classId : null;
         session.user.banned = token.banned === true;
 
         if (typeof token.name === "string") session.user.name = token.name;

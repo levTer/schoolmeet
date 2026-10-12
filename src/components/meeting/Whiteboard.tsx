@@ -393,8 +393,8 @@ export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProp
                 {wb.selectionPreview && (
                   <polygon
                     points={polyPoints(wb.selectionPreview.points)}
-                    fill="rgba(168, 85, 247, 0.12)"
-                    stroke="#a855f7"
+                    fill="rgb(var(--accent-rgb) / 0.12)"
+                    stroke="var(--accent-color)"
                     strokeWidth={4}
                     strokeDasharray="10 8"
                   />
@@ -406,15 +406,15 @@ export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProp
                       y={wb.formulaPreview.top}
                       width={wb.formulaPreview.width}
                       height={wb.formulaPreview.height}
-                      fill="rgba(0, 217, 255, 0.10)"
-                      stroke="#00d9ff"
+                      fill="rgb(var(--accent-rgb) / 0.10)"
+                      stroke="var(--accent-color)"
                       strokeWidth={4}
                       strokeDasharray="14 10"
                     />
                     <text
                       x={wb.formulaPreview.left + 12}
                       y={Math.max(24, wb.formulaPreview.top - 10)}
-                      fill="#00b4ff"
+                      fill="rgb(var(--accent-light-rgb))"
                       fontSize={26}
                       fontFamily="sans-serif"
                     >
@@ -435,7 +435,7 @@ export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProp
                 <svg width="18" height="18" viewBox="0 0 24 24" className="drop-shadow">
                   <path
                     d="M4 2l14 10-6 1 3 7-3 1-3-7-5 4z"
-                    fill="#a855f7"
+                    fill="var(--accent-color)"
                     stroke="#ffffff"
                     strokeWidth="1.5"
                     strokeLinejoin="round"

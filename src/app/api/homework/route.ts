@@ -20,7 +20,7 @@ export async function GET(): Promise<NextResponse> {
 
 /**
  * POST /api/homework — выдать задание классу (учитель или администратор).
- * Тело: `{ title, description, subjectId, grade, deadline, maxScore? }`.
+ * Тело: `{ title, description, subjectId, classId, grade, deadline, maxScore? }`.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   try {

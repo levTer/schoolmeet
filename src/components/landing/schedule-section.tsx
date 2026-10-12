@@ -51,7 +51,7 @@ export function ScheduleSection() {
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
         <div className="mx-auto max-w-3xl text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1 text-xs font-medium uppercase tracking-widest text-slate-400">
-            <Users className="h-3.5 w-3.5 text-emerald-300" />
+            <Users className="h-3.5 w-3.5 text-brand-300" />
             Расписание
           </span>
           <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -104,7 +104,7 @@ export function ScheduleSection() {
             </div>
 
             <p className="mt-5 flex items-center gap-2 text-xs text-slate-500">
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+              <ShieldCheck className="h-3.5 w-3.5 text-brand-300" />
               К каждому слоту автоматически создаётся комната с уникальным кодом и ключом шифрования.
             </p>
           </div>

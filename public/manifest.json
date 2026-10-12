@@ -5,8 +5,8 @@
   "start_url": "/dashboard",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#06070b",
-  "theme_color": "#0a0c12",
+  "background_color": "#061F17",
+  "theme_color": "#061F17",
   "lang": "ru-RU",
   "categories": ["education", "productivity"],
   "icons": [

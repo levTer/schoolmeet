@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AlertTriangle, CalendarPlus, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -8,12 +8,12 @@ import { SelectField } from "@/components/ui/form-controls";
 import { TextField } from "@/components/ui/field";
 import { apiRequest } from "@/lib/client-api";
 import {
-  GRADES,
   GRADE_LABELS,
   validateCreateLesson,
   type GradeCode,
   type ScheduleConflictInfo,
 } from "@/lib/schedule-rules";
+import type { SchoolClassOption } from "@/lib/schools";
 import { subjectTint } from "@/lib/subjects";
 import { cn } from "@/lib/utils";
 import { DAY_LABELS, type DayOfWeek, type Schedule, type Subject } from "@/types";
@@ -21,6 +21,7 @@ import { DAY_LABELS, type DayOfWeek, type Schedule, type Subject } from "@/types
 interface LessonModalProps {
   open: boolean;
   subjects: Subject[];
+  classes: SchoolClassOption[];
   defaultDay: DayOfWeek;
   onClose: () => void;
   onCreated: (lesson: Schedule) => void;
@@ -28,6 +29,7 @@ interface LessonModalProps {
 
 interface FormState {
   subjectId: string;
+  classId: string;
   grade: GradeCode;
   dayOfWeek: string;
   startTime: string;
@@ -43,10 +45,11 @@ const CONFLICT_KIND_LABELS: Record<ScheduleConflictInfo["kind"], string> = {
 
 const WORK_DAYS: DayOfWeek[] = [1, 2, 3, 4, 5, 6];
 
-function buildInitialForm(subjects: Subject[], day: DayOfWeek): FormState {
+function buildInitialForm(subjects: Subject[], classes: SchoolClassOption[], day: DayOfWeek): FormState {
   return {
     subjectId: subjects[0]?.id ?? "",
-    grade: "GRADE_5",
+    classId: classes[0]?.id ?? "",
+    grade: classes[0]?.grade ?? "GRADE_5",
     dayOfWeek: String(day),
     startTime: "08:30",
     endTime: "09:15",
@@ -55,19 +58,27 @@ function buildInitialForm(subjects: Subject[], day: DayOfWeek): FormState {
 }
 
 /** Модалка «+ урок»: предмет, класс, день, время и кабинет. Проверка пересечений — на сервере. */
-export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: LessonModalProps) {
-  const [form, setForm] = useState<FormState>(() => buildInitialForm(subjects, defaultDay));
+export function LessonModal({ open, subjects, classes, defaultDay, onClose, onCreated }: LessonModalProps) {
+  const [form, setForm] = useState<FormState>(() => buildInitialForm(subjects, classes, defaultDay));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [conflicts, setConflicts] = useState<ScheduleConflictInfo[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Каждое открытие начинаем с чистой формы и текущего дня.
+  // Сбрасываем форму только при открытии. Обновление списка предметов или дня
+  // пока модалка открыта не должно затирать выбор пользователя.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (!open) return;
-    setForm(buildInitialForm(subjects, defaultDay));
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    if (wasOpen.current) return;
+
+    wasOpen.current = true;
+    setForm(buildInitialForm(subjects, classes, defaultDay));
     setErrors({});
     setConflicts([]);
-  }, [open, subjects, defaultDay]);
+  }, [open, subjects, classes, defaultDay]);
 
   useEffect(() => {
     if (!open) return;
@@ -93,8 +104,12 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
     event.preventDefault();
     if (submitting) return;
 
+    // Берём subjectId из отмеченной radio-карточки, а остальные поля — из
+    // контролируемого состояния формы. Так в запрос не попадёт старый выбор.
+    const selectedSubjectId = new FormData(event.currentTarget).get("subjectId");
     const payload = {
-      subjectId: form.subjectId,
+      subjectId: typeof selectedSubjectId === "string" ? selectedSubjectId : "",
+      classId: form.classId,
       grade: form.grade,
       dayOfWeek: Number(form.dayOfWeek),
       startTime: form.startTime,
@@ -132,20 +147,17 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* Затемняющий оверлей — слой ниже диалога (z-90 против z-100). */}
-      <div
-        aria-hidden
-        onClick={() => {
-          if (!submitting) onClose();
-        }}
-        className="absolute inset-0 z-[90] bg-black/60 backdrop-blur"
-      />
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 pt-20 bg-black/70 backdrop-blur-sm"
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !submitting) onClose();
+      }}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="lesson-modal-title"
-        className="ring-gradient glass-card animate-fade-up relative z-[100] max-h-[90vh] w-full max-w-lg overflow-y-auto bg-ink-900/95 p-6 shadow-glow"
+        className="ring-gradient glass-card animate-fade-up relative z-[100] max-h-[85vh] w-full max-w-lg overflow-y-auto bg-ink-900/95 p-6 shadow-glow"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -178,13 +190,19 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
 
           <SelectField
             label="Класс"
-            value={form.grade}
-            onChange={(event) => update("grade", event.target.value as GradeCode)}
-            error={errors.grade}
+            value={form.classId}
+            onChange={(event) => {
+              const selectedClass = classes.find((schoolClass) => schoolClass.id === event.target.value);
+              update("classId", event.target.value);
+              if (selectedClass) update("grade", selectedClass.grade);
+            }}
+            error={errors.classId}
+            hint={classes.length === 0 ? "В школе ещё не созданы классы." : undefined}
           >
-            {GRADES.map((grade) => (
-              <option key={grade} value={grade} className="bg-ink-900">
-                {GRADE_LABELS[grade]}
+            <option value="" className="bg-ink-900">Выберите класс</option>
+            {classes.map((schoolClass) => (
+              <option key={schoolClass.id} value={schoolClass.id} className="bg-ink-900">
+                {schoolClass.name}
               </option>
             ))}
           </SelectField>
@@ -256,7 +274,7 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
             </button>
             <button
               type="submit"
-              disabled={submitting || subjects.length === 0}
+              disabled={submitting || subjects.length === 0 || classes.length === 0}
               className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Сохраняем…" : "Добавить урок"}
@@ -273,9 +291,8 @@ export function LessonModal({ open, subjects, defaultDay, onClose, onCreated }: 
 /* -------------------------------------------------------------------------- */
 
 /**
- * Сетка карточек предметов: крупные кликабельные плитки с эмодзи и фирменным
- * цветом предмета. Один клик надёжно фиксирует `subjectId` в форме (кнопки
- * внутри `radiogroup`), поэтому урок всегда уходит в API с выбранным предметом.
+ * Сетка нативных radio-карточек: выбор управляется через `checked`/`onChange`,
+ * поэтому одновременно синхронизированы состояние формы, подсветка и `FormData`.
  */
 function SubjectPicker({
   subjects,
@@ -291,7 +308,7 @@ function SubjectPicker({
   const selected = subjects.find((subject) => subject.id === value) ?? null;
 
   return (
-    <fieldset>
+    <fieldset aria-describedby={error ? "lesson-subject-error" : undefined}>
       <legend className="mb-2 flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-wider text-slate-400">
         Предмет
         {selected ? (
@@ -308,21 +325,13 @@ function SubjectPicker({
           наполнить его командой <span className="font-mono">npm run db:seed</span>.
         </p>
       ) : (
-        <div
-          role="radiogroup"
-          aria-label="Предмет"
-          className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:max-h-64 sm:grid-cols-3"
-        >
+        <div className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:max-h-64 sm:grid-cols-3">
           {subjects.map((subject) => {
             const isSelected = subject.id === value;
 
             return (
-              <button
+              <label
                 key={subject.id}
-                type="button"
-                role="radio"
-                aria-checked={isSelected}
-                onClick={() => onChange(subject.id)}
                 style={
                   isSelected
                     ? {
@@ -333,12 +342,20 @@ function SubjectPicker({
                     : { borderColor: subjectTint(subject.color, 0.35) }
                 }
                 className={cn(
-                  "flex items-center gap-2 rounded-2xl border px-2.5 py-2 text-left transition",
+                  "flex cursor-pointer items-center gap-2 rounded-2xl border px-2.5 py-2 text-left transition focus-within:ring-2 focus-within:ring-brand-400/70",
                   isSelected
                     ? "text-white"
                     : "border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]",
                 )}
               >
+                <input
+                  type="radio"
+                  name="subjectId"
+                  value={subject.id}
+                  checked={isSelected}
+                  onChange={(event) => onChange(event.currentTarget.value)}
+                  className="sr-only"
+                />
                 <span
                   aria-hidden
                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-base"
@@ -352,13 +369,17 @@ function SubjectPicker({
                 {isSelected ? (
                   <Check className="h-4 w-4 shrink-0" style={{ color: subject.color }} />
                 ) : null}
-              </button>
+              </label>
             );
           })}
         </div>
       )}
 
-      {error ? <p className="mt-2 text-xs text-rose-300">{error}</p> : null}
+      {error ? (
+        <p id="lesson-subject-error" role="alert" className="mt-2 text-xs text-rose-300">
+          {error}
+        </p>
+      ) : null}
     </fieldset>
   );
 }

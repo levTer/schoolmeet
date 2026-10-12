@@ -19,11 +19,19 @@ import {
 
 import { AnnouncementModalButton } from "@/components/admin/announcement-modal";
 import { AdminBarChart } from "@/components/admin/charts";
+import { SchoolSettingsPanel } from "@/components/admin/school-settings-panel";
 import { StatCard } from "@/components/admin/stat-card";
 import { FormAlert } from "@/components/ui/form-alert";
 import { auditActionLabel, auditActionTone, formatAuditDetails } from "@/lib/audit";
 import { getAdminOverview, getAdminSecondaryMetrics, type AdminOverview } from "@/lib/admin-stats";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
+import { getSchoolViewer } from "@/lib/school-viewer";
+import {
+  getSchoolSummary,
+  listClassesForSchool,
+  type SchoolClassOption,
+  type SchoolSummary,
+} from "@/lib/schools";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -74,7 +82,23 @@ export default async function AdminPage() {
 
   let overview: AdminOverview | null = null;
   let secondary: { pendingReview: number; banned: number; todayJoins: number } | null = null;
+  let schoolSettings: { school: SchoolSummary; classes: SchoolClassOption[] } | null = null;
   let databaseError = false;
+
+  try {
+    const viewer = await getSchoolViewer(session.user.id);
+    if (viewer?.schoolId) {
+      const school = await getSchoolSummary(viewer.schoolId);
+      if (school) {
+        schoolSettings = {
+          school,
+          classes: await listClassesForSchool(viewer.schoolId),
+        };
+      }
+    }
+  } catch (error) {
+    console.error("[admin] Не удалось загрузить данные школы:", error);
+  }
 
   try {
     [overview, secondary] = await Promise.all([getAdminOverview(), getAdminSecondaryMetrics()]);
@@ -97,6 +121,12 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-8">
+      {schoolSettings ? (
+        <SchoolSettingsPanel school={schoolSettings.school} initialClasses={schoolSettings.classes} />
+      ) : (
+        <FormAlert variant="error">Не удалось загрузить код школы и список классов.</FormAlert>
+      )}
+
       {/* Метрики */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {overview.metrics.map((metric, index) => {

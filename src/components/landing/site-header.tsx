@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { LayoutDashboard, Menu, ShieldCheck, X } from "lucide-react";
 
+import { AppearanceSettingsMenu } from "@/components/theme/AppearanceSettingsMenu";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
 
@@ -54,6 +55,8 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
+          <AppearanceSettingsMenu />
+
           {isAuthenticated ? (
             <Link
               href="/dashboard"
@@ -82,16 +85,19 @@ export function SiteHeader() {
           )}
         </div>
 
-        {/* Мобильный переключатель */}
-        <button
-          type="button"
-          onClick={() => setIsMenuOpen((open) => !open)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 md:hidden"
-          aria-label={isMenuOpen ? "Закрыть меню" : "Открыть меню"}
-          aria-expanded={isMenuOpen}
-        >
-          {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        {/* Настройки и навигация (мобильная версия) */}
+        <div className="flex items-center gap-2 md:hidden">
+          <AppearanceSettingsMenu />
+          <button
+            type="button"
+            onClick={() => setIsMenuOpen((open) => !open)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+            aria-label={isMenuOpen ? "Закрыть меню" : "Открыть меню"}
+            aria-expanded={isMenuOpen}
+          >
+            {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Мобильное меню */}
@@ -145,7 +151,7 @@ export function SiteHeader() {
       {/* Полоска безопасности под шапкой */}
       <div className="hidden border-t border-white/5 bg-white/[0.02] md:block">
         <div className="mx-auto flex max-w-7xl items-center justify-center gap-2 px-8 py-1.5 text-[11px] text-slate-500">
-          <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+          <ShieldCheck className="h-3.5 w-3.5 text-brand-300" />
           Шифрование чата AES-256 · Видео по WebRTC / SRTP · Доступ только для участников
         </div>
       </div>

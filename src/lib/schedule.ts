@@ -4,7 +4,8 @@ import { buildLessonCodeCandidate } from "@/lib/lesson-code";
 import { generateRoomEncryptionKey } from "@/lib/meetings";
 import { badRequest, conflict, forbidden, notFound } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
-import { GRADE_LABELS, slotsOverlap, type CreateLessonInput, type GradeCode, type ScheduleConflictInfo } from "@/lib/schedule-rules";
+import { gradeFromClassName } from "@/lib/school-rules";
+import { slotsOverlap, type CreateLessonInput, type GradeCode, type ScheduleConflictInfo } from "@/lib/schedule-rules";
 import type { SchoolViewer } from "@/lib/school-viewer";
 import { DEFAULT_SUBJECTS } from "@/lib/subjects";
 import type { DayOfWeek, Schedule, Subject } from "@/types";
@@ -19,6 +20,7 @@ const MAX_CODE_ATTEMPTS = 5;
 const lessonInclude = {
   subject: { select: { id: true, name: true, color: true, emoji: true } },
   teacher: { select: { id: true, name: true } },
+  schoolClass: { select: { id: true, name: true } },
 } as const;
 
 type LessonRow = Prisma.ScheduleGetPayload<{ include: typeof lessonInclude }>;
@@ -30,6 +32,9 @@ function toLessonDto(row: LessonRow): Schedule {
     id: row.id,
     subjectId: row.subjectId,
     teacherId: row.teacherId,
+    schoolId: row.schoolId,
+    classId: row.classId,
+    className: row.schoolClass?.name ?? null,
     grade: row.grade as GradeCode,
     dayOfWeek: row.dayOfWeek as DayOfWeek,
     startTime: row.startTime,
@@ -48,14 +53,15 @@ function toLessonDto(row: LessonRow): Schedule {
  *  - администратор — всё расписание школы.
  */
 export async function listLessonsForViewer(viewer: SchoolViewer): Promise<Schedule[]> {
+  if (!viewer.schoolId) return [];
   if (viewer.role === "STUDENT") {
-    if (!viewer.grade) return [];
-    return loadLessons({ grade: viewer.grade });
+    if (!viewer.classId) return [];
+    return loadLessons({ schoolId: viewer.schoolId, classId: viewer.classId });
   }
   if (viewer.role === "TEACHER") {
-    return loadLessons({ teacherId: viewer.id });
+    return loadLessons({ schoolId: viewer.schoolId, teacherId: viewer.id });
   }
-  return loadLessons({});
+  return loadLessons({ schoolId: viewer.schoolId });
 }
 
 async function loadLessons(where: Prisma.ScheduleWhereInput): Promise<Schedule[]> {
@@ -115,17 +121,30 @@ async function pickMeetingCode(tx: Prisma.TransactionClient, title: string): Pro
  */
 export async function createLesson(input: CreateLessonInput, teacher: SchoolViewer): Promise<Schedule> {
   if (teacher.role === "STUDENT") throw forbidden();
+  if (!teacher.schoolId) throw forbidden("Аккаунт не привязан к школе");
 
   const row = await prisma.$transaction(
     async (tx) => {
+      const schoolClass = await tx.class.findFirst({
+        where: { id: input.classId, schoolId: teacher.schoolId! },
+        select: { id: true, name: true },
+      });
+      if (!schoolClass) throw badRequest("Класс не найден в вашей школе", { classId: "Выберите класс своей школы" });
+
+      const grade = gradeFromClassName(schoolClass.name);
+      if (!grade || grade !== input.grade) {
+        throw badRequest("Параллель не совпадает с выбранным классом", { classId: "Обновите список классов" });
+      }
+
       const subject = await tx.subject.findUnique({ where: { id: input.subjectId } });
       if (!subject) throw badRequest("Предмет не найден", { subjectId: "Выберите предмет из списка" });
 
       const sameDay = await tx.schedule.findMany({
         where: {
+          schoolId: teacher.schoolId,
           dayOfWeek: input.dayOfWeek,
           OR: [
-            { grade: input.grade },
+            { classId: schoolClass.id },
             { teacherId: teacher.id },
             ...(input.room ? [{ room: input.room }] : []),
           ],
@@ -145,7 +164,7 @@ export async function createLesson(input: CreateLessonInput, teacher: SchoolView
             teacherName: lesson.teacher.name,
           };
           const kinds: ScheduleConflict["kind"][] = [];
-          if (lesson.grade === input.grade) kinds.push("grade");
+          if (lesson.classId === schoolClass.id) kinds.push("grade");
           if (lesson.teacherId === teacher.id) kinds.push("teacher");
           if (input.room && lesson.room === input.room) kinds.push("room");
           return kinds.map((kind) => ({ ...base, kind }));
@@ -155,7 +174,7 @@ export async function createLesson(input: CreateLessonInput, teacher: SchoolView
         throw conflict("Время пересекается с другим уроком", { conflicts });
       }
 
-      const title = `${subject.name} · ${GRADE_LABELS[input.grade]}`;
+      const title = `${subject.name} · ${schoolClass.name}`;
       const meetingCode = await pickMeetingCode(tx, title);
 
       await tx.meeting.create({
@@ -171,7 +190,9 @@ export async function createLesson(input: CreateLessonInput, teacher: SchoolView
         data: {
           subjectId: subject.id,
           teacherId: teacher.id,
-          grade: input.grade,
+          grade,
+          schoolId: teacher.schoolId,
+          classId: schoolClass.id,
           dayOfWeek: input.dayOfWeek,
           startTime: input.startTime,
           endTime: input.endTime,
@@ -187,9 +208,13 @@ export async function createLesson(input: CreateLessonInput, teacher: SchoolView
   return toLessonDto(row);
 }
 
-/** Удаляет слот расписания. Комнату и историю чата сохраняем. */
+/** Удаляет слот расписания школы. Комнату и историю чата сохраняем. */
 export async function deleteLesson(lessonId: string, viewer: SchoolViewer): Promise<void> {
-  const lesson = await prisma.schedule.findUnique({ where: { id: lessonId }, select: { id: true, teacherId: true } });
+  if (!viewer.schoolId) throw notFound("Урок не найден");
+  const lesson = await prisma.schedule.findFirst({
+    where: { id: lessonId, schoolId: viewer.schoolId },
+    select: { id: true, teacherId: true },
+  });
   if (!lesson) throw notFound("Урок не найден");
 
   const isOwner = lesson.teacherId === viewer.id;

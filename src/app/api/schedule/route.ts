@@ -23,7 +23,7 @@ export async function GET(): Promise<NextResponse> {
 
 /**
  * POST /api/schedule — создать урок (учитель или администратор).
- * Тело: `{ subjectId, grade, dayOfWeek, startTime, endTime, room? }`.
+ * Тело: `{ subjectId, classId, grade, dayOfWeek, startTime, endTime, room? }`.
  * Пересечения по классу, учителю и кабинету возвращаются в `details.conflicts`.
  */
 export async function POST(request: Request): Promise<NextResponse> {

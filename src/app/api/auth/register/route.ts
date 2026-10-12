@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
+import { gradeFromClassName, findSchoolByCode } from "@/lib/schools";
 import { validateRegisterInput, type RegisterResponse } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -36,9 +37,53 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
     );
   }
 
-  const { name, email, password, role } = validation.data;
+  const { name, email, password, role, schoolCode, classId } = validation.data;
 
   try {
+    const school = await findSchoolByCode(schoolCode);
+    if (!school) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Школа с таким кодом не найдена",
+          code: "SCHOOL_NOT_FOUND",
+          fields: { schoolCode: "Проверьте код школы" },
+        },
+        { status: 422 },
+      );
+    }
+
+    const schoolClass = role === "STUDENT" && classId
+      ? await prisma.class.findFirst({
+          where: { id: classId, schoolId: school.id },
+          select: { id: true, name: true },
+        })
+      : null;
+    if (role === "STUDENT" && !schoolClass) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Выберите класс из выбранной школы",
+          code: "INVALID_CLASS",
+          fields: { classId: "Класс не относится к этой школе" },
+        },
+        { status: 422 },
+      );
+    }
+
+    const grade = schoolClass ? gradeFromClassName(schoolClass.name) : null;
+    if (role === "STUDENT" && !grade) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "У выбранного класса некорректное название",
+          code: "INVALID_CLASS",
+          fields: { classId: "Обратитесь к администратору школы" },
+        },
+        { status: 422 },
+      );
+    }
+
     /* 3. Уникальность email --------------------------------------------- */
     const existingUser = await prisma.user.findUnique({
       where: { email },
@@ -61,8 +106,16 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
     const passwordHash = await hashPassword(password);
 
     const user = await prisma.user.create({
-      data: { name, email, password: passwordHash, role },
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
+      data: {
+        name,
+        email,
+        password: passwordHash,
+        role,
+        schoolId: school.id,
+        classId: schoolClass?.id ?? null,
+        grade,
+      },
+      select: { id: true, name: true, email: true, role: true, schoolId: true, classId: true, createdAt: true },
     });
 
     return NextResponse.json(
