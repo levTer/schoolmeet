@@ -79,13 +79,37 @@ export const GEMINI_FALLBACK_MODELS: readonly string[] = [
 ];
 
 /**
+ * Снятые с обслуживания псевдонимы моделей → актуальные ID.
+ *
+ * `gemini-1.5-flash-8b` Google убрал из API v1beta: запросы к нему возвращают
+ * 404 `models/gemini-1.5-flash-8b is not found for API version v1beta`.
+ * Значение могло сохраниться в переменной окружения `GEMINI_MODEL` на хостинге,
+ * поэтому провайдер нормализует его в `gemini-1.5-flash` до первого запроса.
+ */
+export const GEMINI_LEGACY_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  "gemini-1.5-flash-8b": "gemini-1.5-flash",
+};
+
+/**
+ * Нормализует имя модели Gemini: обрезает пробелы, снимает префикс `models/`
+ * (полное имя ресурса в ответах Google) и отображает снятые псевдонимы
+ * на актуальные ID.
+ */
+export function resolveGeminiModel(rawModel: string): string {
+  const trimmed = rawModel.trim();
+  const bare = trimmed.startsWith("models/") ? trimmed.slice("models/".length) : trimmed;
+  return GEMINI_LEGACY_MODEL_ALIASES[bare] ?? bare;
+}
+
+/**
  * REST-URL вызова `generateContent` для модели: официальная схема v1beta
  * с ключом в параметре `key` (ключ формируется на сервере и в браузер не
  * попадает), например
  * `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=AIza…`.
  */
 export function geminiGenerateContentUrl(model: string, apiKey: string): string {
-  return `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const resolved = resolveGeminiModel(model);
+  return `${GEMINI_API_BASE}/${encodeURIComponent(resolved)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 }
 
 export interface GeminiProviderOptions {
@@ -136,7 +160,8 @@ export class GeminiProvider implements AIProvider {
 
   constructor(options: GeminiProviderOptions = {}) {
     this.apiKey = (options.apiKey ?? process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "").trim();
-    this.model = (options.model ?? process.env.GEMINI_MODEL ?? GEMINI_DEFAULT_MODEL).trim() || GEMINI_DEFAULT_MODEL;
+    this.model =
+      resolveGeminiModel(options.model ?? process.env.GEMINI_MODEL ?? GEMINI_DEFAULT_MODEL) || GEMINI_DEFAULT_MODEL;
     this.timeoutMs = options.timeoutMs;
     this.fetchImpl = options.fetchImpl;
 
@@ -198,7 +223,9 @@ export class GeminiProvider implements AIProvider {
    * решение принимает Google API.
    */
   modelsToTry(): string[] {
-    const unique = [this.model, ...GEMINI_FALLBACK_MODELS].filter((model, index, all) => all.indexOf(model) === index);
+    const unique = [this.model, ...GEMINI_FALLBACK_MODELS]
+      .map((model) => resolveGeminiModel(model))
+      .filter((model, index, all) => all.indexOf(model) === index);
     const alive = unique.filter((model) => !this.deadModels.has(model));
     return alive.length > 0 ? alive : [this.model];
   }

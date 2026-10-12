@@ -35,6 +35,7 @@ import {
   getAIProvider,
   isModelUnavailableError,
   latexToReadableText,
+  resolveGeminiModel,
   setAIProvider,
   type AIAction,
   type AIProvider,
@@ -391,6 +392,20 @@ async function main(): Promise<void> {
     "список моделей Gemini: актуальные ID первыми, legacy-ID из ТЗ сохранены",
     GEMINI_FALLBACK_MODELS[0] === "gemini-3.6-flash" &&
       ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro"].every((model) => GEMINI_FALLBACK_MODELS.includes(model)),
+  );
+  check(
+    "снятый gemini-1.5-flash-8b нормализуется в gemini-1.5-flash",
+    resolveGeminiModel("gemini-1.5-flash-8b") === "gemini-1.5-flash" &&
+      resolveGeminiModel("models/gemini-1.5-flash-8b") === "gemini-1.5-flash" &&
+      resolveGeminiModel("gemini-1.5-flash") === "gemini-1.5-flash",
+  );
+  const geminiLegacy = new GeminiProvider({ apiKey: "AIza_test", model: "gemini-1.5-flash-8b" });
+  check(
+    "провайдер со старым GEMINI_MODEL ходит в API актуальным именем",
+    geminiLegacy.model === "gemini-1.5-flash" &&
+      geminiLegacy.modelsToTry()[0] === "gemini-1.5-flash" &&
+      geminiGenerateContentUrl("gemini-1.5-flash-8b", "AIza_test").includes("/gemini-1.5-flash:generateContent"),
+    geminiLegacy.model,
   );
 
   // Квота (429) — это не снятая модель: перебора нет, решает AutoAIProvider.

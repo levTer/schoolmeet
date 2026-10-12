@@ -53,7 +53,9 @@ export {
   GEMINI_API_BASE,
   GEMINI_DEFAULT_MODEL,
   GEMINI_FALLBACK_MODELS,
+  GEMINI_LEGACY_MODEL_ALIASES,
   geminiGenerateContentUrl,
+  resolveGeminiModel,
 } from "./ai-providers/gemini";
 export {
   OpenRouterProvider,
@@ -271,7 +273,11 @@ export class AutoAIProvider implements AIProvider {
             : undefined;
         case "gemini":
           return GeminiProvider.isAvailable(this.env)
-            ? new GeminiProvider({ apiKey: this.env.GEMINI_API_KEY ?? this.env.GOOGLE_API_KEY, timeoutMs })
+            ? new GeminiProvider({
+                apiKey: this.env.GEMINI_API_KEY ?? this.env.GOOGLE_API_KEY,
+                model: this.env.GEMINI_MODEL,
+                timeoutMs,
+              })
             : undefined;
         case "openrouter":
           return OpenRouterProvider.isAvailable(this.env)
