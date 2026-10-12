@@ -163,7 +163,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                 Войти
               </Link>
               <Link
-                href="/register"
+                href="/auth/register"
                 className="rounded-full bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.03]"
               >
                 Регистрация

@@ -42,7 +42,7 @@ export function BottomNav({ role }: { role: Role | null }) {
     return () => window.removeEventListener("hashchange", syncHash);
   }, [pathname]);
 
-  if (!role || pathname === "/" || ["/login", "/register", "/banned"].some((path) => pathname.startsWith(path))) {
+  if (!role || pathname === "/" || ["/login", "/register", "/auth", "/banned"].some((path) => pathname.startsWith(path))) {
     return null;
   }
 

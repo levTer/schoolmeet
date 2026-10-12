@@ -17,7 +17,7 @@ const COLUMNS = [
     title: "Платформа",
     links: [
       { label: "Войти", href: "/login" },
-      { label: "Регистрация", href: "/register" },
+      { label: "Регистрация", href: "/auth/register" },
       { label: "Для школ", href: "/#schedule" },
       { label: "Статус сервисов", href: "/#features" },
     ],

@@ -7,6 +7,29 @@ export const CONFIGURED_SCHOOLS = [
 
 export const DEFAULT_SCHOOL = CONFIGURED_SCHOOLS[0];
 
+/**
+ * Предустановленные admin-токены приглашений для наших школ.
+ *
+ * Задаются в сиде (`prisma/seed.ts`) и авто-инициализации школ
+ * (`provisionConfiguredSchools`): админ-ссылка каждой школы детерминирована
+ * (`/auth/register?code=…&invite=admin-…`). Токены учителей генерируются
+ * случайно (`@default(uuid())`) и выдаются только через админ-панель.
+ */
+export const CONFIGURED_ADMIN_INVITE_TOKENS: Readonly<Record<string, string>> = {
+  Sinlycem26: "admin-sinlycem-2026",
+  Fulhouseteem26: "admin-fulhouse-2026",
+  "Anna.Terentieva77": "admin-annat-2026",
+};
+
+/** Предустановленный admin-токен школы (по коду, без учёта регистра) или undefined. */
+export function configuredAdminInviteToken(code: string): string | undefined {
+  const needle = code.trim().toLowerCase();
+  for (const [key, token] of Object.entries(CONFIGURED_ADMIN_INVITE_TOKENS)) {
+    if (key.toLowerCase() === needle) return token;
+  }
+  return undefined;
+}
+
 /** The old single-tenant demo code is migrated into the primary school. */
 export const LEGACY_DEFAULT_SCHOOL_CODE = "SCHOOL1";
 

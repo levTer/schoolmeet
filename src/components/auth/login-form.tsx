@@ -162,7 +162,7 @@ export function LoginForm() {
       <p className="text-center text-sm text-slate-400">
         Ещё нет аккаунта?{" "}
         <Link
-          href="/register"
+          href="/auth/register"
           className="font-medium text-brand-200 underline-offset-4 transition hover:text-white hover:underline"
         >
           Зарегистрироваться

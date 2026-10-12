@@ -113,7 +113,7 @@ export const authOptions: NextAuthOptions = {
      * Дополняет JWT: при входе кладём `id` и `role`, чтобы middleware и
      * серверные компоненты видели роль без обращения к БД.
      */
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
         token.role = (user.role as Role) ?? "STUDENT";
@@ -129,6 +129,9 @@ export const authOptions: NextAuthOptions = {
 
       const userId = typeof token.id === "string" && token.id ? token.id : token.sub;
       const needsSync =
+        // Явное обновление сессии (например, после повышения до ADMIN по
+        // секретной ссылке) требует свежей роли немедленно, без ожидания 60 с.
+        trigger === "update" ||
         !token.role ||
         token.schoolId === undefined ||
         token.classId === undefined ||

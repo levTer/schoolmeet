@@ -12,9 +12,13 @@ export const NAME_MAX_LENGTH = 60;
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
 /**
- * Роли, которые пользователь может выбрать при самостоятельной регистрации.
- * `ADMIN` выдаётся только вручную (сид/панель администратора) — иначе любой
- * желающий получил бы полный доступ к платформе.
+ * Роли, доступные при обычной (публичной) регистрации в дополнение к STUDENT.
+ * Фактически без приглашения форма скрывает выбор роли и всегда даёт STUDENT.
+ *
+ * `TEACHER` — только по секретной ссылке `teacherInviteToken` школы,
+ * `ADMIN` — только по ссылке `adminInviteToken` (регистрация или повышение
+ * вошедшего аккаунта, см. `src/lib/invite-rules.ts`). Через публичную форму
+ * без токена эти роли не выдаются никогда.
  */
 export const PUBLIC_ROLES = ["STUDENT", "TEACHER"] as const satisfies readonly Role[];
 
@@ -40,9 +44,19 @@ export interface RegisterFields {
   name: string;
   email: string;
   password: string;
-  role: PublicRole;
+  role: Role;
   schoolCode: string;
   classId: string | null;
+}
+
+/** Контекст проверки: какие роли доступны (по умолчанию — только публичные). */
+export interface RegisterValidationOptions {
+  /**
+   * Роли, допустимые в этом контексте. Без приглашения — `PUBLIC_ROLES`
+   * (по факту только STUDENT); со ссылкой учителя — STUDENT/TEACHER;
+   * со ссылкой администратора — включая ADMIN (см. `invite-rules.ts`).
+   */
+  allowedRoles?: readonly Role[];
 }
 
 export type ValidationResult<T> =
@@ -108,8 +122,14 @@ export function getPasswordStrength(password: string): {
  * Проверяет тело запроса на регистрацию.
  * Используется и на сервере (API-роут), и на клиенте (мгновенная подсказка
  * в форме) — правила валидации живут в одном месте.
+ *
+ * `options.allowedRoles` ограничивает выдачу ролей контекстом ссылки:
+ * без приглашения роль всегда фиксируется как STUDENT.
  */
-export function validateRegisterInput(input: unknown): ValidationResult<RegisterFields> {
+export function validateRegisterInput(
+  input: unknown,
+  options: RegisterValidationOptions = {},
+): ValidationResult<RegisterFields> {
   const fields: FieldErrors = {};
 
   if (typeof input !== "object" || input === null) {
@@ -158,12 +178,16 @@ export function validateRegisterInput(input: unknown): ValidationResult<Register
   }
 
   /* Роль ----------------------------------------------------------------- */
-  let role: PublicRole = "STUDENT";
+  const allowedRoles: readonly Role[] =
+    options.allowedRoles && options.allowedRoles.length > 0 ? options.allowedRoles : PUBLIC_ROLES;
+  const allowedRoleList = allowedRoles as readonly string[];
+  let role: Role = allowedRoleList.includes("STUDENT") ? "STUDENT" : allowedRoles[0];
   if (typeof raw.role === "string" && raw.role.trim() !== "") {
-    if (isPublicRole(raw.role)) {
-      role = raw.role.trim().toUpperCase() as PublicRole;
+    const requested = raw.role.trim().toUpperCase();
+    if (allowedRoleList.includes(requested)) {
+      role = requested as Role;
     } else {
-      fields.role = "Роль может быть только TEACHER или STUDENT";
+      fields.role = `Роль может быть только ${allowedRoles.join(" или ")}`;
     }
   }
 
@@ -177,7 +201,7 @@ export function validateRegisterInput(input: unknown): ValidationResult<Register
     if (!rawClassId) fields.classId = "Выберите свой класс";
     else classId = rawClassId;
   } else if (rawClassId) {
-    fields.classId = "Учителю не нужно выбирать класс";
+    fields.classId = "Класс выбирает только ученик";
   }
 
   if (Object.keys(fields).length > 0) {
@@ -198,7 +222,9 @@ export interface RegisterRequest {
   schoolCode: string;
   classId?: string | null;
   confirmPassword?: string;
-  role?: PublicRole;
+  role?: Role;
+  /** Секретный токен приглашения (`?invite=…`): без него роль всегда STUDENT. */
+  invite?: string | null;
 }
 
 /**

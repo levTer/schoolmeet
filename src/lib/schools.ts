@@ -3,11 +3,13 @@ import type { PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { GRADES, type GradeCode } from "@/lib/schedule-rules";
 import { gradeFromClassName, normalizeSchoolCode } from "@/lib/school-rules";
+import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
 import {
   CONFIGURED_SCHOOLS,
   DEFAULT_CLASS_NAMES,
   DEFAULT_SCHOOL,
   LEGACY_DEFAULT_SCHOOL_CODE,
+  configuredAdminInviteToken,
 } from "@/lib/school-config";
 
 export { gradeFromClassName, normalizeClassName, normalizeSchoolCode } from "@/lib/school-rules";
@@ -30,6 +32,15 @@ export interface SchoolSummary {
 
 function classNameForGrade(grade: GradeCode): string {
   return `${grade.replace("GRADE_", "")}-А`;
+}
+
+/**
+ * Предустановленный admin-токен для наших школ (см. `school-config.ts`).
+ * Для остальных школ токен генерирует БД (`@default(uuid())`).
+ */
+function adminInviteData(code: string): { adminInviteToken?: string } {
+  const preset = configuredAdminInviteToken(code);
+  return preset ? { adminInviteToken: preset } : {};
 }
 
 let defaultSchoolPromise: Promise<SchoolSummary> | null = null;
@@ -66,14 +77,14 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
     if (school) {
       school = await db.school.update({
         where: { id: school.id },
-        data: { name: definition.name },
+        data: { name: definition.name, ...adminInviteData(definition.code) },
         select: { id: true, name: true, code: true },
       });
     } else {
       school = await db.school.upsert({
         where: { code: definition.code },
-        update: { name: definition.name },
-        create: { name: definition.name, code: definition.code },
+        update: { name: definition.name, ...adminInviteData(definition.code) },
+        create: { name: definition.name, code: definition.code, ...adminInviteData(definition.code) },
         select: { id: true, name: true, code: true },
       });
     }
@@ -271,6 +282,55 @@ export async function findSchoolByCode(value: unknown): Promise<SchoolSummary | 
     where: { code: { equals: code, mode: "insensitive" } },
     select: { id: true, name: true, code: true },
   });
+}
+
+/** Школа вместе со своими секретными токенами-приглашениями. */
+export interface SchoolInviteSummary extends SchoolSummary {
+  teacherInviteToken: string;
+  adminInviteToken: string;
+}
+
+const SCHOOL_INVITE_SELECT = {
+  id: true,
+  name: true,
+  code: true,
+  teacherInviteToken: true,
+  adminInviteToken: true,
+} as const;
+
+/** Токены-приглашения школы (для админ-панели и проверки `invite`). */
+export async function getSchoolInviteSummary(schoolId: string): Promise<SchoolInviteSummary | null> {
+  return prisma.school.findUnique({ where: { id: schoolId }, select: SCHOOL_INVITE_SELECT });
+}
+
+/**
+ * Находит школу по коду и определяет уровень `invite`-ссылки.
+ *
+ * Если код не указал школу, но токен валиден сам по себе, — используется школа,
+ * которой принадлежит токен (ссылка приглашения всегда содержит свой токен).
+ * Возвращает `inviteRole: null` для публичной регистрации (без токена).
+ */
+export async function findSchoolForInvite(
+  code: unknown,
+  invite: unknown,
+): Promise<{ school: SchoolInviteSummary; inviteRole: InviteRole | null } | null> {
+  const token = normalizeInviteToken(invite);
+
+  const byCode = await findSchoolByCode(code);
+  if (byCode) {
+    const school = await prisma.school.findUnique({ where: { id: byCode.id }, select: SCHOOL_INVITE_SELECT });
+    if (school) return { school, inviteRole: resolveInviteRole(school, token) };
+  }
+
+  if (token) {
+    const byToken = await prisma.school.findFirst({
+      where: { OR: [{ teacherInviteToken: token }, { adminInviteToken: token }] },
+      select: SCHOOL_INVITE_SELECT,
+    });
+    if (byToken) return { school: byToken, inviteRole: resolveInviteRole(byToken, token) };
+  }
+
+  return null;
 }
 
 export async function listClassesForSchool(schoolId: string): Promise<SchoolClassOption[]> {

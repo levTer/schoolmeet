@@ -53,7 +53,7 @@ export function Hero() {
           {/* Кнопки */}
           <div className="mt-9 flex animate-fade-up flex-col items-center justify-center gap-3 [animation-delay:200ms] sm:flex-row">
             <Link
-              href="/register"
+              href="/auth/register"
               className="group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-brand-gradient px-7 py-3.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02] sm:w-auto"
             >
               <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />

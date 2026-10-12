@@ -2,7 +2,8 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_CLASS_NAMES } from "@/lib/school-config";
+import { DEFAULT_CLASS_NAMES, configuredAdminInviteToken } from "@/lib/school-config";
+import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
 import { normalizeSchoolCode } from "@/lib/school-rules";
 import { listClassesForSchool } from "@/lib/schools";
 
@@ -21,7 +22,7 @@ const ALLOWED_SCHOOLS = [
 
 type AllowedSchool = (typeof ALLOWED_SCHOOLS)[number];
 
-const SCHOOL_SELECT = { id: true, name: true, code: true } as const;
+const SCHOOL_SELECT = { id: true, name: true, code: true, teacherInviteToken: true, adminInviteToken: true } as const;
 
 function serverError(): NextResponse {
   return NextResponse.json({ valid: false, error: "Server Error" }, { status: 500 });
@@ -32,27 +33,34 @@ function matchAllowedSchool(code: string): AllowedSchool | null {
   return ALLOWED_SCHOOLS.find((school) => school.code.toLowerCase() === needle) ?? null;
 }
 
-/** Код из query (`?code=`) или JSON-тела (`code` / `schoolCode`). Пробелы по краям снимает вызывающий `.trim()`. */
-async function readRawCode(request: Request): Promise<string> {
-  const fromQuery = new URL(request.url).searchParams.get("code");
-  if (typeof fromQuery === "string" && fromQuery.trim()) return fromQuery;
+/** Предустановленный admin-токен для наших школ (см. `school-config.ts`). */
+function adminInviteData(code: string): { adminInviteToken?: string } {
+  const preset = configuredAdminInviteToken(code);
+  return preset ? { adminInviteToken: preset } : {};
+}
 
-  if (request.method !== "POST" && request.method !== "PUT") {
-    return typeof fromQuery === "string" ? fromQuery : "";
-  }
+/** Код и токен приглашения из query (`?code=`, `?invite=`) или JSON-тела. Тело читается один раз. */
+async function readCodeAndInvite(request: Request): Promise<{ code: string; invite: string }> {
+  const params = new URL(request.url).searchParams;
+  let code = params.get("code") ?? "";
+  let invite = params.get("invite") ?? "";
 
-  try {
-    const body = (await request.json()) as unknown;
-    if (body && typeof body === "object") {
-      const record = body as Record<string, unknown>;
-      const candidate = record.code ?? record.schoolCode;
-      if (typeof candidate === "string") return candidate;
+  if (request.method === "POST" || request.method === "PUT") {
+    try {
+      const body = (await request.json()) as unknown;
+      if (body && typeof body === "object") {
+        const record = body as Record<string, unknown>;
+        const rawCode = record.code ?? record.schoolCode;
+        const rawInvite = record.invite;
+        if (typeof rawCode === "string") code = rawCode;
+        if (typeof rawInvite === "string") invite = rawInvite;
+      }
+    } catch {
+      // Некорректный JSON — это ошибка ввода, а не падение сервера.
     }
-  } catch {
-    // Некорректный JSON — это ошибка ввода, а не падение сервера.
   }
 
-  return typeof fromQuery === "string" ? fromQuery : "";
+  return { code, invite };
 }
 
 async function findOrCreateSchool(code: string) {
@@ -67,7 +75,7 @@ async function findOrCreateSchool(code: string) {
   if (!school && allowed) {
     try {
       school = await prisma.school.create({
-        data: { name: allowed.name, code: allowed.code },
+        data: { name: allowed.name, code: allowed.code, ...adminInviteData(allowed.code) },
         select: SCHOOL_SELECT,
       });
     } catch (error) {
@@ -81,9 +89,18 @@ async function findOrCreateSchool(code: string) {
     }
   }
 
-  // Для разрешённого кода всегда досеиваем стандартный набор 5-А … 11-Б.
+  // Для разрешённого кода всегда досеиваем стандартный набор 5-А … 11-Б
+  // и возвращаем предустановленный admin-токен к фиксированному значению.
   if (school && allowed) {
     const schoolId = school.id;
+    const preset = adminInviteData(allowed.code);
+    if (preset.adminInviteToken && preset.adminInviteToken !== school.adminInviteToken) {
+      school = await prisma.school.update({
+        where: { id: schoolId },
+        data: preset,
+        select: SCHOOL_SELECT,
+      });
+    }
     await prisma.class.createMany({
       data: DEFAULT_CLASS_NAMES.map((name) => ({ schoolId, name })),
       skipDuplicates: true,
@@ -94,7 +111,8 @@ async function findOrCreateSchool(code: string) {
 }
 
 async function checkSchool(request: Request): Promise<NextResponse> {
-  const code = (await readRawCode(request)).trim();
+  const { code: rawCode, invite: rawInvite } = await readCodeAndInvite(request);
+  const code = rawCode.trim();
   if (!normalizeSchoolCode(code)) {
     return NextResponse.json(
       {
@@ -126,13 +144,16 @@ async function checkSchool(request: Request): Promise<NextResponse> {
 
   const classes = await listClassesForSchool(school.id);
   const schoolView = { id: school.id, name: school.name, code: school.code };
+  // Уровень секретной ссылки: null — публичная регистрация (только STUDENT).
+  const inviteRole: InviteRole | null = resolveInviteRole(school, normalizeInviteToken(rawInvite));
 
   return NextResponse.json({
     valid: true,
     ok: true,
     school: schoolView,
     classes,
-    data: { school: schoolView, classes },
+    inviteRole,
+    data: { school: schoolView, classes, inviteRole },
   });
 }
 

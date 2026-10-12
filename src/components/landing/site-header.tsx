@@ -75,7 +75,7 @@ export function SiteHeader() {
                 Войти
               </Link>
               <Link
-                href="/register"
+                href="/auth/register"
                 className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.03]"
               >
                 <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
@@ -136,7 +136,7 @@ export function SiteHeader() {
                   Войти
                 </Link>
                 <Link
-                  href="/register"
+                  href="/auth/register"
                   onClick={() => setIsMenuOpen(false)}
                   className="rounded-xl bg-brand-gradient px-4 py-3 text-center text-sm font-semibold text-white shadow-glow"
                 >
