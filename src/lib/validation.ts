@@ -201,13 +201,21 @@ export interface RegisterRequest {
   role?: PublicRole;
 }
 
+/**
+ * Пользователь в ответе регистрации.
+ *
+ * `schoolId` и `classId` допускают `null`: в схеме БД обе колонки опциональны
+ * (`schoolId String?`, `classId String?`), поэтому Prisma типизирует их как
+ * `string | null`. У ученика всегда есть и школа, и класс, у учителя класса нет —
+ * но контракт ответа повторяет форму данных из БД, а не догадки о них.
+ */
 export interface RegisterResponseUser {
   id: string;
   name: string;
   email: string;
   role: Role;
-  schoolId: string;
-  classId: string | null;
+  schoolId?: string | null;
+  classId?: string | null;
   createdAt: string;
 }
 
