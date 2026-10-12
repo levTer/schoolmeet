@@ -1,18 +1,21 @@
 /**
  * Google Gemini Flash — мультимодальный ИИ-движок SchoolMeet (этап 8).
  *
- * Gemini 2.0 / 1.5 Flash бесплатно (до 1 500 запросов/день, ключ без
- * привязки карты в AI Studio) и, главное, понимает ИЗОБРАЖЕНИЯ: именно он
- * распознаёт рукописные формулы с фрагмента интерактивной доски
- * (действие `formula` с `imageDataUrl`). Текстовые действия тоже
- * поддерживаются — Gemini стоит в конце текстовой цепочки фоллбэка.
+ * Gemini Flash бесплатен в пределах дневной квоты (ключ без привязки карты в
+ * AI Studio) и, главное, понимает ИЗОБРАЖЕНИЯ: именно он распознаёт
+ * рукописные формулы с фрагмента интерактивной доски (действие `formula`
+ * с `imageDataUrl`). Текстовые действия тоже поддерживаются — Gemini стоит
+ * в конце текстовой цепочки фоллбэка.
  *
- * Вызовы — только через нативный `fetch`:
- *   POST https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent
- *   заголовок `x-goog-api-key` (ключ живёт ТОЛЬКО на сервере).
+ * Вызовы — только через нативный `fetch`, официальный v1beta REST:
+ *   POST https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent?key=<API_KEY>
  *
- * Если модель из `GEMINI_MODEL` не найдена (404), провайдер автоматически
- * пробует запасные модели списка — API школы при этом не падает.
+ * ПЕРЕБОР МОДЕЛЕЙ (исправление ошибок 404 `NOT_FOUND`): Google закрывает
+ * старые поколения моделей (Gemini 1.5 — 29.09.2025, Gemini 2.0 — 01.06.2026;
+ * см. ai.google.dev/gemini-api/docs/deprecations). Если модель из
+ * `GEMINI_MODEL` не найдена, провайдер мгновенно, в том же вызове, пробует
+ * следующую из `GEMINI_FALLBACK_MODELS`, а снятую запоминает, чтобы не
+ * тратить на неё запросы в будущем. API школы при этом не падает.
  */
 
 import {
@@ -23,6 +26,7 @@ import {
   buildUserPrompt,
   extractLatex,
   extractJsonObject,
+  isModelUnavailableError,
   normalizeReviewDraft,
   parseDataUrl,
   postJson,
@@ -37,18 +41,57 @@ import type {
   HomeworkReviewRequest,
 } from "./types";
 
-/** Базовый URL Gemini API (v1beta). */
+/** Базовый URL Gemini API (v1beta) — ключ передаётся параметром `key`. */
 export const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-/** Модель по умолчанию — быстрая и мультимодальная. */
-export const GEMINI_DEFAULT_MODEL = "gemini-2.0-flash";
-/** Запасные модели: если основная недоступна в аккаунте (404). */
-export const GEMINI_FALLBACK_MODELS = ["gemini-1.5-flash", "gemini-1.5-flash-8b"];
+/**
+ * Модель по умолчанию — самая свежая стабильная Flash-модель Google
+ * (актуально на 12.10.2026): быстрая, мультимодальная (понимает изображения
+ * доски) и доступна на бесплатном тарифе AI Studio.
+ */
+export const GEMINI_DEFAULT_MODEL = "gemini-3.8-flash";
+
+/**
+ * Резервные модели в порядке перебора (`generateContent`).
+ *
+ * Головная часть — актуальные на 12.10.2026 ID (ai.google.dev/gemini-api/docs/models):
+ *  1. `gemini-3.6-flash`      — предыдущая стабильная Flash-линейка;
+ *  2. `gemini-3.5-flash-lite` — самая быстрая и дешёвая 3.5-модель;
+ *  3. `gemini-3.1-flash-lite` — frontier-качество при низкой цене;
+ *  4. `gemini-2.5-flash` / `gemini-2.5-flash-lite` — для аккаунтов, созданных
+ *     до 18.09.2026 (Google ограничил доступ к 2.5 новым проектам).
+ *
+ * Хвост — legacy-идентификаторы из исходного ТЗ. Google их уже выключил
+ * (Gemini 1.5 — 29.09.2025, Gemini 2.0 — 01.06.2026, все запросы к ним
+ * возвращают 404), поэтому они стоят в самом конце: если в аккаунте школы
+ * они внезапно доступны — провайдер их задействует, но обычный запрос
+ * до хвоста не доходит.
+ */
+export const GEMINI_FALLBACK_MODELS: readonly string[] = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-1.5-flash",
+  "gemini-2.0-flash-exp",
+  "gemini-1.5-pro",
+];
+
+/**
+ * REST-URL вызова `generateContent` для модели: официальная схема v1beta
+ * с ключом в параметре `key` (ключ формируется на сервере и в браузер не
+ * попадает), например
+ * `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=AIza…`.
+ */
+export function geminiGenerateContentUrl(model: string, apiKey: string): string {
+  return `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+}
 
 export interface GeminiProviderOptions {
   /** API-ключ; по умолчанию `process.env.GEMINI_API_KEY` (или `GOOGLE_API_KEY`). */
   apiKey?: string;
-  /** Основная модель; по умолчанию `GEMINI_MODEL` или `gemini-2.0-flash`. */
+  /** Основная модель; по умолчанию `GEMINI_MODEL` или `gemini-3.8-flash`. */
   model?: string;
   timeoutMs?: number;
   fetchImpl?: FetchLike;
@@ -83,6 +126,13 @@ export class GeminiProvider implements AIProvider {
   private readonly apiKey: string;
   private readonly timeoutMs?: number;
   private readonly fetchImpl?: FetchLike;
+
+  /**
+   * Модели, ответившие 404 `NOT_FOUND`: Google снял их с обслуживания.
+   * Повторно такие модели не опрашиваются — перебор сразу начинается с живой,
+   * поэтому «мёртвый» ID стоит один лишний вызов за жизненный цикл инстанса.
+   */
+  private readonly deadModels = new Set<string>();
 
   constructor(options: GeminiProviderOptions = {}) {
     this.apiKey = (options.apiKey ?? process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "").trim();
@@ -141,8 +191,23 @@ export class GeminiProvider implements AIProvider {
   /* ------------------------------------------------------------------------ */
 
   /**
-   * generateContent с авто-перебором моделей: 404 (модель не найдена в
-   * аккаунте) → пробуем следующую из `GEMINI_FALLBACK_MODELS`.
+   * Список моделей для перебора: основная (`GEMINI_MODEL` / `gemini-3.8-flash`),
+   * затем резервные из `GEMINI_FALLBACK_MODELS` — без дублей и снятых моделей.
+   *
+   * Если живых не осталось, пробуем основную как последний шанс: окончательное
+   * решение принимает Google API.
+   */
+  modelsToTry(): string[] {
+    const unique = [this.model, ...GEMINI_FALLBACK_MODELS].filter((model, index, all) => all.indexOf(model) === index);
+    const alive = unique.filter((model) => !this.deadModels.has(model));
+    return alive.length > 0 ? alive : [this.model];
+  }
+
+  /**
+   * generateContent с мгновенным авто-перебором моделей: модель снята или
+   * переименована (404 `NOT_FOUND`) → в том же вызове пробуем следующую из
+   * `GEMINI_FALLBACK_MODELS`. Прочие ошибки (429-квота, 5xx, таймаут) не
+   * перебираются — их обрабатывает `AutoAIProvider` переключением провайдера.
    */
   private async generateContent(options: {
     system: string;
@@ -150,14 +215,15 @@ export class GeminiProvider implements AIProvider {
     jsonMode: boolean;
     temperature: number;
   }): Promise<{ text: string; model: string }> {
-    const models = [this.model, ...GEMINI_FALLBACK_MODELS.filter((m) => m !== this.model)];
     let lastError: unknown = null;
 
-    for (const model of models) {
+    for (const model of this.modelsToTry()) {
       try {
         const payload = await postJson(
-          `${GEMINI_API_BASE}/${model}:generateContent`,
+          geminiGenerateContentUrl(model, this.apiKey),
           {
+            // Ключ уже передан параметром `key` в URL (официальная схема v1beta);
+            // заголовок дублирует его — так надёжнее, если прокси режет query.
             headers: { "x-goog-api-key": this.apiKey },
             provider: "Gemini",
             timeoutMs: this.timeoutMs,
@@ -175,10 +241,10 @@ export class GeminiProvider implements AIProvider {
         );
         return { text: readGeminiText(payload, model), model };
       } catch (error) {
+        if (!isModelUnavailableError(error)) throw error;
         lastError = error;
-        const notFound = error instanceof AIProviderError && error.status === 404;
-        if (!notFound) throw error;
-        console.warn(`[ai/gemini] модель ${model} недоступна (404), пробую следующую`);
+        this.deadModels.add(model);
+        console.warn(`[ai/gemini] модель ${model} недоступна (404 NOT_FOUND) — мгновенно пробую следующую`);
       }
     }
 

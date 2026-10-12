@@ -52,6 +52,30 @@ export class AIProviderError extends Error {
   }
 }
 
+/**
+ * Модель недоступна у провайдера: её сняли с обслуживания или переименовали.
+ * Такая ошибка НЕ означает, что провайдер лежит, — поэтому провайдер обязан
+ * мгновенно перебрать следующую модель своего списка и только потом сдаваться.
+ *
+ * Ловятся оба «лица» одной проблемы:
+ *   • HTTP 404 (`model_not_found` у Groq, `NOT_FOUND` у Gemini) — модель
+ *     удалена целиком;
+ *   • HTTP 400 с кодом `model_decommissioned` — так Groq отвечает на модели,
+ *     выведенные из эксплуатации (например `llama3-70b-8192`,
+ *     `deepseek-r1-distill-llama-70b`, `llama-3.3-70b-versatile`).
+ *
+ * Прочие ошибки (429-лимит, 5xx, таймаут, сеть) НЕ считаются «снятой моделью»:
+ * их перебор бессмыслен — управление уходит выше, в `AutoAIProvider`.
+ */
+export function isModelUnavailableError(error: unknown): boolean {
+  if (!(error instanceof AIProviderError)) return false;
+  if (error.status === 404 || error.status === 410) return true;
+  if (error.status !== 400) return false;
+  return /model_not_found|model_decommissioned|decommissioned|does not exist|no longer supported|unknown model/i.test(
+    error.message,
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Нативный fetch с таймаутом                                                  */
 /* -------------------------------------------------------------------------- */
