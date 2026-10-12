@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { LayoutDashboard, Menu, ShieldCheck, X } from "lucide-react";
 
+import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
 
@@ -54,6 +55,8 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
+          <ThemeSwitcher compact />
+
           {isAuthenticated ? (
             <Link
               href="/dashboard"
@@ -97,6 +100,10 @@ export function SiteHeader() {
       {/* Мобильное меню */}
       {isMenuOpen && (
         <div className="animate-fade-in border-t border-white/10 bg-ink-950/95 px-5 py-5 backdrop-blur-xl md:hidden">
+          <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5">
+            <ThemeSwitcher />
+          </div>
+
           <nav className="flex flex-col gap-1">
             {NAV_LINKS.map((link) => (
               <a
@@ -145,7 +152,7 @@ export function SiteHeader() {
       {/* Полоска безопасности под шапкой */}
       <div className="hidden border-t border-white/5 bg-white/[0.02] md:block">
         <div className="mx-auto flex max-w-7xl items-center justify-center gap-2 px-8 py-1.5 text-[11px] text-slate-500">
-          <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+          <ShieldCheck className="h-3.5 w-3.5 text-brand-300" />
           Шифрование чата AES-256 · Видео по WebRTC / SRTP · Доступ только для участников
         </div>
       </div>

@@ -58,12 +58,12 @@ export function AdminBarChart({
       >
         <defs>
           <linearGradient id="chartGradientBrand" x1="0" y1="1" x2="0" y2="0">
-            <stop offset="0%" stopColor="#7c3aed" stopOpacity="0.85" />
-            <stop offset="100%" stopColor="#a855f7" stopOpacity="1" />
+            <stop offset="0%" stopColor="rgb(var(--accent-deep-rgb))" stopOpacity="0.85" />
+            <stop offset="100%" stopColor="var(--accent-color)" stopOpacity="1" />
           </linearGradient>
           <linearGradient id="chartGradientAccent" x1="0" y1="1" x2="0" y2="0">
-            <stop offset="0%" stopColor="#0891b2" stopOpacity="0.85" />
-            <stop offset="100%" stopColor="#00d9ff" stopOpacity="1" />
+            <stop offset="0%" stopColor="rgb(var(--accent-strong-rgb))" stopOpacity="0.85" />
+            <stop offset="100%" stopColor="rgb(var(--accent-light-rgb))" stopOpacity="1" />
           </linearGradient>
         </defs>
 
@@ -116,7 +116,7 @@ export function AdminBarChart({
                 y={PADDING.top}
                 width={step}
                 height={plotHeight}
-                fill="rgba(168, 85, 247, 0.06)"
+                fill="rgb(var(--accent-rgb) / 0.06)"
                 className="opacity-0 transition-opacity duration-200 hover:opacity-100"
               />
 

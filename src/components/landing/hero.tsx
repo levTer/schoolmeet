@@ -77,7 +77,7 @@ export function Hero() {
                 key={badge.label}
                 className="glass flex items-center gap-3 rounded-2xl px-4 py-2.5 text-left"
               >
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400/20 to-emerald-500/5 text-emerald-300 ring-1 ring-emerald-400/20">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-300/20 to-brand-500/5 text-brand-300 ring-1 ring-brand-400/20">
                   <badge.icon className="h-4 w-4" />
                 </span>
                 <span className="leading-tight">

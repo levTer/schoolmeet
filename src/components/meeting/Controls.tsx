@@ -183,7 +183,7 @@ function ControlButton({
         <span
           className={cn(
             "absolute -right-1 -top-1 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold text-white shadow-lg",
-            badgeTone === "amber" ? "bg-amber-400 text-ink-950" : "bg-accent-500",
+            badgeTone === "amber" ? "bg-amber-400 text-ink-950" : "bg-accent-600",
           )}
         >
           {badge}

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 
 import { Providers } from "@/components/providers";
+import { DEFAULT_THEME, THEME_OPTIONS, THEME_STORAGE_KEY } from "@/lib/theme";
 
 import "katex/dist/katex.min.css";
 import "./globals.css";
@@ -17,6 +18,22 @@ const geistMono = localFont({
   variable: "--font-geist-mono",
   weight: "100 900",
 });
+
+const themeBootstrapScript = `(() => {
+  try {
+    const themes = ${JSON.stringify(
+      Object.fromEntries(THEME_OPTIONS.map(({ id, background }) => [id, background])),
+    )};
+    const savedTheme = window.localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
+    const theme = Object.prototype.hasOwnProperty.call(themes, savedTheme)
+      ? savedTheme
+      : ${JSON.stringify(DEFAULT_THEME)};
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themes[theme]);
+  } catch {
+    // Keep the server-rendered default when browser storage is unavailable.
+  }
+})();`;
 
 export const metadata: Metadata = {
   title: {
@@ -53,7 +70,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#05060f",
+  themeColor: "#061F17",
   colorScheme: "dark",
   width: "device-width",
   initialScale: 1,
@@ -67,8 +84,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" className="dark scroll-smooth">
+    <html
+      lang="ru"
+      data-theme={DEFAULT_THEME}
+      suppressHydrationWarning
+      className="dark scroll-smooth"
+    >
       <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
         {/* iOS PWA: полноэкранный режим, иконка на рабочем столе */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -77,7 +100,7 @@ export default function RootLayout({
         <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-ink-950 font-sans antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen font-sans antialiased`}
       >
         <Providers>{children}</Providers>
       </body>

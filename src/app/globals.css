@@ -3,20 +3,118 @@
 @tailwind utilities;
 
 /*
- * SchoolMeet · дизайн-система, этап 7.
- * Тёмный графитовый фон, ярко-фиолетовые кнопки и неоново-синие акценты,
- * матовое стекло (backdrop-blur) на карточках и панелях.
- * + Мобильная адаптация, PWA-поддержка, анимации переходов.
+ * SchoolMeet · тематическая система с динамическими цветовыми токенами.
+ * Существующие brand/accent/ink Tailwind-классы автоматически меняются
+ * вместе с темой, выбранной в переключателе.
  */
 
 @layer base {
-  :root {
-    --background: #06070b;
-    --foreground: #e8ebf7;
-    --brand: #a855f7;
-    --accent: #00d9ff;
-    --glass-border: rgba(255, 255, 255, 0.09);
+  :root,
+  :root[data-theme="emerald"] {
+    color-scheme: dark;
+    --bg-primary: #061F17;
+    --bg-primary-rgb: 6 31 23;
+    --bg-deep-rgb: 3 14 10;
+    --bg-surface-rgb: 7 29 22;
+    --bg-surface-raised-rgb: 12 43 33;
+    --bg-panel-rgb: 18 57 43;
+    --bg-panel-strong-rgb: 26 75 57;
+    --accent-color: #2EDB9C;
+    --accent-rgb: 46 219 156;
+    --accent-light-rgb: 145 255 214;
+    --accent-pale-rgb: 222 255 241;
+    --accent-strong-rgb: 13 117 81;
+    --accent-deep-rgb: 12 96 67;
+    --glass-bg: rgba(3, 18, 13, 0.76);
+    --glass-bg-strong: rgba(2, 12, 9, 0.91);
+    --glass-border: rgba(222, 255, 241, 0.12);
     --glass-fill: rgba(255, 255, 255, 0.045);
+    --bg-overlay-opacity: 0;
+    --scrollbar-border: #061F17;
+  }
+
+  :root[data-theme="cyber"] {
+    --bg-primary: #1B0773;
+    --bg-primary-rgb: 27 7 115;
+    --bg-deep-rgb: 9 3 39;
+    --bg-surface-rgb: 15 7 53;
+    --bg-surface-raised-rgb: 23 10 69;
+    --bg-panel-rgb: 34 14 83;
+    --bg-panel-strong-rgb: 48 18 95;
+    --accent-color: #9A3E85;
+    --accent-rgb: 154 62 133;
+    --accent-light-rgb: 241 174 224;
+    --accent-pale-rgb: 255 231 249;
+    --accent-strong-rgb: 112 37 96;
+    --accent-deep-rgb: 75 23 66;
+    --glass-bg: rgba(8, 4, 33, 0.80);
+    --glass-bg-strong: rgba(6, 3, 25, 0.93);
+    --glass-border: rgba(255, 231, 249, 0.14);
+    --bg-overlay-opacity: 0;
+    --scrollbar-border: #1B0773;
+  }
+
+  :root[data-theme="ocean"] {
+    --bg-primary: #837FB8;
+    --bg-primary-rgb: 131 127 184;
+    --bg-deep-rgb: 16 15 40;
+    --bg-surface-rgb: 22 20 48;
+    --bg-surface-raised-rgb: 30 27 60;
+    --bg-panel-rgb: 41 36 73;
+    --bg-panel-strong-rgb: 54 47 88;
+    --accent-color: #25C4B4;
+    --accent-rgb: 37 196 180;
+    --accent-light-rgb: 143 242 232;
+    --accent-pale-rgb: 223 255 251;
+    --accent-strong-rgb: 11 114 102;
+    --accent-deep-rgb: 13 92 85;
+    --glass-bg: rgba(17, 15, 42, 0.83);
+    --glass-bg-strong: rgba(11, 10, 31, 0.94);
+    --glass-border: rgba(223, 255, 251, 0.14);
+    --bg-overlay-opacity: 0.48;
+    --scrollbar-border: #292642;
+  }
+
+  :root[data-theme="mint"] {
+    --bg-primary: #436F67;
+    --bg-primary-rgb: 67 111 103;
+    --bg-deep-rgb: 5 22 20;
+    --bg-surface-rgb: 9 30 27;
+    --bg-surface-raised-rgb: 15 42 38;
+    --bg-panel-rgb: 22 56 50;
+    --bg-panel-strong-rgb: 31 72 64;
+    --accent-color: #3BD2B1;
+    --accent-rgb: 59 210 177;
+    --accent-light-rgb: 153 255 229;
+    --accent-pale-rgb: 224 255 247;
+    --accent-strong-rgb: 12 115 94;
+    --accent-deep-rgb: 13 97 80;
+    --glass-bg: rgba(5, 22, 20, 0.79);
+    --glass-bg-strong: rgba(3, 15, 14, 0.92);
+    --glass-border: rgba(224, 255, 247, 0.13);
+    --bg-overlay-opacity: 0.16;
+    --scrollbar-border: #294842;
+  }
+
+  :root {
+    --background: var(--bg-primary);
+    --foreground: #e8ebf7;
+    --brand: var(--accent-color);
+    --accent: var(--accent-color);
+    --brand-gradient: linear-gradient(
+      135deg,
+      rgb(var(--accent-strong-rgb) / 1) 0%,
+      rgb(var(--accent-deep-rgb) / 1) 100%
+    );
+    --brand-gradient-soft: linear-gradient(
+      135deg,
+      rgb(var(--accent-rgb) / 0.22) 0%,
+      rgb(var(--accent-light-rgb) / 0.12) 50%,
+      rgb(var(--accent-deep-rgb) / 0.18) 100%
+    );
+    --shadow-glow: 0 0 0 1px rgb(var(--accent-rgb) / 0.18), 0 24px 70px -24px rgb(var(--accent-rgb) / 0.62);
+    --shadow-glow-accent: 0 0 0 1px rgb(var(--accent-rgb) / 0.25), 0 24px 70px -26px rgb(var(--accent-rgb) / 0.58);
+    --shadow-neon-ring: 0 0 0 2px rgb(var(--accent-rgb) / 0.85), 0 0 26px 4px rgb(var(--accent-rgb) / 0.45);
   }
 
   * {
@@ -26,15 +124,20 @@
   html {
     scroll-behavior: smooth;
     -webkit-tap-highlight-color: transparent;
+    background-color: var(--bg-primary);
   }
 
   body {
-    @apply bg-ink-950 font-sans text-slate-400 antialiased;
-    background-color: #06070b;
+    @apply font-sans text-slate-400 antialiased;
+    background-color: var(--bg-primary);
     background-image:
-      radial-gradient(60rem 42rem at 12% -12%, rgba(168, 85, 247, 0.2), transparent 60%),
-      radial-gradient(52rem 38rem at 96% 0%, rgba(0, 217, 255, 0.13), transparent 62%),
-      radial-gradient(40rem 30rem at 50% 110%, rgba(124, 58, 237, 0.12), transparent 65%);
+      radial-gradient(60rem 42rem at 12% -12%, rgb(var(--accent-rgb) / 0.2), transparent 60%),
+      radial-gradient(52rem 38rem at 96% 0%, rgb(var(--accent-light-rgb) / 0.13), transparent 62%),
+      radial-gradient(40rem 30rem at 50% 110%, rgb(var(--accent-deep-rgb) / 0.18), transparent 65%),
+      linear-gradient(
+        rgb(0 0 0 / var(--bg-overlay-opacity)),
+        rgb(0 0 0 / var(--bg-overlay-opacity))
+      );
     background-attachment: fixed;
     background-repeat: no-repeat;
     /* iOS safe area для PWA */
@@ -58,7 +161,7 @@
     @apply outline-none ring-2 ring-accent-400/70 ring-offset-2 ring-offset-ink-950;
   }
 
-  /* Тёмный скроллбар с неоновым бегунком */
+  /* Скроллбар подхватывает активный акцент и фон темы. */
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -67,8 +170,8 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: linear-gradient(#a855f7, #00d9ff);
-    border: 3px solid #06070b;
+    background: var(--brand-gradient);
+    border: 3px solid var(--scrollbar-border);
     border-radius: 9999px;
   }
 
@@ -78,15 +181,16 @@
       width: 4px;
     }
     ::-webkit-scrollbar-thumb {
-      border: 1px solid #06070b;
+      border: 1px solid var(--scrollbar-border);
     }
   }
 }
 
 @layer utilities {
-  /* Градиентный текст */
+  /* Градиентный текст, синхронизированный с активной темой. */
   .text-gradient {
-    @apply bg-gradient-to-r from-violet-300 via-fuchsia-200 to-cyan-300 bg-clip-text text-transparent;
+    @apply bg-clip-text text-transparent;
+    background-image: var(--brand-gradient);
   }
 
   .text-gradient-brand {
@@ -117,30 +221,31 @@
   .glass {
     @apply border backdrop-blur-2xl;
     border-color: var(--glass-border);
-    background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)), var(--glass-bg);
     box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
   }
 
   .glass-strong {
     @apply border backdrop-blur-3xl;
-    border-color: rgba(255, 255, 255, 0.11);
-    background: linear-gradient(160deg, rgba(20, 24, 36, 0.78), rgba(10, 12, 18, 0.7));
+    border-color: var(--glass-border);
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)), var(--glass-bg-strong);
     box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 30px 60px -30px rgba(0, 0, 0, 0.8);
   }
 
   .glass-card {
     @apply rounded-3xl border backdrop-blur-2xl transition duration-300;
     border-color: var(--glass-border);
-    background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015));
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)), var(--glass-bg);
     box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
   }
 
   .glass-card:hover {
-    border-color: rgba(168, 85, 247, 0.28);
+    border-color: rgb(var(--accent-rgb) / 0.34);
   }
 
   .glass-tile {
-    @apply rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl;
+    @apply rounded-2xl border border-white/[0.08] backdrop-blur-xl;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)), var(--glass-bg);
   }
 
   .ring-gradient {
@@ -152,7 +257,7 @@
     inset: 0;
     border-radius: inherit;
     padding: 1px;
-    background: linear-gradient(140deg, rgba(168, 85, 247, 0.6), rgba(0, 217, 255, 0.4), transparent 60%);
+    background: linear-gradient(140deg, rgb(var(--accent-light-rgb) / 0.72), rgb(var(--accent-rgb) / 0.46), transparent 60%);
     -webkit-mask:
       linear-gradient(#000 0 0) content-box,
       linear-gradient(#000 0 0);
@@ -163,12 +268,12 @@
 
   .speaking-ring {
     @apply rounded-2xl;
-    box-shadow: 0 0 0 2px rgba(0, 217, 255, 0.85), 0 0 22px 2px rgba(0, 217, 255, 0.4);
+    box-shadow: var(--shadow-neon-ring);
     animation: neon-breathe 1.6s ease-in-out infinite;
   }
 
   .shadow-glow {
-    box-shadow: 0 24px 70px -24px rgba(168, 85, 247, 0.75);
+    box-shadow: var(--shadow-glow);
   }
 
   /* iOS safe area: добавляем padding для нижней панели. */
@@ -203,10 +308,10 @@
 @keyframes pulse-glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.5), 0 24px 70px -24px rgba(168, 85, 247, 0.75);
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.5), 0 24px 70px -24px rgb(var(--accent-rgb) / 0.5);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(168, 85, 247, 0), 0 24px 70px -12px rgba(168, 85, 247, 0.9);
+    box-shadow: 0 0 0 8px rgb(var(--accent-rgb) / 0), 0 24px 70px -12px rgb(var(--accent-rgb) / 0.8);
   }
 }
 

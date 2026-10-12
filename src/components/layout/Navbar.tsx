@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { Logo } from "@/components/landing/logo";
+import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import { ROLE_LABELS, type Role } from "@/types";
 import { cn, getInitials } from "@/lib/utils";
 
@@ -132,8 +133,10 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
           })}
         </nav>
 
-        {/* Профиль (десктоп) */}
+        {/* Профиль и тема оформления (десктоп) */}
         <div className="hidden items-center gap-3 md:flex">
+          <ThemeSwitcher compact />
+
           {!isAuthenticated && (
             <>
               <Link
@@ -271,6 +274,10 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
               </div>
             </div>
           ) : null}
+
+          <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5">
+            <ThemeSwitcher />
+          </div>
 
           <nav className="flex flex-col gap-1">
             {visibleItems.map((item) => (

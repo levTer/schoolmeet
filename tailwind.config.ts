@@ -1,9 +1,11 @@
 import type { Config } from "tailwindcss";
 
+const themeRgb = (variable: string) => `rgb(var(${variable}) / <alpha-value>)`;
+
 /**
- * Палитра SchoolMeet, этап 3: почти чёрный графит, ярко-фиолетовый бренд и
- * неоново-синий акцент. Токены используются во всём сайте (лендинг, кабинет,
- * формы, видеокомната), поэтому менять цвета стоит только здесь.
+ * Цветовые токены ссылаются на CSS variables, поэтому все использующие их
+ * классы (bg-brand-500, text-accent-300, bg-ink-950 и т. д.) переключаются
+ * одновременно при изменении data-theme на корневом элементе.
  */
 const config: Config = {
   darkMode: "class",
@@ -15,38 +17,41 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        /** Графитовая подложка: от почти чёрного (950) до светлого графита (700). */
+        primary: themeRgb("--bg-primary-rgb"),
+        /** Динамические поверхности интерфейса — глубокий фон и уровни карточек. */
         ink: {
-          950: "#06070b",
-          900: "#0a0c12",
-          850: "#0e1119",
-          800: "#151923",
-          700: "#1d2230",
+          950: themeRgb("--bg-deep-rgb"),
+          900: themeRgb("--bg-surface-rgb"),
+          850: themeRgb("--bg-surface-raised-rgb"),
+          800: themeRgb("--bg-panel-rgb"),
+          700: themeRgb("--bg-panel-strong-rgb"),
         },
-        /** Ярко-фиолетовый бренд: кнопки, активные состояния, свечение. */
+        /** Сохраняем существующие имена классов, но переводим бренд на акцент темы. */
         brand: {
-          50: "#faf5ff",
-          100: "#f3e8ff",
-          200: "#e9d5ff",
-          300: "#d8b4fe",
-          400: "#c084fc",
-          500: "#a855f7",
-          600: "#9333ea",
-          700: "#7e22ce",
-          800: "#6b21a8",
-          900: "#581c87",
-          950: "#3b0764",
+          50: themeRgb("--accent-pale-rgb"),
+          100: themeRgb("--accent-pale-rgb"),
+          200: themeRgb("--accent-light-rgb"),
+          300: themeRgb("--accent-light-rgb"),
+          400: themeRgb("--accent-rgb"),
+          500: themeRgb("--accent-rgb"),
+          600: themeRgb("--accent-strong-rgb"),
+          700: themeRgb("--accent-deep-rgb"),
+          800: themeRgb("--accent-deep-rgb"),
+          900: themeRgb("--accent-deep-rgb"),
+          950: themeRgb("--accent-deep-rgb"),
         },
-        /** Неоново-синий акцент: подсветка, таймер, «говорит сейчас». */
+        /** Акцентные статусы, подсветки, таймер и индикатор говорящего. */
         accent: {
-          300: "#8cf3ff",
-          400: "#00d9ff",
-          500: "#00b4ff",
-          600: "#0091e6",
+          100: themeRgb("--accent-pale-rgb"),
+          200: themeRgb("--accent-light-rgb"),
+          300: themeRgb("--accent-light-rgb"),
+          400: themeRgb("--accent-rgb"),
+          500: themeRgb("--accent-rgb"),
+          600: themeRgb("--accent-strong-rgb"),
         },
         neon: {
-          blue: "#00d9ff",
-          violet: "#b44dff",
+          blue: themeRgb("--accent-rgb"),
+          violet: themeRgb("--accent-light-rgb"),
         },
       },
       fontFamily: {
@@ -54,14 +59,13 @@ const config: Config = {
         mono: ["var(--font-geist-mono)", "ui-monospace", "monospace"],
       },
       backgroundImage: {
-        "brand-gradient": "linear-gradient(135deg, #b44dff 0%, #8b3dff 35%, #3b82f6 70%, #00d9ff 100%)",
-        "brand-gradient-soft":
-          "linear-gradient(135deg, rgba(168,85,247,.20) 0%, rgba(59,130,246,.12) 50%, rgba(0,217,255,.16) 100%)",
+        "brand-gradient": "var(--brand-gradient)",
+        "brand-gradient-soft": "var(--brand-gradient-soft)",
       },
       boxShadow: {
-        glow: "0 0 0 1px rgba(168, 85, 247, 0.18), 0 24px 70px -24px rgba(168, 85, 247, 0.75)",
-        "glow-accent": "0 0 0 1px rgba(0, 217, 255, 0.25), 0 24px 70px -26px rgba(0, 217, 255, 0.7)",
-        "neon-ring": "0 0 0 2px rgba(0, 217, 255, 0.85), 0 0 26px 4px rgba(0, 217, 255, 0.45)",
+        glow: "var(--shadow-glow)",
+        "glow-accent": "var(--shadow-glow-accent)",
+        "neon-ring": "var(--shadow-neon-ring)",
         "inner-top": "inset 0 1px 0 0 rgba(255, 255, 255, 0.07)",
       },
       keyframes: {
@@ -93,12 +97,20 @@ const config: Config = {
           to: { transform: "rotate(360deg)" },
         },
         "neon-breathe": {
-          "0%, 100%": { boxShadow: "0 0 0 2px rgba(0,217,255,.85), 0 0 18px 2px rgba(0,217,255,.35)" },
-          "50%": { boxShadow: "0 0 0 2px rgba(0,217,255,1), 0 0 34px 6px rgba(0,217,255,.6)" },
+          "0%, 100%": {
+            boxShadow: "0 0 0 2px rgb(var(--accent-rgb) / .85), 0 0 18px 2px rgb(var(--accent-rgb) / .35)",
+          },
+          "50%": {
+            boxShadow: "0 0 0 2px rgb(var(--accent-rgb) / 1), 0 0 34px 6px rgb(var(--accent-rgb) / .6)",
+          },
         },
         "pulse-glow": {
-          "0%, 100%": { boxShadow: "0 0 0 0 rgba(168,85,247,.5), 0 24px 70px -24px rgba(168,85,247,.75)" },
-          "50%": { boxShadow: "0 0 0 8px rgba(168,85,247,0), 0 24px 70px -12px rgba(168,85,247,.9)" },
+          "0%, 100%": {
+            boxShadow: "0 0 0 0 rgb(var(--accent-rgb) / .5), 0 24px 70px -24px rgb(var(--accent-rgb) / .5)",
+          },
+          "50%": {
+            boxShadow: "0 0 0 8px rgb(var(--accent-rgb) / 0), 0 24px 70px -12px rgb(var(--accent-rgb) / .8)",
+          },
         },
         "page-enter": {
           from: { opacity: "0", transform: "translateY(12px)" },
