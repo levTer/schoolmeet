@@ -119,43 +119,48 @@ export async function backfillSchoolInviteTokens(db: PrismaClient = prisma): Pro
 }
 
 /**
- * Создаёт гарантированного демо-администратора (`GUARANTEED_ADMIN`), если его
- * ещё нет в базе.
+ * Создаёт или обновляет гарантированного демо-администратора (`GUARANTEED_ADMIN`)
+ * в школе `schoolId`.
  *
  * Зачем: роль ADMIN нельзя получить через публичную форму регистрации, поэтому
  * пустая база (свежий деплой без сида) осталась бы без единого администратора —
  * и в админ-панель никто не смог бы войти.
  *
- * Идемпотентно: существующий аккаунт НЕ перезаписываем — сменённые вручную
- * пароль, имя или роль сохраняются. Email храним нормализованным, как и форма
- * регистрации (`cleanEmail` в `/api/auth/register`), а пароль — только bcrypt-хеш
- * (`hashPassword` → `bcryptjs.hash(password, 10)`).
+ * Идемпотентно «создать/обновить»: аккаунт `admin@schoolmeet.ru` при каждом
+ * вызове приводится к демо-конфигу — пароль `Admin123!` (bcrypt-хеш:
+ * `hashPassword` → `bcryptjs.hash(password, 10)`), роль `ADMIN`, школа основная
+ * (`Sinlycem26`). Email храним нормализованным, как и форма регистрации
+ * (`cleanEmail` в `/api/auth/register` и `authorize` в `@/lib/auth`), поэтому
+ * демо-вход гарантированно работает после каждого старта сервера.
  */
 async function ensureGuaranteedAdmin(db: PrismaClient, schoolId: string): Promise<void> {
   const email = GUARANTEED_ADMIN.email.toLowerCase().trim();
+  const data = {
+    email,
+    password: await hashPassword(GUARANTEED_ADMIN.password),
+    name: GUARANTEED_ADMIN.name,
+    role: GUARANTEED_ADMIN.role,
+    schoolId,
+    classId: null,
+    grade: null,
+  };
 
+  // Ищем без учёта регистра: аккаунт мог быть создан до нормализации email
+  // («Admin@SchoolMeet.ru») — его надо обновить, а не дублировать второй строкой.
   const existing = await db.user.findFirst({
     where: { email: { equals: email, mode: "insensitive" } },
     select: { id: true },
   });
-  if (existing) return;
 
   try {
-    await db.user.create({
-      data: {
-        email,
-        password: await hashPassword(GUARANTEED_ADMIN.password),
-        name: GUARANTEED_ADMIN.name,
-        role: GUARANTEED_ADMIN.role,
-        schoolId,
-        classId: null,
-        grade: null,
-      },
-    });
-
-    console.warn(
-      `[schools] Создан гарантированный администратор ${email} — смените пароль после первого входа.`,
-    );
+    if (existing) {
+      await db.user.update({ where: { id: existing.id }, data });
+    } else {
+      await db.user.create({ data });
+      console.warn(
+        `[schools] Создан гарантированный администратор ${email} — демо-доступ восстанавливается при каждом старте.`,
+      );
+    }
   } catch (error) {
     // Параллельный инстанс успел создать аккаунт первым — уникальный индекс
     // победил, для нас это не ошибка.
@@ -171,8 +176,8 @@ let defaultSchoolPromise: Promise<SchoolSummary> | null = null;
  * Existing SCHOOL1 installations are migrated/merged into the primary school,
  * preserving user, class, schedule, homework, and meeting references.
  *
- * Также создаёт гарантированного демо-администратора (`GUARANTEED_ADMIN`) в
- * основной школе, если его ещё нет (см. `ensureGuaranteedAdmin`).
+ * Также создаёт/обновляет гарантированного демо-администратора (`GUARANTEED_ADMIN`)
+ * в основной школе (см. `ensureGuaranteedAdmin`).
  */
 export async function provisionConfiguredSchools(db: PrismaClient = prisma): Promise<Map<string, SchoolSummary>> {
   const schools = new Map<string, SchoolSummary>();
@@ -238,7 +243,8 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
   }
 
   // Гарантированный админ основной школы: свежий деплой без сида получает
-  // рабочий вход в `/admin`. Идемпотентно — существующий аккаунт не трогаем.
+  // рабочий вход в `/admin`. Идемпотентно — аккаунт создаётся/обновляется
+  // под демо-конфиг (admin@schoolmeet.ru / Admin123!, роль ADMIN, школа Sinlycem26).
   if (primarySchool) {
     await ensureGuaranteedAdmin(db, primarySchool.id);
   }

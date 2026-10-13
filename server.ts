@@ -12,12 +12,26 @@ import { createServer } from "node:http";
 import next from "next";
 
 import { attachRealtime } from "./src/server/realtime";
+import { provisionConfiguredSchools } from "./src/lib/schools";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
 
 async function main(): Promise<void> {
+  // Школы и гарантированный демо-админ инициализируются при каждом старте
+  // (идемпотентно): свежий деплой без сида сразу получает рабочий вход в `/admin`.
+  // `provisionConfiguredSchools` внутри гарантированно вызывает `ensureGuaranteedAdmin`
+  // (admin@schoolmeet.ru / Admin123!, роль ADMIN, школа Sinlycem26).
+  try {
+    await provisionConfiguredSchools();
+    console.log("✓ Школы и гарантированный администратор готовы");
+  } catch (error) {
+    // БД может быть временно недоступна — сервер поднимается, а инициализация
+    // продублируется лениво при первом входе (`ensureUserSchoolMembership`).
+    console.error("[startup] Не удалось инициализировать школы и администратора:", error);
+  }
+
   const app = next({ dev, hostname: host, port });
   const handle = app.getRequestHandler();
 
