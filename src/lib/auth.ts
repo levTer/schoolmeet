@@ -1,11 +1,10 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import bcryptjs from "bcryptjs";
 
 import { LOGIN_ERROR } from "@/lib/auth-errors";
-import { verifyPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { ensureUserSchoolMembership } from "@/lib/schools";
-import { normalizeEmail } from "@/lib/validation";
 import type { Role } from "@/types";
 
 /** Сессия живёт 30 дней и продлевается при активности пользователя. */
@@ -85,12 +84,15 @@ export const authOptions: NextAuthOptions = {
        * «Пользователь с таким email не найден», «Неверный пароль».
        */
       async authorize(credentials) {
+        if (!credentials?.email || !credentials.password) {
+          throw new Error(LOGIN_ERROR.missingCredentials);
+        }
+
         // Email приводим к единому виду (`toLowerCase().trim()`): в БД он лежит
         // в нижнем регистре, а пользователь может ввести « Ivan@School.ru ».
-        const cleanEmail = normalizeEmail(credentials?.email ?? "");
-        const password = credentials?.password ?? "";
+        const cleanEmail = credentials.email.toLowerCase().trim();
 
-        if (!cleanEmail || !password) {
+        if (!cleanEmail) {
           throw new Error(LOGIN_ERROR.missingCredentials);
         }
 
@@ -99,8 +101,8 @@ export const authOptions: NextAuthOptions = {
           throw new Error(LOGIN_ERROR.userNotFound);
         }
 
-        // bcryptjs: `verifyPassword` → `bcrypt.compare(пароль, хеш из БД)`.
-        const isPasswordValid = await verifyPassword(password, user.password);
+        // bcryptjs: сверяем открытый пароль с bcrypt-хешем из БД.
+        const isPasswordValid = await bcryptjs.compare(credentials.password, user.password);
         if (!isPasswordValid) {
           throw new Error(LOGIN_ERROR.invalidPassword);
         }
