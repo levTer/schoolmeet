@@ -44,6 +44,13 @@ import {
   resolveInviteRole,
   rolesForInvite,
 } from "../src/lib/invite-rules";
+import {
+  configuredSchoolInviteData,
+  generateInviteToken,
+  hasInviteTokenChanges,
+  inviteTokensForNewSchool,
+  missingInviteTokens,
+} from "../src/lib/invite-tokens";
 import { buildSchoolRoomId, hasSchoolAccess } from "../src/lib/realtime";
 
 const lesson = (dayOfWeek: number, startTime: string, endTime: string, id = `${dayOfWeek}-${startTime}`) => ({
@@ -200,6 +207,72 @@ describe("секретные ссылки-приглашения", () => {
     assert.equal(configuredAdminInviteToken("sinlycem26"), "admin-sinlycem-2026");
     assert.equal(configuredAdminInviteToken("Anna.Terentieva77"), "admin-annat-2026");
     assert.equal(configuredAdminInviteToken("UnknownSchool"), undefined);
+  });
+});
+
+/**
+ * Токены приглашений в БД nullable (`String? @unique`): обязательную колонку без
+ * DB-level default PostgreSQL не даёт добавить в непустую таблицу `schools`,
+ * из-за чего `prisma db push` падал на Render. Значения выпускает приложение.
+ */
+describe("выпуск токенов-приглашений (nullable-колонки)", () => {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  it("генерирует случайный UUID-токен", () => {
+    const token = generateInviteToken();
+    assert.match(token, UUID);
+    assert.notEqual(token, generateInviteToken());
+  });
+
+  it("создаёт оба токена для новой школы: пресет админа у настроенных, случайные у остальных", () => {
+    const configured = inviteTokensForNewSchool("Sinlycem26");
+    assert.equal(configured.adminInviteToken, CONFIGURED_ADMIN_INVITE_TOKENS.Sinlycem26);
+    assert.match(configured.teacherInviteToken, UUID);
+
+    const custom = inviteTokensForNewSchool("UnknownSchool");
+    assert.match(custom.adminInviteToken, UUID);
+    assert.match(custom.teacherInviteToken, UUID);
+    assert.notEqual(custom.adminInviteToken, custom.teacherInviteToken);
+  });
+
+  it("досоздаёт только отсутствующие токены, пустая строка считается отсутствующей", () => {
+    assert.deepEqual(missingInviteTokens({ code: "X", teacherInviteToken: "t", adminInviteToken: "a" }), {});
+    assert.equal(hasInviteTokenChanges(missingInviteTokens({ code: "X", teacherInviteToken: "t", adminInviteToken: "a" })), false);
+
+    const onlyTeacher = missingInviteTokens({ code: "X", teacherInviteToken: null, adminInviteToken: "a" });
+    assert.deepEqual(Object.keys(onlyTeacher), ["teacherInviteToken"]);
+    assert.equal(hasInviteTokenChanges(onlyTeacher), true);
+
+    const both = missingInviteTokens({ code: "Sinlycem26", teacherInviteToken: "", adminInviteToken: undefined });
+    assert.deepEqual(Object.keys(both).sort(), ["adminInviteToken", "teacherInviteToken"]);
+    assert.equal(both.adminInviteToken, CONFIGURED_ADMIN_INVITE_TOKENS.Sinlycem26);
+  });
+
+  it("возвращает admin-токен настроенной школы к пресету и не трогает заполненные", () => {
+    const drifted = configuredSchoolInviteData({
+      code: "Sinlycem26",
+      teacherInviteToken: "teacher-uuid",
+      adminInviteToken: "случайный-токен-из-старой-базы",
+    });
+    assert.deepEqual(drifted, { adminInviteToken: CONFIGURED_ADMIN_INVITE_TOKENS.Sinlycem26 });
+
+    const intact = configuredSchoolInviteData({
+      code: "Sinlycem26",
+      teacherInviteToken: "teacher-uuid",
+      adminInviteToken: CONFIGURED_ADMIN_INVITE_TOKENS.Sinlycem26,
+    });
+    assert.deepEqual(intact, {});
+    assert.equal(hasInviteTokenChanges(intact), false);
+  });
+
+  it("школа без токенов не выдаёт никакую роль приглашения", () => {
+    assert.equal(resolveInviteRole({ teacherInviteToken: null, adminInviteToken: null }, "teacher-token-1"), null);
+    assert.equal(resolveInviteRole({ teacherInviteToken: null, adminInviteToken: null }, ""), null);
+    // Заполненный после backfill токен снова работает.
+    assert.equal(
+      resolveInviteRole({ teacherInviteToken: "teacher-uuid", adminInviteToken: null }, "teacher-uuid"),
+      "TEACHER",
+    );
   });
 });
 
