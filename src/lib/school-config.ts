@@ -33,26 +33,43 @@ export function configuredAdminInviteToken(code: string): string | undefined {
 }
 
 /**
- * Гарантированный демо-администратор основной школы (`Sinlycem26`).
+ * Гарантированные демо-администраторы всех настроенных школ.
  *
  * Роль ADMIN нельзя получить через публичную форму регистрации (см. PUBLIC_ROLES),
- * поэтому аккаунт создаётся/обновляется приложением вместе со школами —
+ * поэтому аккаунты создаются/обновляются приложением вместе со школами —
  * `provisionConfiguredSchools` в `@/lib/schools` (при старте `server.ts` и в
  * сиде). Это страховка для свежего деплоя или пустой базы без сида: вход в
- * `/admin` доступен сразу.
+ * `/admin` доступен в каждой из трёх школ сразу.
  *
- * Демо-доступ гарантирован: при каждой инициализации аккаунт приводится к этим
- * реквизитам (email, пароль, роль, школа), поэтому логин-пароль работают после
- * каждого старта сервера.
+ * Демо-доступ гарантирован: при каждой инициализации каждый аккаунт приводится
+ * к этим реквизитам (email, пароль, роль, школа).
  */
-export const GUARANTEED_ADMIN = {
-  email: "admin@schoolmeet.ru",
-  password: "Admin123!",
-  name: "Администратор SchoolMeet",
-  role: "ADMIN",
-  /** Школа администратора — основная (`DEFAULT_SCHOOL` = `Sinlycem26`). */
-  schoolCode: DEFAULT_SCHOOL.code,
-} as const;
+export const GUARANTEED_ADMINS = [
+  {
+    email: "admin@schoolmeet.ru",
+    password: "Admin123!",
+    name: "Администратор Синлицея",
+    role: "ADMIN",
+    schoolCode: "Sinlycem26",
+  },
+  {
+    email: "fullhouse@schoolmeet.ru",
+    password: "Fullhouse123!",
+    name: "Администратор Fullhouse",
+    role: "ADMIN",
+    schoolCode: "Fulhouseteem26",
+  },
+  {
+    email: "anna@schoolmeet.ru",
+    password: "Anna123!",
+    name: "Анна Терентьева",
+    role: "ADMIN",
+    schoolCode: "Anna.Terentieva77",
+  },
+] as const;
+
+/** Обратная совместимость для кода и документации, которым нужен основной админ. */
+export const GUARANTEED_ADMIN = GUARANTEED_ADMINS[0];
 
 /** The old single-tenant demo code is migrated into the primary school. */
 export const LEGACY_DEFAULT_SCHOOL_CODE = "SCHOOL1";

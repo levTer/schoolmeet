@@ -19,13 +19,13 @@ const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
 
 async function main(): Promise<void> {
-  // Школы и гарантированный демо-админ инициализируются при каждом старте
-  // (идемпотентно): свежий деплой без сида сразу получает рабочий вход в `/admin`.
-  // `provisionConfiguredSchools` внутри гарантированно вызывает `ensureGuaranteedAdmin`
-  // (admin@schoolmeet.ru / Admin123!, роль ADMIN, школа Sinlycem26).
+  // Школы и гарантированные демо-админы инициализируются при каждом старте
+  // (идемпотентно): свежий деплой без сида сразу получает рабочий вход в `/admin`
+  // во всех трёх школах. `provisionConfiguredSchools` создаёт/обновляет
+  // admin@schoolmeet.ru, fullhouse@schoolmeet.ru и anna@schoolmeet.ru.
   try {
     await provisionConfiguredSchools();
-    console.log("✓ Школы и гарантированный администратор готовы");
+    console.log("✓ Школы и гарантированные администраторы готовы");
   } catch (error) {
     // БД может быть временно недоступна — сервер поднимается, а инициализация
     // продублируется лениво при первом входе (`ensureUserSchoolMembership`).

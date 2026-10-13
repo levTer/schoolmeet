@@ -182,14 +182,22 @@ src/types/next-auth.d.ts           Расширение типов сессии 
 
 Демо-аккаунты после `npm run db:seed` (пароль задаётся `SEED_PASSWORD`, по умолчанию
 `schoolmeet`): `admin@schoolmeet.dev`, `teacher@schoolmeet.dev`, `student@schoolmeet.dev`.
-Подсказки с демо-доступами на странице входа включаются флагом
-`NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS=1` (по умолчанию выключены).
 
-Кроме сида приложение само создаёт **гарантированного администратора** школы `Sinlycem26` —
-`admin@schoolmeet.ru` / `Admin123!` (`GUARANTEED_ADMIN` в `src/lib/school-config.ts`, создание —
-`provisionConfiguredSchools` в `src/lib/schools.ts`). Аккаунт нужен, чтобы в свежем деплое без
-сида был рабочий вход в `/admin`: роль `ADMIN` через публичную регистрацию не выдаётся. Пароль
-смените в админ-панели после первого входа.
+Кроме сида приложение само создаёт и при каждом старте обновляет **гарантированных
+администраторов** всех трёх школ. Эти же реквизиты доступны кнопками в блоке
+«Быстрый демо-вход» на странице `/login`:
+
+| Школа | Email | Пароль |
+|---|---|---|
+| Синлицей (`Sinlycem26`) | `admin@schoolmeet.ru` | `Admin123!` |
+| Fullhouse (`Fulhouseteem26`) | `fullhouse@schoolmeet.ru` | `Fullhouse123!` |
+| Anna T (`Anna.Terentieva77`) | `anna@schoolmeet.ru` | `Anna123!` |
+
+Конфигурация хранится в `GUARANTEED_ADMINS` (`src/lib/school-config.ts`), а создание и
+обновление выполняет `provisionConfiguredSchools` (`src/lib/schools.ts`). Аккаунты нужны,
+чтобы в свежем деплое без сида был рабочий вход в `/admin` для каждой школы: роль `ADMIN`
+через публичную регистрацию не выдаётся. После первого входа в продакшен замените эти
+демо-пароли через админ-панель.
 
 Email на регистрации и на входе приводится к одному виду — `value.toLowerCase().trim()`
 (`src/lib/validation.ts` → `cleanEmail` в `/api/auth/register` и в `authorize` из `src/lib/auth.ts`).

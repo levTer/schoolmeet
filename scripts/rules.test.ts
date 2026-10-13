@@ -38,6 +38,7 @@ import {
   CONFIGURED_SCHOOLS,
   DEFAULT_CLASS_NAMES,
   DEFAULT_SCHOOL,
+  GUARANTEED_ADMINS,
   GUARANTEED_ADMIN,
   configuredAdminInviteToken,
 } from "../src/lib/school-config";
@@ -202,15 +203,26 @@ describe("нормализация email и пароли (вход/регист�
     assert.equal(await verifyPassword("", hash), false);
   });
 
-  it("гарантированный демо-админ: нормализованный email, роль ADMIN и школа Sinlycem26", () => {
-    assert.equal(GUARANTEED_ADMIN.email, "admin@schoolmeet.ru");
-    assert.equal(normalizeEmail(GUARANTEED_ADMIN.email), GUARANTEED_ADMIN.email);
-    assert.equal(GUARANTEED_ADMIN.role, "ADMIN");
-    assert.equal(GUARANTEED_ADMIN.schoolCode, DEFAULT_SCHOOL.code);
-    assert.ok(CONFIGURED_SCHOOLS.some((school) => school.code === GUARANTEED_ADMIN.schoolCode));
+  it("гарантированные демо-админы покрывают все три школы", () => {
+    assert.deepEqual(
+      GUARANTEED_ADMINS.map(({ email, password, schoolCode, role }) => ({ email, password, schoolCode, role })),
+      [
+        { email: "admin@schoolmeet.ru", password: "Admin123!", schoolCode: "Sinlycem26", role: "ADMIN" },
+        { email: "fullhouse@schoolmeet.ru", password: "Fullhouse123!", schoolCode: "Fulhouseteem26", role: "ADMIN" },
+        { email: "anna@schoolmeet.ru", password: "Anna123!", schoolCode: "Anna.Terentieva77", role: "ADMIN" },
+      ],
+    );
 
-    // Пароль демо-админа должен проходить собственную политику формы регистрации.
-    assert.equal(getPasswordIssues(GUARANTEED_ADMIN.password).length, 0);
+    for (const admin of GUARANTEED_ADMINS) {
+      assert.equal(normalizeEmail(admin.email), admin.email);
+      assert.equal(admin.role, "ADMIN");
+      assert.ok(CONFIGURED_SCHOOLS.some((school) => school.code === admin.schoolCode));
+      assert.equal(getPasswordIssues(admin.password).length, 0);
+    }
+
+    // Основной экспорт сохраняется для потребителей, которым нужен первый админ.
+    assert.deepEqual(GUARANTEED_ADMIN, GUARANTEED_ADMINS[0]);
+    assert.equal(GUARANTEED_ADMIN.schoolCode, DEFAULT_SCHOOL.code);
   });
 });
 
