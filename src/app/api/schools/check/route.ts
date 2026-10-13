@@ -2,8 +2,13 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_CLASS_NAMES, configuredAdminInviteToken } from "@/lib/school-config";
+import { DEFAULT_CLASS_NAMES } from "@/lib/school-config";
 import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
+import {
+  configuredSchoolInviteData,
+  hasInviteTokenChanges,
+  inviteTokensForNewSchool,
+} from "@/lib/invite-tokens";
 import { normalizeSchoolCode } from "@/lib/school-rules";
 import { listClassesForSchool } from "@/lib/schools";
 
@@ -31,12 +36,6 @@ function serverError(): NextResponse {
 function matchAllowedSchool(code: string): AllowedSchool | null {
   const needle = code.trim().toLowerCase();
   return ALLOWED_SCHOOLS.find((school) => school.code.toLowerCase() === needle) ?? null;
-}
-
-/** Предустановленный admin-токен для наших школ (см. `school-config.ts`). */
-function adminInviteData(code: string): { adminInviteToken?: string } {
-  const preset = configuredAdminInviteToken(code);
-  return preset ? { adminInviteToken: preset } : {};
 }
 
 /** Код и токен приглашения из query (`?code=`, `?invite=`) или JSON-тела. Тело читается один раз. */
@@ -75,7 +74,9 @@ async function findOrCreateSchool(code: string) {
   if (!school && allowed) {
     try {
       school = await prisma.school.create({
-        data: { name: allowed.name, code: allowed.code, ...adminInviteData(allowed.code) },
+        // Токены приглашений выпускает приложение: колонки nullable и
+        // DB-level default у них нет (см. `@/lib/invite-tokens`).
+        data: { name: allowed.name, code: allowed.code, ...inviteTokensForNewSchool(allowed.code) },
         select: SCHOOL_SELECT,
       });
     } catch (error) {
@@ -89,15 +90,16 @@ async function findOrCreateSchool(code: string) {
     }
   }
 
-  // Для разрешённого кода всегда досеиваем стандартный набор 5-А … 11-Б
-  // и возвращаем предустановленный admin-токен к фиксированному значению.
+  // Для разрешённого кода всегда досеиваем стандартный набор 5-А … 11-Б,
+  // возвращаем предустановленный admin-токен к фиксированному значению и
+  // выпускаем токены, которых в строке нет (колонки стали nullable).
   if (school && allowed) {
     const schoolId = school.id;
-    const preset = adminInviteData(allowed.code);
-    if (preset.adminInviteToken && preset.adminInviteToken !== school.adminInviteToken) {
+    const inviteData = configuredSchoolInviteData({ ...school, code: allowed.code });
+    if (hasInviteTokenChanges(inviteData)) {
       school = await prisma.school.update({
         where: { id: schoolId },
-        data: preset,
+        data: inviteData,
         select: SCHOOL_SELECT,
       });
     }

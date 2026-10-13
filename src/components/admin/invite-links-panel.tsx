@@ -7,12 +7,20 @@ interface InviteLinksPanelProps {
   school: {
     name: string;
     code: string;
-    teacherInviteToken: string;
-    adminInviteToken: string;
+    /**
+     * Токены приглашений в БД nullable (`String? @unique`), поэтому здесь
+     * `string | null`: `null` — токен ещё не выпущен (сервер досоздаёт его сам,
+     * см. `backfillSchoolInviteTokens`), ссылку показывать нельзя.
+     */
+    teacherInviteToken: string | null;
+    adminInviteToken: string | null;
   };
 }
 
 type CopyKind = "teacher" | "admin" | null;
+
+/** Текст вместо ссылки, если токен в БД отсутствует (nullable-колонка). */
+const NO_TOKEN_HINT = "Токен не выпущен — обновите страницу: сервер создаёт его автоматически.";
 
 /**
  * Раздел «Управление доступом и Ссылки-приглашения» админ-панели.
@@ -20,6 +28,8 @@ type CopyKind = "teacher" | "admin" | null;
  * Две секретные ссылки школы: регистрация учителей (`teacherInviteToken`)
  * и назначение администраторов (`adminInviteToken`). Токены не попадают в
  * серверный HTML-рендер как абсолютные URL — origin берётся в браузере.
+ * Если токена в базе нет (колонки nullable), вместо ссылки показывается
+ * подсказка, а копирование недоступно.
  */
 export function InviteLinksPanel({ school }: InviteLinksPanelProps) {
   const [origin, setOrigin] = useState("");
@@ -32,14 +42,16 @@ export function InviteLinksPanel({ school }: InviteLinksPanelProps) {
   const links = useMemo(() => {
     const base = `${origin}/auth/register?code=${encodeURIComponent(school.code)}&invite=`;
     return {
-      teacher: `${base}${encodeURIComponent(school.teacherInviteToken)}`,
-      admin: `${base}${encodeURIComponent(school.adminInviteToken)}`,
+      teacher: school.teacherInviteToken ? `${base}${encodeURIComponent(school.teacherInviteToken)}` : null,
+      admin: school.adminInviteToken ? `${base}${encodeURIComponent(school.adminInviteToken)}` : null,
     };
   }, [origin, school.code, school.teacherInviteToken, school.adminInviteToken]);
 
   async function handleCopy(kind: Exclude<CopyKind, null>) {
+    const link = links[kind];
+    if (!link) return;
     try {
-      await navigator.clipboard.writeText(links[kind]);
+      await navigator.clipboard.writeText(link);
       setCopied(kind);
       window.setTimeout(() => setCopied(null), 1800);
     } catch {
@@ -72,14 +84,21 @@ export function InviteLinksPanel({ school }: InviteLinksPanelProps) {
             <h3 className="text-sm font-semibold text-white">🏫 Ссылка для Учителей</h3>
           </div>
 
-          <p className="mt-3 break-all rounded-xl border border-white/10 bg-ink-900/60 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-slate-300">
-            {links.teacher}
-          </p>
+          {links.teacher ? (
+            <p className="mt-3 break-all rounded-xl border border-white/10 bg-ink-900/60 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-slate-300">
+              {links.teacher}
+            </p>
+          ) : (
+            <p className="mt-3 rounded-xl border border-white/10 bg-ink-900/60 px-3 py-2.5 text-[11px] leading-relaxed text-slate-500">
+              {NO_TOKEN_HINT}
+            </p>
+          )}
 
           <button
             type="button"
             onClick={() => void handleCopy("teacher")}
-            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-brand-400/25 bg-brand-500/10 px-4 py-2.5 text-sm font-medium text-brand-100 transition hover:bg-brand-500/20"
+            disabled={!links.teacher}
+            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-brand-400/25 bg-brand-500/10 px-4 py-2.5 text-sm font-medium text-brand-100 transition hover:bg-brand-500/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-brand-500/10"
           >
             {copied === "teacher" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             {copied === "teacher" ? "Скопировано!" : "📋 Скопировать ссылку Учителя"}
@@ -99,14 +118,21 @@ export function InviteLinksPanel({ school }: InviteLinksPanelProps) {
             <h3 className="text-sm font-semibold text-white">👑 Ссылка для Администраторов</h3>
           </div>
 
-          <p className="mt-3 break-all rounded-xl border border-white/10 bg-ink-900/60 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-slate-300">
-            {links.admin}
-          </p>
+          {links.admin ? (
+            <p className="mt-3 break-all rounded-xl border border-white/10 bg-ink-900/60 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-slate-300">
+              {links.admin}
+            </p>
+          ) : (
+            <p className="mt-3 rounded-xl border border-white/10 bg-ink-900/60 px-3 py-2.5 text-[11px] leading-relaxed text-amber-200/60">
+              {NO_TOKEN_HINT}
+            </p>
+          )}
 
           <button
             type="button"
             onClick={() => void handleCopy("admin")}
-            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-amber-400/25 bg-amber-500/10 px-4 py-2.5 text-sm font-medium text-amber-100 transition hover:bg-amber-500/20"
+            disabled={!links.admin}
+            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-amber-400/25 bg-amber-500/10 px-4 py-2.5 text-sm font-medium text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-amber-500/10"
           >
             {copied === "admin" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             {copied === "admin" ? "Скопировано!" : "📋 Скопировать ссылку Админа"}

@@ -13,7 +13,9 @@ export const DEFAULT_SCHOOL = CONFIGURED_SCHOOLS[0];
  * Задаются в сиде (`prisma/seed.ts`) и авто-инициализации школ
  * (`provisionConfiguredSchools`): админ-ссылка каждой школы детерминирована
  * (`/auth/register?code=…&invite=admin-…`). Токены учителей генерируются
- * случайно (`@default(uuid())`) и выдаются только через админ-панель.
+ * случайно приложением (`@/lib/invite-tokens`) и выдаются только через
+ * админ-панель — в БД обе колонки nullable, default на уровне PostgreSQL у них
+ * отсутствует (иначе `prisma db push` не проходил бы на непустой таблице).
  */
 export const CONFIGURED_ADMIN_INVITE_TOKENS: Readonly<Record<string, string>> = {
   Sinlycem26: "admin-sinlycem-2026",

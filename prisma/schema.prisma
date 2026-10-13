@@ -48,10 +48,17 @@ model School {
   code      String   @unique
   /// Секретная ссылка-приглашение для регистрации учителей
   /// (`/auth/register?code=…&invite=…`): только с этим токеном выдаётся роль TEACHER.
-  teacherInviteToken String @default(uuid()) @unique
+  ///
+  /// Nullable ОБЯЗАТЕЛЬНО: `@default(uuid())` Prisma считает на клиенте, а не в БД,
+  /// поэтому NOT NULL-колонку без DB-level default нельзя добавить в уже заполненную
+  /// таблицу — `prisma db push` падал на Render («The required column `adminInviteToken`
+  /// was added to the `schools` table…»). Значения выпускает приложение
+  /// (`src/lib/invite-tokens.ts`, досоздание — `backfillSchoolInviteTokens`).
+  teacherInviteToken String?  @unique
   /// Секретная ссылка-приглашение для назначения администраторов: только с этим
   /// токеном выдаётся роль ADMIN (регистрация или повышение уже вошедшего аккаунта).
-  adminInviteToken   String @default(uuid()) @unique
+  /// Тоже nullable — по той же причине, что и `teacherInviteToken`.
+  adminInviteToken   String?  @unique
   createdAt DateTime @default(now())
 
   users     User[]

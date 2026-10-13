@@ -5,11 +5,15 @@ import { GRADES, type GradeCode } from "@/lib/schedule-rules";
 import { gradeFromClassName, normalizeSchoolCode } from "@/lib/school-rules";
 import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
 import {
+  configuredSchoolInviteData,
+  inviteTokensForNewSchool,
+  missingInviteTokens,
+} from "@/lib/invite-tokens";
+import {
   CONFIGURED_SCHOOLS,
   DEFAULT_CLASS_NAMES,
   DEFAULT_SCHOOL,
   LEGACY_DEFAULT_SCHOOL_CODE,
-  configuredAdminInviteToken,
 } from "@/lib/school-config";
 
 export { gradeFromClassName, normalizeClassName, normalizeSchoolCode } from "@/lib/school-rules";
@@ -30,17 +34,86 @@ export interface SchoolSummary {
   code: string;
 }
 
+/**
+ * Школа вместе со своими секретными токенами-приглашениями.
+ *
+ * Токены nullable: колонки `teacherInviteToken` / `adminInviteToken` объявлены как
+ * `String? @unique`, чтобы `prisma db push` мог добавить их в уже заполненную
+ * таблицу `schools` (PostgreSQL отказывается добавлять NOT NULL-колонку без
+ * DB-level default). Приложение выпускает недостающие значения само — см.
+ * `backfillSchoolInviteTokens` и `getSchoolInviteSummary`, — поэтому `null`
+ * здесь означает лишь «записать токен в БД не удалось».
+ */
+export interface SchoolInviteSummary extends SchoolSummary {
+  teacherInviteToken: string | null;
+  adminInviteToken: string | null;
+}
+
+const SCHOOL_INVITE_SELECT = {
+  id: true,
+  name: true,
+  code: true,
+  teacherInviteToken: true,
+  adminInviteToken: true,
+} as const;
+
 function classNameForGrade(grade: GradeCode): string {
   return `${grade.replace("GRADE_", "")}-А`;
 }
 
 /**
- * Предустановленный admin-токен для наших школ (см. `school-config.ts`).
- * Для остальных школ токен генерирует БД (`@default(uuid())`).
+ * Условно заполняет NULL-токены одной школы.
+ *
+ * Каждая колонка пишется отдельным `updateMany` с фильтром `token: null`: при
+ * параллельных запросах (несколько инстансов Render, гонка регистрации) токен
+ * сохранит только первый вызов, чужое значение не перезапишется.
+ *
+ * Возвращает `true`, если строку изменил именно этот вызов и её надо перечитать.
  */
-function adminInviteData(code: string): { adminInviteToken?: string } {
-  const preset = configuredAdminInviteToken(code);
-  return preset ? { adminInviteToken: preset } : {};
+async function fillMissingInviteTokens(
+  db: PrismaClient,
+  school: { id: string; code: string; teacherInviteToken: string | null; adminInviteToken: string | null },
+): Promise<boolean> {
+  const missing = missingInviteTokens(school);
+  let written = false;
+
+  if (missing.teacherInviteToken) {
+    const { count } = await db.school.updateMany({
+      where: { id: school.id, teacherInviteToken: null },
+      data: { teacherInviteToken: missing.teacherInviteToken },
+    });
+    written = written || count > 0;
+  }
+
+  if (missing.adminInviteToken) {
+    const { count } = await db.school.updateMany({
+      where: { id: school.id, adminInviteToken: null },
+      data: { adminInviteToken: missing.adminInviteToken },
+    });
+    written = written || count > 0;
+  }
+
+  return written;
+}
+
+/**
+ * Выпускает недостающие токены приглашений у ВСЕХ школ базы.
+ *
+ * Нужно после накатывания схемы на живую базу: у строк, созданных до того, как
+ * колонки стали nullable, токенов нет. Идемпотентно — вызывается при старте
+ * приложения (`ensureDefaultSchool`) и в сиде. Возвращает число дополненных школ.
+ */
+export async function backfillSchoolInviteTokens(db: PrismaClient = prisma): Promise<number> {
+  const rows = await db.school.findMany({
+    where: { OR: [{ teacherInviteToken: null }, { adminInviteToken: null }] },
+    select: SCHOOL_INVITE_SELECT,
+  });
+
+  let filled = 0;
+  for (const row of rows) {
+    if (await fillMissingInviteTokens(db, row)) filled += 1;
+  }
+  return filled;
 }
 
 let defaultSchoolPromise: Promise<SchoolSummary> | null = null;
@@ -56,43 +129,49 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
   for (const definition of CONFIGURED_SCHOOLS) {
     let school = await db.school.findUnique({
       where: { code: definition.code },
-      select: { id: true, name: true, code: true },
+      select: SCHOOL_INVITE_SELECT,
     });
 
     // Reuse the old default-school row when migrating a single-tenant database.
     if (!school && definition.code === DEFAULT_SCHOOL.code) {
       const legacySchool = await db.school.findUnique({
         where: { code: LEGACY_DEFAULT_SCHOOL_CODE },
-        select: { id: true, name: true, code: true },
+        select: SCHOOL_INVITE_SELECT,
       });
       if (legacySchool) {
         school = await db.school.update({
           where: { id: legacySchool.id },
           data: { name: definition.name, code: definition.code },
-          select: { id: true, name: true, code: true },
+          select: SCHOOL_INVITE_SELECT,
         });
       }
     }
 
-    if (school) {
-      school = await db.school.update({
-        where: { id: school.id },
-        data: { name: definition.name, ...adminInviteData(definition.code) },
-        select: { id: true, name: true, code: true },
-      });
-    } else {
+    if (!school) {
+      // Новая школа создаётся сразу с обоими токенами приглашений: колонки
+      // nullable и DB-level default у них нет (см. `@/lib/invite-tokens`).
       school = await db.school.upsert({
         where: { code: definition.code },
-        update: { name: definition.name, ...adminInviteData(definition.code) },
-        create: { name: definition.name, code: definition.code, ...adminInviteData(definition.code) },
-        select: { id: true, name: true, code: true },
+        update: { name: definition.name },
+        create: { name: definition.name, code: definition.code, ...inviteTokensForNewSchool(definition.code) },
+        select: SCHOOL_INVITE_SELECT,
       });
     }
 
     if (!school) throw new Error(`Не удалось создать школу ${definition.name}`);
 
+    const schoolId = school.id;
+
+    // Существующая школа: синхронизируем имя, возвращаем admin-токен настроенных
+    // школ к детерминированному пресету и выпускаем недостающие токены.
+    school = await db.school.update({
+      where: { id: schoolId },
+      data: { name: definition.name, ...configuredSchoolInviteData({ ...school, code: definition.code }) },
+      select: SCHOOL_INVITE_SELECT,
+    });
+
     await db.class.createMany({
-      data: DEFAULT_CLASS_NAMES.map((name) => ({ schoolId: school.id, name })),
+      data: DEFAULT_CLASS_NAMES.map((name) => ({ schoolId, name })),
       skipDuplicates: true,
     });
     schools.set(school.code, school);
@@ -106,6 +185,10 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
   if (primarySchool && legacySchool && primarySchool.id !== legacySchool.id) {
     await mergeSchoolData(db, legacySchool.id, primarySchool.id);
   }
+
+  // Школы вне CONFIGURED_SCHOOLS (созданные вручную или до того, как колонки
+  // токенов стали nullable) тоже получают токены приглашений.
+  await backfillSchoolInviteTokens(db);
 
   return schools;
 }
@@ -284,23 +367,24 @@ export async function findSchoolByCode(value: unknown): Promise<SchoolSummary | 
   });
 }
 
-/** Школа вместе со своими секретными токенами-приглашениями. */
-export interface SchoolInviteSummary extends SchoolSummary {
-  teacherInviteToken: string;
-  adminInviteToken: string;
-}
-
-const SCHOOL_INVITE_SELECT = {
-  id: true,
-  name: true,
-  code: true,
-  teacherInviteToken: true,
-  adminInviteToken: true,
-} as const;
-
 /** Токены-приглашения школы (для админ-панели и проверки `invite`). */
 export async function getSchoolInviteSummary(schoolId: string): Promise<SchoolInviteSummary | null> {
-  return prisma.school.findUnique({ where: { id: schoolId }, select: SCHOOL_INVITE_SELECT });
+  const school = await prisma.school.findUnique({ where: { id: schoolId }, select: SCHOOL_INVITE_SELECT });
+  return school ? withInviteTokens(school) : null;
+}
+
+/**
+ * Возвращает школу с выпущенными токенами приглашений.
+ *
+ * Колонки токенов nullable, поэтому у строк, созданных до накатывания текущей
+ * схемы (или в обход приложения), их может не быть. Недостающие значения
+ * досоздаются условной записью, после чего строка перечитывается: вызывающий
+ * код всегда получает токены, которые реально лежат в БД.
+ */
+async function withInviteTokens(school: SchoolInviteSummary): Promise<SchoolInviteSummary> {
+  if (!(await fillMissingInviteTokens(prisma, school))) return school;
+  const fresh = await prisma.school.findUnique({ where: { id: school.id }, select: SCHOOL_INVITE_SELECT });
+  return fresh ?? school;
 }
 
 /**
@@ -318,7 +402,8 @@ export async function findSchoolForInvite(
 
   const byCode = await findSchoolByCode(code);
   if (byCode) {
-    const school = await prisma.school.findUnique({ where: { id: byCode.id }, select: SCHOOL_INVITE_SELECT });
+    // `getSchoolInviteSummary` заодно выпускает недостающие токены школы.
+    const school = await getSchoolInviteSummary(byCode.id);
     if (school) return { school, inviteRole: resolveInviteRole(school, token) };
   }
 
@@ -327,7 +412,7 @@ export async function findSchoolForInvite(
       where: { OR: [{ teacherInviteToken: token }, { adminInviteToken: token }] },
       select: SCHOOL_INVITE_SELECT,
     });
-    if (byToken) return { school: byToken, inviteRole: resolveInviteRole(byToken, token) };
+    if (byToken) return { school: await withInviteTokens(byToken), inviteRole: resolveInviteRole(byToken, token) };
   }
 
   return null;
