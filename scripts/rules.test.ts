@@ -30,12 +30,15 @@ import {
   validateCreateHomework,
 } from "../src/lib/homework-rules";
 import { MockAIProvider } from "../src/lib/ai-provider";
-import { validateRegisterInput } from "../src/lib/validation";
+import { getPasswordIssues, normalizeEmail, validateRegisterInput } from "../src/lib/validation";
+import { hashPassword, verifyPassword } from "../src/lib/password";
 import { gradeFromClassName, normalizeClassName, normalizeSchoolCode } from "../src/lib/school-rules";
 import {
   CONFIGURED_ADMIN_INVITE_TOKENS,
   CONFIGURED_SCHOOLS,
   DEFAULT_CLASS_NAMES,
+  DEFAULT_SCHOOL,
+  GUARANTEED_ADMIN,
   configuredAdminInviteToken,
 } from "../src/lib/school-config";
 import {
@@ -164,6 +167,50 @@ describe("регистрация со школой и классом", () => {
     );
     assert.equal(adminViaTeacherInvite.ok, false);
     if (!adminViaTeacherInvite.ok) assert.ok(adminViaTeacherInvite.fields.role);
+  });
+});
+
+describe("нормализация email и пароли (вход/регистрация)", () => {
+  const valid = {
+    name: "Анна Иванова",
+    email: "anna@example.ru",
+    password: "School123",
+    role: "STUDENT",
+    schoolCode: "Sinlycem26",
+    classId: "class-5a",
+  };
+
+  it("приводит email к нижнему регистру без пробелов — одинаково на входе и в регистрации", () => {
+    // То же, что и `email.toLowerCase().trim()` в register route и authorize.
+    assert.equal(normalizeEmail(" Ivan@School.RU "), "ivan@school.ru");
+    assert.equal(normalizeEmail("IVAN@SCHOOL.RU"), "ivan@school.ru");
+
+    const result = validateRegisterInput({ ...valid, email: " Anna@School.RU " });
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.data.email, "anna@school.ru");
+  });
+
+  it("хеширует пароль bcryptjs с 10 раундами и сверяет compare", async () => {
+    const hash = await hashPassword("Admin123!");
+
+    assert.notEqual(hash, "Admin123!");
+    // Формат bcrypt-хеша: $2b$10$ + соль + свёртка — стоимость 10 раундов.
+    assert.match(hash, /^\$2[aby]\$10\$/);
+
+    assert.equal(await verifyPassword("Admin123!", hash), true);
+    assert.equal(await verifyPassword("admin123!", hash), false);
+    assert.equal(await verifyPassword("", hash), false);
+  });
+
+  it("гарантированный демо-админ: нормализованный email, роль ADMIN и школа Sinlycem26", () => {
+    assert.equal(GUARANTEED_ADMIN.email, "admin@schoolmeet.ru");
+    assert.equal(normalizeEmail(GUARANTEED_ADMIN.email), GUARANTEED_ADMIN.email);
+    assert.equal(GUARANTEED_ADMIN.role, "ADMIN");
+    assert.equal(GUARANTEED_ADMIN.schoolCode, DEFAULT_SCHOOL.code);
+    assert.ok(CONFIGURED_SCHOOLS.some((school) => school.code === GUARANTEED_ADMIN.schoolCode));
+
+    // Пароль демо-админа должен проходить собственную политику формы регистрации.
+    assert.equal(getPasswordIssues(GUARANTEED_ADMIN.password).length, 0);
   });
 });
 

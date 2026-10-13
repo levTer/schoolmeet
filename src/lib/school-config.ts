@@ -32,6 +32,26 @@ export function configuredAdminInviteToken(code: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Гарантированный демо-администратор основной школы (`Sinlycem26`).
+ *
+ * Роль ADMIN нельзя получить через публичную форму регистрации (см. PUBLIC_ROLES),
+ * поэтому аккаунт создаётся приложением вместе со школами —
+ * `provisionConfiguredSchools` в `@/lib/schools`. Это страховка для свежего
+ * деплоя или пустой базы без сида: вход в `/admin` доступен сразу.
+ *
+ * Пароль по умолчанию нужен только для тестов — смените его в админ-панели
+ * (`/admin/users`) после первого входа.
+ */
+export const GUARANTEED_ADMIN = {
+  email: "admin@schoolmeet.ru",
+  password: "Admin123!",
+  name: "Администратор SchoolMeet",
+  role: "ADMIN",
+  /** Школа администратора — основная (`DEFAULT_SCHOOL` = `Sinlycem26`). */
+  schoolCode: DEFAULT_SCHOOL.code,
+} as const;
+
 /** The old single-tenant demo code is migrated into the primary school. */
 export const LEGACY_DEFAULT_SCHOOL_CODE = "SCHOOL1";
 

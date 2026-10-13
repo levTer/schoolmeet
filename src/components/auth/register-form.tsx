@@ -278,9 +278,11 @@ export function RegisterForm({
       }
 
       // Аккаунт создан — показываем подтверждение и уводим на вход.
+      // Email передаём в query, чтобы форма входа подставила его сама
+      // (логин уже нормализован: без пробелов и в нижнем регистре).
       setIsCreated(true);
       setTimeout(() => {
-        router.push(`/login?registered=1&email=${encodeURIComponent(normalizedEmail)}`);
+        router.push(`/login?registered=true&email=${encodeURIComponent(normalizedEmail)}`);
       }, 1400);
     } catch {
       setFormError("Не удалось связаться с сервером. Проверьте соединение и попробуйте снова.");
@@ -301,7 +303,10 @@ export function RegisterForm({
         </p>
         <p className="inline-flex items-center gap-2 text-xs text-slate-500">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          <Link href="/login" className="underline-offset-4 hover:text-white hover:underline">
+          <Link
+            href={`/login?registered=true&email=${encodeURIComponent(normalizeEmail(email))}`}
+            className="underline-offset-4 hover:text-white hover:underline"
+          >
             Перейти ко входу вручную
           </Link>
         </p>

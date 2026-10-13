@@ -100,6 +100,16 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
 
   const { name, email, password, role, classId } = validation.data;
 
+  /**
+   * Единственная форма email для проверок и для записи в БД.
+   *
+   * `users.email` — регистрозависимый уникальный индекс PostgreSQL, поэтому
+   * `Ivan@School.RU ` и `ivan@school.ru` без нормализации оказались бы двумя
+   * разными аккаунтами: пользователь создавал бы «двойника» и потом не мог
+   * войти (вход ищет пользователя по нормализованному email, см. `@/lib/auth`).
+   */
+  const cleanEmail = email.toLowerCase().trim();
+
   try {
     const schoolClass = role === "STUDENT" && classId
       ? await prisma.class.findFirst({
@@ -133,8 +143,10 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
     }
 
     /* 5. Уникальность email --------------------------------------------- */
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
+    // Ищем без учёта регистра: в базе могли остаться аккаунты, созданные до
+    // нормализации («Ivan@School.ru»), и заводить им двойника нельзя.
+    const existingUser = await prisma.user.findFirst({
+      where: { email: { equals: cleanEmail, mode: "insensitive" } },
       select: { id: true },
     });
 
@@ -151,12 +163,14 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
     }
 
     /* 6. Хеширование пароля и создание пользователя --------------------- */
+    // bcryptjs, 10 раундов соли: `hashPassword` → `bcrypt.hash(password, BCRYPT_SALT_ROUNDS)`.
+    // Открытый пароль нигде не сохраняется и наружу не возвращается.
     const passwordHash = await hashPassword(password);
 
     const user = await prisma.user.create({
       data: {
         name,
-        email,
+        email: cleanEmail,
         password: passwordHash,
         role,
         schoolId: school.id,
