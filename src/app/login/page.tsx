@@ -39,11 +39,18 @@ const HIGHLIGHTS: readonly AuthHighlight[] = [
   },
 ];
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: { callbackUrl?: string | string[] };
-}) {
+/** Query-параметры страницы входа: `callbackUrl` (middleware) + данные из формы регистрации. */
+interface LoginPageProps {
+  searchParams: {
+    callbackUrl?: string | string[];
+    /** `true` — аккаунт только что создан (показываем подтверждение). */
+    registered?: string | string[];
+    /** Email нового аккаунта: подставляется в поле ввода (`LoginForm`). */
+    email?: string | string[];
+  };
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
   const callbackUrl = sanitizeRedirectPath(searchParams.callbackUrl);
   const session = await getServerSession(authOptions);
 

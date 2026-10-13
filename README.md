@@ -185,6 +185,18 @@ src/types/next-auth.d.ts           Расширение типов сессии 
 Подсказки с демо-доступами на странице входа включаются флагом
 `NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS=1` (по умолчанию выключены).
 
+Кроме сида приложение само создаёт **гарантированного администратора** школы `Sinlycem26` —
+`admin@schoolmeet.ru` / `Admin123!` (`GUARANTEED_ADMIN` в `src/lib/school-config.ts`, создание —
+`provisionConfiguredSchools` в `src/lib/schools.ts`). Аккаунт нужен, чтобы в свежем деплое без
+сида был рабочий вход в `/admin`: роль `ADMIN` через публичную регистрацию не выдаётся. Пароль
+смените в админ-панели после первого входа.
+
+Email на регистрации и на входе приводится к одному виду — `value.toLowerCase().trim()`
+(`src/lib/validation.ts` → `cleanEmail` в `/api/auth/register` и в `authorize` из `src/lib/auth.ts`).
+Пароли хранятся только как bcrypt-хеш (bcryptjs, 10 раундов): `src/lib/password.ts`.
+После регистрации форма уводит на `/login?registered=true&email=<логин>`, и страница входа
+подставляет email в поле ввода автоматически.
+
 ## Модель данных
 
 - **Role** — `ADMIN`, `TEACHER`, `STUDENT`.

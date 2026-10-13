@@ -36,6 +36,23 @@ export function canAccessAdminArea(role?: Role | null): boolean {
   return role === "ADMIN";
 }
 
+/**
+ * Ищет пользователя по нормализованному email.
+ *
+ * Основной путь — точное совпадение: он идёт по уникальному индексу `users.email`.
+ * Если строки нет, повторяем поиск без учёта регистра: аккаунты, созданные до
+ * нормализации email, могли сохранить «Ivan@School.ru», и такой пользователь
+ * обязан войти по обычному «ivan@school.ru».
+ */
+async function findUserByEmail(cleanEmail: string) {
+  const exact = await prisma.user.findUnique({ where: { email: cleanEmail } });
+  if (exact) return exact;
+
+  return prisma.user.findFirst({
+    where: { email: { equals: cleanEmail, mode: "insensitive" } },
+  });
+}
+
 export const authOptions: NextAuthOptions = {
   /* Сессия хранится в подписанном JWT-cookie — это позволяет проверять
      авторизацию в middleware (edge-рантайм) без запросов в БД. */
@@ -68,18 +85,21 @@ export const authOptions: NextAuthOptions = {
        * «Пользователь с таким email не найден», «Неверный пароль».
        */
       async authorize(credentials) {
-        const email = normalizeEmail(credentials?.email ?? "");
+        // Email приводим к единому виду (`toLowerCase().trim()`): в БД он лежит
+        // в нижнем регистре, а пользователь может ввести « Ivan@School.ru ».
+        const cleanEmail = normalizeEmail(credentials?.email ?? "");
         const password = credentials?.password ?? "";
 
-        if (!email || !password) {
+        if (!cleanEmail || !password) {
           throw new Error(LOGIN_ERROR.missingCredentials);
         }
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        const user = await findUserByEmail(cleanEmail);
         if (!user) {
           throw new Error(LOGIN_ERROR.userNotFound);
         }
 
+        // bcryptjs: `verifyPassword` → `bcrypt.compare(пароль, хеш из БД)`.
         const isPasswordValid = await verifyPassword(password, user.password);
         if (!isPasswordValid) {
           throw new Error(LOGIN_ERROR.invalidPassword);

@@ -1,5 +1,6 @@
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 
+import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { GRADES, type GradeCode } from "@/lib/schedule-rules";
 import { gradeFromClassName, normalizeSchoolCode } from "@/lib/school-rules";
@@ -13,11 +14,12 @@ import {
   CONFIGURED_SCHOOLS,
   DEFAULT_CLASS_NAMES,
   DEFAULT_SCHOOL,
+  GUARANTEED_ADMIN,
   LEGACY_DEFAULT_SCHOOL_CODE,
 } from "@/lib/school-config";
 
 export { gradeFromClassName, normalizeClassName, normalizeSchoolCode } from "@/lib/school-rules";
-export { CONFIGURED_SCHOOLS, DEFAULT_CLASS_NAMES } from "@/lib/school-config";
+export { CONFIGURED_SCHOOLS, DEFAULT_CLASS_NAMES, GUARANTEED_ADMIN } from "@/lib/school-config";
 
 export const DEFAULT_SCHOOL_NAME = DEFAULT_SCHOOL.name;
 export const DEFAULT_SCHOOL_CODE = DEFAULT_SCHOOL.code;
@@ -116,12 +118,61 @@ export async function backfillSchoolInviteTokens(db: PrismaClient = prisma): Pro
   return filled;
 }
 
+/**
+ * Создаёт гарантированного демо-администратора (`GUARANTEED_ADMIN`), если его
+ * ещё нет в базе.
+ *
+ * Зачем: роль ADMIN нельзя получить через публичную форму регистрации, поэтому
+ * пустая база (свежий деплой без сида) осталась бы без единого администратора —
+ * и в админ-панель никто не смог бы войти.
+ *
+ * Идемпотентно: существующий аккаунт НЕ перезаписываем — сменённые вручную
+ * пароль, имя или роль сохраняются. Email храним нормализованным, как и форма
+ * регистрации (`cleanEmail` в `/api/auth/register`), а пароль — только bcrypt-хеш
+ * (`hashPassword` → `bcryptjs.hash(password, 10)`).
+ */
+async function ensureGuaranteedAdmin(db: PrismaClient, schoolId: string): Promise<void> {
+  const email = GUARANTEED_ADMIN.email.toLowerCase().trim();
+
+  const existing = await db.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (existing) return;
+
+  try {
+    await db.user.create({
+      data: {
+        email,
+        password: await hashPassword(GUARANTEED_ADMIN.password),
+        name: GUARANTEED_ADMIN.name,
+        role: GUARANTEED_ADMIN.role,
+        schoolId,
+        classId: null,
+        grade: null,
+      },
+    });
+
+    console.warn(
+      `[schools] Создан гарантированный администратор ${email} — смените пароль после первого входа.`,
+    );
+  } catch (error) {
+    // Параллельный инстанс успел создать аккаунт первым — уникальный индекс
+    // победил, для нас это не ошибка.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return;
+    throw error;
+  }
+}
+
 let defaultSchoolPromise: Promise<SchoolSummary> | null = null;
 
 /**
  * Idempotently creates the configured schools and their standard classes.
  * Existing SCHOOL1 installations are migrated/merged into the primary school,
  * preserving user, class, schedule, homework, and meeting references.
+ *
+ * Также создаёт гарантированного демо-администратора (`GUARANTEED_ADMIN`) в
+ * основной школе, если его ещё нет (см. `ensureGuaranteedAdmin`).
  */
 export async function provisionConfiguredSchools(db: PrismaClient = prisma): Promise<Map<string, SchoolSummary>> {
   const schools = new Map<string, SchoolSummary>();
@@ -184,6 +235,12 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
   });
   if (primarySchool && legacySchool && primarySchool.id !== legacySchool.id) {
     await mergeSchoolData(db, legacySchool.id, primarySchool.id);
+  }
+
+  // Гарантированный админ основной школы: свежий деплой без сида получает
+  // рабочий вход в `/admin`. Идемпотентно — существующий аккаунт не трогаем.
+  if (primarySchool) {
+    await ensureGuaranteedAdmin(db, primarySchool.id);
   }
 
   // Школы вне CONFIGURED_SCHOOLS (созданные вручную или до того, как колонки

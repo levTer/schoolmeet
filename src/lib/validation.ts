@@ -67,7 +67,15 @@ export type ValidationResult<T> =
 /* Хелперы                                                                     */
 /* -------------------------------------------------------------------------- */
 
-/** Email всегда храним и сравниваем в нижнем регистре без пробелов. */
+/**
+ * Email всегда храним и сравниваем в нижнем регистре без пробелов:
+ * `normalizeEmail(" Ivan@School.RU ")` → `"ivan@school.ru"` (то же самое, что
+ * `value.toLowerCase().trim()`).
+ *
+ * Одна и та же нормализация обязана стоять на трёх точках пути:
+ * регистрация (`/api/auth/register`), вход (`authorize` в `@/lib/auth`) и
+ * предзаполнение формы входа — иначе аккаунт создаётся и не находится.
+ */
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }

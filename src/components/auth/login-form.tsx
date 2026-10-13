@@ -26,8 +26,13 @@ export function LoginForm() {
   const searchParams = useSearchParams();
 
   const redirectTo = sanitizeRedirectPath(searchParams.get("callbackUrl"));
-  const justRegistered = searchParams.get("registered") === "1";
-  const prefilledEmail = searchParams.get("email") ?? "";
+  // Форма регистрации возвращает сюда `?registered=true&email=…`; значение «1»
+  // поддерживаем для совместимости со старыми ссылками.
+  const registeredParam = searchParams.get("registered");
+  const justRegistered = registeredParam === "true" || registeredParam === "1";
+  // Email из query-параметра подставляем сразу в инпут (и сразу нормализуем:
+  // вход ищет пользователя по email без пробелов и в нижнем регистре).
+  const prefilledEmail = normalizeEmail(searchParams.get("email") ?? "");
   const authError = searchParams.get("error");
 
   const [email, setEmail] = useState(prefilledEmail);
