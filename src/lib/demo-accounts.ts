@@ -1,23 +1,29 @@
-/** Демо-аккаунты, которые создаёт `prisma/seed.mjs` (только для локальной разработки). */
-export interface DemoAccount {
-  role: "ADMIN" | "TEACHER" | "STUDENT";
+/**
+ * Аккаунты быстрого входа, которые показываются на странице логина.
+ *
+ * Эти реквизиты намеренно доступны клиенту: кнопка заполняет оба поля формы,
+ * после чего пользователь сам подтверждает вход кнопкой «Войти».
+ */
+export interface QuickLoginAccount {
   email: string;
+  password: string;
   label: string;
 }
 
-const DEMO_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD ?? "schoolmeet";
-
-export const DEMO_ACCOUNTS: readonly DemoAccount[] = [
-  { role: "ADMIN", email: "admin@schoolmeet.dev", label: "Администратор" },
-  { role: "TEACHER", email: "teacher@schoolmeet.dev", label: "Учитель" },
-  { role: "STUDENT", email: "student@schoolmeet.dev", label: "Ученик" },
+export const QUICK_LOGIN_ACCOUNTS: readonly QuickLoginAccount[] = [
+  {
+    email: "admin@schoolmeet.ru",
+    password: "Admin123!",
+    label: "🏫 Синлицей (Админ)",
+  },
+  {
+    email: "fullhouse@schoolmeet.ru",
+    password: "Fullhouse123!",
+    label: "🏰 Fullhouse (Админ)",
+  },
+  {
+    email: "anna@schoolmeet.ru",
+    password: "Anna123!",
+    label: "🌸 Anna T (Админ)",
+  },
 ];
-
-/**
- * Показывать ли блок с демо-доступами на странице входа.
- * По умолчанию выключено — включается флагом NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS=1
- * в локальном `.env`, чтобы подсказки не попали в продакшен.
- */
-export const SHOW_DEMO_CREDENTIALS = process.env.NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS === "1";
-
-export const DEMO_PASSWORD_HINT = DEMO_PASSWORD;
