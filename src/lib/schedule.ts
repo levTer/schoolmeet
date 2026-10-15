@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { buildLessonCodeCandidate } from "@/lib/lesson-code";
 import { generateRoomEncryptionKey } from "@/lib/meetings";
 import { badRequest, conflict, forbidden, notFound } from "@/lib/api";
-import { prisma } from "@/lib/prisma";
+import { INTERACTIVE_TRANSACTION_OPTIONS, prisma } from "@/lib/prisma";
 import { gradeFromClassName } from "@/lib/school-rules";
 import { slotsOverlap, type CreateLessonInput, type GradeCode, type ScheduleConflictInfo } from "@/lib/schedule-rules";
 import type { SchoolViewer } from "@/lib/school-viewer";
@@ -91,7 +91,14 @@ export async function listSubjects(): Promise<Subject[]> {
   return prisma.subject.findMany({ select, orderBy: { name: "asc" } });
 }
 
-/** Создаёт отсутствующие предметы эталонного каталога (идемпотентно, по имени). */
+/**
+ * Создаёт отсутствующие предметы эталонного каталога (идемпотентно, по имени).
+ *
+ * Здесь batch-форма `$transaction([...])`: Prisma принимает для неё только
+ * `isolationLevel`, поэтому тайм-ауты (`timeout`/`maxWait` из
+ * `INTERACTIVE_TRANSACTION_OPTIONS`) к ней не применимы — они есть у
+ * интерактивных транзакций, где как раз и выполняются пачки `updateMany`.
+ */
 export async function ensureDefaultSubjects(): Promise<void> {
   await prisma.$transaction(
     DEFAULT_SUBJECTS.map((subject) =>
@@ -203,7 +210,7 @@ export async function createLesson(input: CreateLessonInput, teacher: SchoolView
         include: lessonInclude,
       });
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    { ...INTERACTIVE_TRANSACTION_OPTIONS, isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
 
   return toLessonDto(row);

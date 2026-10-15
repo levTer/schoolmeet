@@ -4,7 +4,7 @@ import { getAIProvider } from "@/lib/ai-provider";
 import { badRequest, conflict, forbidden, DomainError, notFound } from "@/lib/api";
 import { findAllowedFileType, getDeadlineIndicator, HOMEWORK_LIMITS, matchesFileSignature, parseGrade, sanitizeFileName, type DeadlineIndicator } from "@/lib/homework-rules";
 import { deleteUpload, readUpload, saveUpload } from "@/lib/file-storage";
-import { prisma } from "@/lib/prisma";
+import { INTERACTIVE_TRANSACTION_OPTIONS, prisma } from "@/lib/prisma";
 import { gradeFromClassName } from "@/lib/school-rules";
 import type { SchoolViewer } from "@/lib/school-viewer";
 import { hasPermission, type HomeworkAttachmentInfo, type HomeworkDetailInfo, type HomeworkDetailView, type HomeworkListItem, type HomeworkSubmissionStatus, type StudentSubmissionInfo, type TeacherReviewInfo, type TeacherSubmissionInfo } from "@/types";
@@ -384,7 +384,7 @@ export async function saveDraftAnswer(homeworkId: string, answer: string, viewer
       await tx.homeworkSubmission.update({ where: { id: draft.id }, data: { answer, draftSavedAt: savedAt } });
     }
     return { savedAt: savedAt.toISOString() };
-  });
+  }, INTERACTIVE_TRANSACTION_OPTIONS);
 }
 
 export interface UploadedFileInput {
@@ -435,7 +435,7 @@ export async function attachFileToDraft(
         },
         select: ATTACHMENT_SELECT,
       });
-    });
+    }, INTERACTIVE_TRANSACTION_OPTIONS);
     return toAttachmentDto(attachment);
   } catch (error) {
     // Если запись не создалась, файл на диске не нужен.
@@ -463,7 +463,7 @@ export async function removeAttachmentFromDraft(homeworkId: string, attachmentId
 
     await tx.homeworkAttachment.delete({ where: { id: attachment.id } });
     return attachment.storageKey;
-  });
+  }, INTERACTIVE_TRANSACTION_OPTIONS);
 
   await deleteUpload(storageKey).catch(() => undefined);
 }
@@ -496,7 +496,7 @@ export async function submitHomework(homeworkId: string, viewer: SchoolViewer) {
       submittedAt: submittedAt.toISOString(),
       isLate: submittedAt.getTime() > homework.deadline.getTime(),
     };
-  });
+  }, INTERACTIVE_TRANSACTION_OPTIONS);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -602,7 +602,7 @@ export async function generateAiReviewDraft(
       },
     });
     return toTeacherReview(review);
-  });
+  }, INTERACTIVE_TRANSACTION_OPTIONS);
 }
 
 export interface ApproveReviewInput {
@@ -659,7 +659,7 @@ export async function approveReview(
 
       return toTeacherReview(review);
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    { ...INTERACTIVE_TRANSACTION_OPTIONS, isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
 }
 

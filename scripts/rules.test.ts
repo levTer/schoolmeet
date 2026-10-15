@@ -56,6 +56,7 @@ import {
   missingInviteTokens,
 } from "../src/lib/invite-tokens";
 import { buildSchoolRoomId, hasSchoolAccess } from "../src/lib/realtime";
+import { buildDashboardFallback, viewerFromClaims, withDeadline } from "../src/lib/dashboard-fallback";
 
 const lesson = (dayOfWeek: number, startTime: string, endTime: string, id = `${dayOfWeek}-${startTime}`) => ({
   id,
@@ -567,5 +568,81 @@ describe("ИИ-черновик проверки (MockAIProvider)", () => {
     const draft = await provider.reviewHomework({ ...base, answer: "Ответ 42", attachmentCount: 0, isLate: true });
     assert.match(draft.draftComment, /после дедлайна/);
     assert.match(draft.draftComment, /Это черновик ИИ/);
+  });
+});
+
+describe("неубиваемый дашборд: fallback и дедлайны секций", () => {
+  it("fallback всегда валиден для рендера кабинета", () => {
+    const data = buildDashboardFallback();
+    assert.deepEqual(data.lessons, []);
+    assert.deepEqual(data.urgent, []);
+    assert.deepEqual(data.review, { count: 0, items: [] });
+    assert.deepEqual(data.announcements, []);
+    assert.equal(data.viewer, null);
+    // Данных нет — страница честно помечает себя «неполной», но рендерится.
+    assert.equal(data.degraded, true);
+  });
+
+  it("fallback не делит массивы между вызовами", () => {
+    const first = buildDashboardFallback();
+    const second = buildDashboardFallback();
+    assert.notEqual(first.lessons, second.lessons);
+    assert.notEqual(first.review.items, second.review.items);
+
+    first.lessons.push({ id: "lesson" } as never);
+    first.review.items.push({ submissionId: "s" } as never);
+    assert.equal(second.lessons.length, 0);
+    assert.equal(second.review.items.length, 0);
+  });
+
+  it("зритель восстанавливается из подписанного токена, когда БД недоступна", () => {
+    const viewer = viewerFromClaims({ id: "u1", role: "TEACHER", schoolId: "s1", classId: null });
+    assert.deepEqual(viewer, {
+      id: "u1",
+      role: "TEACHER",
+      schoolId: "s1",
+      classId: null,
+      className: null,
+      grade: null,
+      isBanned: false,
+    });
+
+    // Заблокированный аккаунт остаётся заблокированным даже без запроса к БД.
+    assert.equal(viewerFromClaims({ id: "u2", role: "STUDENT", isBanned: true }).isBanned, true);
+  });
+
+  it("withDeadline отдаёт результат, если секция успела", async () => {
+    const value = await withDeadline(Promise.resolve("расписание"), "быстрая", 200);
+    assert.equal(value, "расписание");
+  });
+
+  it("withDeadline возвращает null на «зависшем» запросе вместо вечного ожидания", async () => {
+    const never = new Promise<string>(() => undefined);
+    const value = await withDeadline(never, "зависшая", 20);
+    assert.equal(value, null);
+  });
+
+  it("withDeadline пробрасывает ошибку секции наружу (её ловит try/catch страницы)", async () => {
+    await assert.rejects(
+      withDeadline(Promise.reject(new Error("P2028 при homework.updateMany")), "ошибка", 200),
+      /P2028/,
+    );
+  });
+
+  it("поздняя ошибка брошенной секции не превращается в unhandledRejection", async () => {
+    const seen: unknown[] = [];
+    const onUnhandled = (reason: unknown) => seen.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const late = new Promise<string>((_, reject) => {
+        setTimeout(() => reject(new Error("поздний таймаут Neon")), 30);
+      });
+      assert.equal(await withDeadline(late, "поздняя", 10), null);
+      // Даём «брошенному» промиcу время отклониться.
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      assert.deepEqual(seen, []);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 });
