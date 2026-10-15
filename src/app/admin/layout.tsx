@@ -22,7 +22,13 @@ export const dynamic = "force-dynamic";
  * «Доступ открыт только Администратору школы»).
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const session = await getServerSession(authOptions);
+  let session: Awaited<ReturnType<typeof getServerSession>> = null;
+  try {
+    session = await getServerSession(authOptions);
+  } catch (err) {
+    console.error('[ADMIN_LAYOUT_SESSION_ERROR]', err);
+    session = null;
+  }
 
   if (!session?.user) {
     redirect("/login?callbackUrl=/admin");

@@ -19,7 +19,13 @@ interface AppShellProps {
  * «Выйти» попадают сразу в серверную разметку.
  */
 export async function AppShell({ children, className }: AppShellProps) {
-  const session = await getServerSession(authOptions);
+  let session: Awaited<ReturnType<typeof getServerSession>> = null;
+  try {
+    session = await getServerSession(authOptions);
+  } catch (err) {
+    console.error('[APP_SHELL_SESSION_ERROR]', err);
+    session = null;
+  }
 
   // Заблокированный аккаунт не должен видеть внутренние разделы даже с живой
   // JWT-cookie: middleware проверяет токен, а здесь данные сессии уже сверены с БД.
