@@ -170,6 +170,8 @@ export const authOptions: NextAuthOptions = {
             role: user.role as Role,
             schoolId,
             classId,
+            schoolName: user.school?.name ?? null,
+            school: user.school ? { name: user.school.name } : null,
             image: user.avatar ?? null,
           };
         } catch (error) {
@@ -194,6 +196,7 @@ export const authOptions: NextAuthOptions = {
           token.role = (user.role as Role) || "STUDENT";
           token.schoolId = user.schoolId ?? null;
           token.classId = user.classId ?? null;
+          token.schoolName = user.school?.name || user.schoolName || token.schoolName;
           token.name = user.name ?? token.name;
           token.email = user.email ?? token.email;
           token.picture = user.image ?? null;
@@ -202,10 +205,11 @@ export const authOptions: NextAuthOptions = {
         }
 
         // Если произошёл trigger update
-        const updateSession = session && typeof session === "object" ? (session as { user?: { role?: Role; schoolId?: string | null } }).user : undefined;
+        const updateSession = session && typeof session === "object" ? (session as { user?: { role?: Role; schoolId?: string | null; schoolName?: string | null } }).user : undefined;
         if (trigger === "update" && updateSession) {
           token.role = updateSession.role || token.role;
           token.schoolId = updateSession.schoolId || token.schoolId;
+          token.schoolName = updateSession.schoolName || token.schoolName;
         }
 
         const userId = typeof token.id === "string" && token.id ? token.id : token.sub;
@@ -227,14 +231,14 @@ export const authOptions: NextAuthOptions = {
         try {
           let dbUser = await prisma.user.findUnique({
             where: { id: userId },
-            select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true },
+            select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true, school: { select: { name: true } } },
           });
 
           if (dbUser && (!dbUser.schoolId || (dbUser.role === "STUDENT" && !dbUser.classId))) {
             await ensureUserSchoolMembership(userId);
             dbUser = await prisma.user.findUnique({
               where: { id: userId },
-              select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true },
+              select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true, school: { select: { name: true } } },
             });
           }
 
@@ -243,6 +247,7 @@ export const authOptions: NextAuthOptions = {
             token.role = dbUser.role as Role;
             token.schoolId = dbUser.schoolId;
             token.classId = dbUser.classId;
+            token.schoolName = dbUser.school?.name ?? null;
             token.name = dbUser.name;
             token.picture = dbUser.avatar ?? null;
             token.banned = dbUser.isBanned;
@@ -267,6 +272,7 @@ export const authOptions: NextAuthOptions = {
           session.user.role = (token?.role as Role | undefined) || "STUDENT";
           session.user.schoolId = (token?.schoolId as string) || null;
           session.user.classId = typeof token?.classId === "string" ? token.classId : null;
+          session.user.schoolName = token.schoolName;
           session.user.banned = token?.banned === true;
 
           if (typeof token?.name === "string") session.user.name = token.name;

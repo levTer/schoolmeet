@@ -40,8 +40,9 @@ const SOCIALS = [
   { icon: Mail, label: "Почта", href: "mailto:support@schoolmeet.ai" },
 ] as const;
 
-export function SiteFooter() {
+export function SiteFooter({ schoolName }: { schoolName?: string | null }) {
   const year = new Date().getFullYear();
+  const brandName = schoolName || "SchoolMeet";
 
   return (
     <footer className="relative border-t border-white/10 bg-ink-950/60">
@@ -54,7 +55,7 @@ export function SiteFooter() {
         <div className="grid gap-10 lg:grid-cols-[1.4fr_repeat(3,1fr)]">
           {/* Бренд */}
           <div>
-            <Logo />
+            <Logo schoolName={schoolName} />
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-slate-400">
               Платная платформа видеоуроков для школ: HD-звонки, ИИ-доска, расписание и защищённый
               чат в одном окне.
@@ -89,7 +90,7 @@ export function SiteFooter() {
         {/* Нижняя строка */}
         <div className="mt-12 flex flex-col items-center justify-between gap-5 border-t border-white/10 pt-7 sm:flex-row">
           <p className="text-xs text-slate-500">
-            © {year} Лицей Сингулярити. Все права защищены. Копирование материалов без разрешения
+            © {year} {brandName}. Все права защищены. Копирование материалов без разрешения
             запрещено.
           </p>
 

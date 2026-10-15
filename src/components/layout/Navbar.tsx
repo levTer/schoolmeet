@@ -125,7 +125,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
     <header className="sticky top-0 z-50 border-b border-white/10 bg-ink-950/75 backdrop-blur-2xl">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-8 md:h-16">
         <div className="flex items-center gap-6">
-          <Logo size="sm" />
+          <Logo size="sm" schoolName={user?.schoolName} />
         </div>
 
         {/* Навигация (десктоп) */}

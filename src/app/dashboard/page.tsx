@@ -66,7 +66,8 @@ export default async function DashboardPage({
     redirect("/login?callbackUrl=/dashboard");
   }
 
-  const { id, name, email, role, schoolId, classId } = session.user;
+  const { id, name, email, role, schoolId, classId, schoolName } = session.user;
+  const displayName = schoolName || "SchoolMeet";
   const canOpenAdmin = canAccessAdminArea(role);
   const permissions = getPermissionLabels(role);
 
@@ -175,7 +176,8 @@ export default async function DashboardPage({
             <span className="text-gradient">{firstName}</span>!
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">
-            Добро пожаловать в Лицей Сингулярити. Ниже — ваш следующий урок, задания и быстрые переходы.
+            Добро пожаловать в {displayName}. Ниже — ваш следующий урок, задания и быстрые
+            переходы.
           </p>
         </div>
 
