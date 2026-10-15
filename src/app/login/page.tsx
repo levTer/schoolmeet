@@ -52,7 +52,14 @@ interface LoginPageProps {
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const callbackUrl = sanitizeRedirectPath(searchParams.callbackUrl);
-  const session = await getServerSession(authOptions);
+
+  let session: Awaited<ReturnType<typeof getServerSession>> = null;
+  try {
+    session = await getServerSession(authOptions);
+  } catch (err) {
+    console.error('[LOGIN_SESSION_ERROR]', err);
+    session = null;
+  }
 
   // Уже авторизованных не держим на странице входа.
   if (session?.user) redirect(callbackUrl);

@@ -185,21 +185,30 @@ export const authOptions: NextAuthOptions = {
      * Дополняет JWT: при входе кладём `id` и `role`, чтобы middleware и
      * серверные компоненты видели роль без обращения к БД.
      */
-    async jwt({ token, user, trigger }) {
-      if (user) {
-        token.id = user.id;
-        token.role = (user.role as Role) ?? "STUDENT";
-        token.schoolId = user.schoolId ?? null;
-        token.classId = user.classId ?? null;
-        token.name = user.name ?? token.name;
-        token.email = user.email ?? token.email;
-        token.picture = user.image ?? null;
-        token.banned = false;
-        token.syncedAt = Date.now();
-        return token;
-      }
+    async jwt({ token, user, trigger, session }) {
+      try {
+        if (!token) return token;
 
-      const userId = typeof token.id === "string" && token.id ? token.id : token.sub;
+        if (user) {
+          token.id = user.id;
+          token.role = (user.role as Role) || "STUDENT";
+          token.schoolId = user.schoolId ?? null;
+          token.classId = user.classId ?? null;
+          token.name = user.name ?? token.name;
+          token.email = user.email ?? token.email;
+          token.picture = user.image ?? null;
+          token.banned = false;
+          token.syncedAt = Date.now();
+        }
+
+        // Если произошёл trigger update
+        const updateSession = session && typeof session === "object" ? (session as { user?: { role?: Role; schoolId?: string | null } }).user : undefined;
+        if (trigger === "update" && updateSession) {
+          token.role = updateSession.role || token.role;
+          token.schoolId = updateSession.schoolId || token.schoolId;
+        }
+
+        const userId = typeof token.id === "string" && token.id ? token.id : token.sub;
       const needsSync =
         // Явное обновление сессии (например, после повышения до ADMIN по
         // секретной ссылке) требует свежей роли немедленно, без ожидания 60 с.
@@ -246,23 +255,29 @@ export const authOptions: NextAuthOptions = {
       }
 
       return token;
-    },
-
-    /** Отдаёт приложению `session.user.id` и `session.user.role`. */
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.id = (token.id as string | undefined) ?? token.sub ?? "";
-        session.user.role = (token.role as Role | undefined) ?? "STUDENT";
-        session.user.schoolId = typeof token.schoolId === "string" ? token.schoolId : null;
-        session.user.classId = typeof token.classId === "string" ? token.classId : null;
-        session.user.banned = token.banned === true;
-
-        if (typeof token.name === "string") session.user.name = token.name;
-        if (typeof token.email === "string") session.user.email = token.email;
-        session.user.image = typeof token.picture === "string" ? token.picture : null;
+      } catch (err) {
+        console.error('[NEXTAUTH_JWT_ERROR]', err);
+        return token;
       }
+    },    /** Отдаёт приложению `session.user.id` и `session.user.role`. */
+    async session({ session, token }) {
+      try {
+        if (session?.user) {
+          session.user.id = (token?.id as string | undefined) ?? token?.sub ?? "";
+          session.user.role = (token?.role as Role | undefined) || "STUDENT";
+          session.user.schoolId = (token?.schoolId as string) || null;
+          session.user.classId = typeof token?.classId === "string" ? token.classId : null;
+          session.user.banned = token?.banned === true;
 
-      return session;
+          if (typeof token?.name === "string") session.user.name = token.name;
+          if (typeof token?.email === "string") session.user.email = token.email;
+          session.user.image = typeof token?.picture === "string" ? token.picture : null;
+        }
+        return session;
+      } catch (err) {
+        console.error('[NEXTAUTH_SESSION_ERROR]', err);
+        return session;
+      }
     },
   },
 
