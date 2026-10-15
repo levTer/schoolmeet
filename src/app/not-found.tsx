@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, Compass, Home } from "lucide-react";
 
 /**
- * Страница 404 — glass-morphism стиль в духе SchoolMeet.
+ * Страница 404 — glass-morphism стиль в духе Лицея Сингулярити.
  */
 export default function NotFound() {
   return (

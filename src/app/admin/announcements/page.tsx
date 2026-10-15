@@ -10,7 +10,7 @@ import { authOptions, canAccessAdminArea } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Объявления",
-  description: "Общешкольные объявления SchoolMeet: публикация для всей школы или отдельного класса.",
+  description: "Общешкольные объявления Лицея Сингулярити: публикация для всей школы или отдельного класса.",
 };
 
 export const dynamic = "force-dynamic";

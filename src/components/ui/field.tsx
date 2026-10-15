@@ -17,7 +17,7 @@ export interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   trailing?: ReactNode;
 }
 
-/** Текстовое поле в стилистике SchoolMeet: стекло, свечение при фокусе. */
+/** Текстовое поле в стилистике Лицея Сингулярити: стекло, свечение при фокусе. */
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function TextField(
   { label, icon: Icon, error, hint, trailing, className, id, ...props },
   ref,

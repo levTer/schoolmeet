@@ -89,7 +89,7 @@ export function SiteFooter() {
         {/* Нижняя строка */}
         <div className="mt-12 flex flex-col items-center justify-between gap-5 border-t border-white/10 pt-7 sm:flex-row">
           <p className="text-xs text-slate-500">
-            © {year} SchoolMeet. Все права защищены. Копирование материалов без разрешения
+            © {year} Лицей Сингулярити. Все права защищены. Копирование материалов без разрешения
             запрещено.
           </p>
 

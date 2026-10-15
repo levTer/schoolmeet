@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Обзор школы",
-  description: "Метрики SchoolMeet: ученики, учителя, активные уроки и успеваемость по классам.",
+  description: "Метрики Лицея Сингулярити: ученики, учителя, активные уроки и успеваемость по классам.",
 };
 
 export const dynamic = "force-dynamic";

@@ -17,7 +17,7 @@ import { hasPermission, type HomeworkListItem } from "@/types";
 
 export const metadata: Metadata = {
   title: "Домашние задания",
-  description: "Домашние задания SchoolMeet: сроки сдачи, ответы и проверка учителем.",
+  description: "Домашние задания Лицея Сингулярити: сроки сдачи, ответы и проверка учителем.",
 };
 
 export const dynamic = "force-dynamic";

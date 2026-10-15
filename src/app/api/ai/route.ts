@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * API ИИ-помощника SchoolMeet (этап 8 — внешний ИИ-движок).
+ * API ИИ-помощника Лицея Сингулярити (этап 8 — внешний ИИ-движок).
  *
  * ВСЕ вызовы Groq / Gemini / OpenRouter выполняются ЗДЕСЬ, на сервере
  * (Vercel, Европа). Сервер работает прокси-посредником: браузер учителя

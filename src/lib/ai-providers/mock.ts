@@ -1,5 +1,5 @@
 /**
- * MockAIProvider — локальный резервный ИИ-провайдер SchoolMeet.
+ * MockAIProvider — локальный резервный ИИ-провайдер Лицея Сингулярити.
  *
  * До этапа 8 был единственной реализацией ИИ; теперь это последнее звено
  * waterfall-цепочки `AutoAIProvider`: если Groq, Gemini и OpenRouter

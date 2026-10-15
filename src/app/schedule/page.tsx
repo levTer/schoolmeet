@@ -14,7 +14,7 @@ import { ROLE_LABELS, hasPermission } from "@/types";
 
 export const metadata: Metadata = {
   title: "Расписание",
-  description: "Расписание SchoolMeet: недельная сетка уроков класса и вход в урок.",
+  description: "Расписание Лицея Сингулярити: недельная сетка уроков класса и вход в урок.",
 };
 
 export const dynamic = "force-dynamic";

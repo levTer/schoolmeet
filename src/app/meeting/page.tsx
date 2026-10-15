@@ -11,7 +11,7 @@ import { hasPermission } from "@/types";
 
 export const metadata: Metadata = {
   title: "Урок",
-  description: "Создание уроков и вход в видеокомнату SchoolMeet по коду.",
+  description: "Создание уроков и вход в видеокомнату Лицея Сингулярити по коду.",
 };
 
 export const dynamic = "force-dynamic";

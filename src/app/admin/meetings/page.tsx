@@ -12,7 +12,7 @@ import { getSchoolViewer } from "@/lib/school-viewer";
 
 export const metadata: Metadata = {
   title: "Активные уроки",
-  description: "Текущие видеоуроки SchoolMeet и посещаемость: кто вошёл, когда вышел и сколько пробыл.",
+  description: "Текущие видеоуроки Лицея Сингулярити и посещаемость: кто вошёл, когда вышел и сколько пробыл.",
 };
 
 export const dynamic = "force-dynamic";

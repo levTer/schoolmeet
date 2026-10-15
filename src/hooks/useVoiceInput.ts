@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Бесплатный голосовой ввод SchoolMeet (этап 4).
+ * Бесплатный голосовой ввод Лицея Сингулярити (этап 4).
  *
  * Работает СТРОГО через нативный браузерный Web Speech API
  * (`SpeechRecognition` / `webkitSpeechRecognition`) — никаких серверов,

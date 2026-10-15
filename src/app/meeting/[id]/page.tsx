@@ -12,7 +12,7 @@ import { isValidRoomCode } from "@/lib/realtime";
 
 export const metadata: Metadata = {
   title: "Урок",
-  description: "Видеокомната SchoolMeet: видео участников, шифрованный чат и управление звонком.",
+  description: "Видеокомната Лицея Сингулярити: видео участников, шифрованный чат и управление звонком.",
 };
 
 export const dynamic = "force-dynamic";

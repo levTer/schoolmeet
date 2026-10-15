@@ -47,7 +47,7 @@ import type { GradeCode } from "@/lib/schedule-rules";
 import type { Role } from "@/types";
 
 /**
- * Socket.IO-сервер SchoolMeet. Подключается к тому же HTTP-серверу, что и Next.js
+ * Socket.IO-сервер Лицея Сингулярити. Подключается к тому же HTTP-серверу, что и Next.js
  * (см. `server.ts` в корне), поэтому realtime работает на одном порту.
  *
  * Безопасность:

@@ -20,9 +20,9 @@ export const dynamic = "force-dynamic";
  * Имена используются только при автосоздании; существующую школу не переименовываем.
  */
 const ALLOWED_SCHOOLS = [
-  { name: "Синлицей №26", code: "Sinlycem26" },
-  { name: "Личный Кабинет 1", code: "Fulhouseteem26" },
-  { name: "Личный Кабинет 2", code: "Anna.Terentieva77" },
+  { name: "Лицей Сингулярити", code: "Sinlycem26" },
+  { name: "Fullhouse Teem", code: "Fulhouseteem26" },
+  { name: "Школа Душа", code: "Anna.Terentieva77" },
 ] as const;
 
 type AllowedSchool = (typeof ALLOWED_SCHOOLS)[number];
