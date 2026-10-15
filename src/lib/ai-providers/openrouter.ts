@@ -1,8 +1,8 @@
 /**
- * OpenRouter — универсальный резервный ИИ-движок SchoolMeet (этап 8).
+ * OpenRouter — универсальный резервный ИИ-движок Лицея Сингулярити (этап 8).
  *
  * OpenRouter даёт доступ к сотням моделей, включая полностью бесплатные
- * (суффикс `:free`). В SchoolMeet это среднее звено waterfall-цепочки:
+ * (суффикс `:free`). В Лицее Сингулярити это среднее звено waterfall-цепочки:
  * если Groq исчерпал лимит или недоступен, запрос уходит сюда, и только
  * потом — в локальный Mock.
  *
@@ -80,7 +80,7 @@ export class OpenRouterProvider implements AIProvider {
     this.visionModel =
       (options.visionModel ?? process.env.OPENROUTER_VISION_MODEL ?? OPENROUTER_DEFAULT_VISION_MODEL).trim() ||
       OPENROUTER_DEFAULT_VISION_MODEL;
-    this.referer = (options.referer ?? process.env.NEXTAUTH_URL ?? "https://schoolmeet.local").trim();
+    this.referer = (options.referer ?? process.env.NEXTAUTH_URL ?? "https://licey-singularity.local").trim();
     this.timeoutMs = options.timeoutMs;
     this.fetchImpl = options.fetchImpl;
 
@@ -113,7 +113,7 @@ export class OpenRouterProvider implements AIProvider {
           Authorization: `Bearer ${this.apiKey}`,
           // Рекомендованные OpenRouter заголовки атрибуции.
           "HTTP-Referer": this.referer,
-          "X-Title": "SchoolMeet",
+          "X-Title": "Singularity Lyceum",
         },
         provider: "OpenRouter",
         timeoutMs: this.timeoutMs,
@@ -144,7 +144,7 @@ export class OpenRouterProvider implements AIProvider {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           "HTTP-Referer": this.referer,
-          "X-Title": "SchoolMeet",
+          "X-Title": "Singularity Lyceum",
         },
         provider: "OpenRouter",
         timeoutMs: this.timeoutMs,

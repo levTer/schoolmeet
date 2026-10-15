@@ -33,7 +33,7 @@ import { ROLE_LABELS, getPermissionLabels, type Role, type Schedule } from "@/ty
 
 export const metadata: Metadata = {
   title: "Кабинет",
-  description: "Личный кабинет SchoolMeet: роль, расписание и вход в урок.",
+  description: "Личный кабинет Лицея Сингулярити: роль, расписание и вход в урок.",
 };
 
 export const dynamic = "force-dynamic";
@@ -134,7 +134,7 @@ export default async function DashboardPage({
             <span className="text-gradient">{firstName}</span>!
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">
-            Добро пожаловать в SchoolMeet. Ниже — ваш следующий урок, задания и быстрые переходы.
+            Добро пожаловать в Лицей Сингулярити. Ниже — ваш следующий урок, задания и быстрые переходы.
           </p>
         </div>
 

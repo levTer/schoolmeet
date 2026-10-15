@@ -10,7 +10,7 @@ import { getRealtimeControl } from "@/lib/realtime-control";
 
 export const metadata: Metadata = {
   title: "Пользователи",
-  description: "Управление пользователями SchoolMeet: роли, классы, пароли и блокировки.",
+  description: "Управление пользователями Лицея Сингулярити: роли, классы, пароли и блокировки.",
 };
 
 export const dynamic = "force-dynamic";

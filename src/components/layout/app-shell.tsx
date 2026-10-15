@@ -46,7 +46,7 @@ export async function AppShell({ children, className }: AppShellProps) {
       </main>
 
       <footer className="hidden border-t border-white/5 px-5 py-6 text-center text-xs text-slate-500 sm:px-8 md:block">
-        SchoolMeet · Этап 7 — дашборд, мобильная адаптация и PWA
+        Лицей Сингулярити · платформа видеоуроков, ИИ-доски и расписания
       </footer>
 
       {/* Нижняя навигация для мобильных устройств */}

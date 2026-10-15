@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * ИИ-панель учителя SchoolMeet.
+ * ИИ-панель учителя Лицея Сингулярити.
  *
  * ГЛАВНОЕ В ПАНЕЛИ — СВОБОДНЫЙ ВВОД: крупная текстовая область, кнопка
  * «Отправить» и микрофон 🎤 (Web Speech API). Учитель может спросить
@@ -134,7 +134,7 @@ export function AIAssistant({
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [boardAttached, setBoardAttached] = useState(false);
-  const [providerName, setProviderName] = useState("ИИ-движок SchoolMeet");
+  const [providerName, setProviderName] = useState("ИИ-движок Лицея Сингулярити");
   const [providerIsLocal, setProviderIsLocal] = useState(true);
   const [interim, setInterim] = useState("");
 

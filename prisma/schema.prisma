@@ -1,4 +1,4 @@
-// SchoolMeet — схема базы данных
+// Лицей Сингулярити — схема базы данных
 // Документация по Prisma schema: https://pris.ly/d/prisma-schema
 
 generator client {

@@ -8,7 +8,7 @@ import { authOptions, canAccessAdminArea } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Админ-панель",
-  description: "Управление школой SchoolMeet: пользователи, уроки, объявления и статистика.",
+  description: "Управление лицеем Сингулярити: пользователи, уроки, объявления и статистика.",
 };
 
 export const dynamic = "force-dynamic";

@@ -55,13 +55,13 @@ const appearanceBootstrapScript = `(() => {
 
 export const metadata: Metadata = {
   title: {
-    default: "SchoolMeet — видеоуроки для школ с ИИ-доской",
-    template: "%s · SchoolMeet",
+    default: "Лицей Сингулярити — видеоуроки с ИИ-доской",
+    template: "%s · Лицей Сингулярити",
   },
   description:
-    "SchoolMeet — платная платформа видеозвонков и уроков для школ: HD-видео, интерактивная ИИ-доска с GPT-4o Vision, школьное расписание с ролями и защищённый чат на AES-256.",
+    "Лицей Сингулярити — школьная платформа видеозвонков и уроков: HD-видео, интерактивная ИИ-доска с GPT-4o Vision, расписание с ролями и защищённый чат на AES-256.",
   keywords: [
-    "SchoolMeet",
+    "Лицей Сингулярити",
     "видеоуроки для школ",
     "онлайн-уроки",
     "ИИ-доска",
@@ -69,21 +69,21 @@ export const metadata: Metadata = {
     "расписание уроков",
     "шифрованный чат",
   ],
-  authors: [{ name: "SchoolMeet" }],
+  authors: [{ name: "Лицей Сингулярити" }],
   openGraph: {
-    title: "SchoolMeet — Zoom нового поколения для школ с ИИ-ассистентом",
+    title: "Лицей Сингулярити — Zoom нового поколения для школ с ИИ-ассистентом",
     description:
       "HD-видеозвонки, интерактивная доска с распознаванием формул, расписание с ролями и защищённый чат — в одной платформе.",
     type: "website",
     locale: "ru_RU",
-    siteName: "SchoolMeet",
+    siteName: "Лицей Сингулярити",
   },
   robots: { index: true, follow: true },
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "SchoolMeet",
+    title: "Сингулярити",
   },
 };
 

@@ -10,7 +10,7 @@ import { authOptions } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Аккаунт заблокирован",
-  description: "Доступ к SchoolMeet ограничен администратором школы.",
+  description: "Доступ к Лицею Сингулярити ограничен администратором школы.",
 };
 
 export const dynamic = "force-dynamic";

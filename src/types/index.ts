@@ -1,7 +1,7 @@
 import type { GradeCode } from "@/lib/schedule-rules";
 
 /**
- * SchoolMeet — общие типы домена.
+ * Лицей Сингулярити — общие типы домена.
  *
  * Модели зеркалят `prisma/schema.prisma`. Поля, приходящие из БД как `Date`,
  * описаны как `Date | string`, потому что на границе API (JSON / Server

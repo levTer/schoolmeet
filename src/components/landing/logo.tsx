@@ -21,7 +21,7 @@ export function Logo({ className, size = "md", showWordmark = true }: LogoProps)
     <Link
       href="/"
       className={cn("group inline-flex items-center gap-3", className)}
-      aria-label="SchoolMeet — на главную"
+      aria-label="Лицей Сингулярити — на главную"
     >
       <span className="relative inline-flex">
         <span className="absolute -inset-1 rounded-2xl bg-brand-gradient opacity-40 blur-md transition group-hover:opacity-70" />
@@ -43,7 +43,7 @@ export function Logo({ className, size = "md", showWordmark = true }: LogoProps)
 
       {showWordmark && (
         <span className="text-lg font-semibold tracking-tight text-white">
-          School<span className="text-gradient-brand">Meet</span>
+          Лицей <span className="text-gradient-brand">Сингулярити</span>
         </span>
       )}
     </Link>

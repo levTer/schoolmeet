@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Профессиональная интерактивная доска SchoolMeet (этап 4).
+ * Профессиональная интерактивная доска Лицея Сингулярити (этап 4).
  *
  * Хук владеет экземпляром Fabric.js-канвы и всей логикой доски:
  * инструменты (карандаш, линия, прямоугольник, круг, стрелка, текст, стикер,
@@ -1048,7 +1048,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
     const dataUrl = canvas.toDataURL({ format: "png", multiplier: 2, enableRetinaScaling: false });
     const link = document.createElement("a");
     link.href = dataUrl;
-    link.download = `schoolmeet-board-page-${currentPageRef.current + 1}.png`;
+    link.download = `licey-singularity-board-page-${currentPageRef.current + 1}.png`;
     link.click();
   }, []);
 

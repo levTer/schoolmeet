@@ -48,7 +48,7 @@ export const GUARANTEED_ADMINS = [
   {
     email: "admin@schoolmeet.ru",
     password: "Admin123!",
-    name: "Администратор Синлицея",
+    name: "Администратор Лицея Сингулярити",
     role: "ADMIN",
     schoolCode: "Sinlycem26",
   },

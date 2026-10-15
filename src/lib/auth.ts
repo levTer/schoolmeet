@@ -70,7 +70,7 @@ export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       id: "credentials",
-      name: "SchoolMeet",
+      name: "Лицей Сингулярити",
       credentials: {
         email: { label: "Email", type: "email", placeholder: "ivan@school.ru" },
         password: { label: "Пароль", type: "password" },

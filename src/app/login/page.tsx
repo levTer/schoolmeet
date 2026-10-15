@@ -11,7 +11,7 @@ import { sanitizeRedirectPath } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Вход",
-  description: "Вход в SchoolMeet — авторизация по ролям: администратор, учитель, ученик.",
+  description: "Вход в личный кабинет Лицея Сингулярити: администратор, учитель, ученик.",
 };
 
 export const dynamic = "force-dynamic";

@@ -4,13 +4,12 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { ArrowRight, KeyRound, Mail, Sparkles } from "lucide-react";
+import { ArrowRight, KeyRound, Mail, ShieldCheck } from "lucide-react";
 
 import { FormAlert } from "@/components/ui/form-alert";
 import { PasswordField, TextField } from "@/components/ui/field";
 import { GradientButton } from "@/components/ui/gradient-button";
 import { resolveLoginErrorMessage } from "@/lib/auth-errors";
-import { QUICK_LOGIN_ACCOUNTS, type QuickLoginAccount } from "@/lib/demo-accounts";
 import { normalizeEmail } from "@/lib/validation";
 import { sanitizeRedirectPath } from "@/lib/utils";
 
@@ -81,13 +80,6 @@ export function LoginForm() {
     }
   }
 
-  function fillDemo(account: QuickLoginAccount) {
-    setEmail(account.email);
-    setPassword(account.password);
-    setFieldErrors({});
-    setFormError(null);
-  }
-
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
       {justRegistered && (
@@ -141,23 +133,11 @@ export function LoginForm() {
 
       <div className="space-y-3 rounded-2xl border border-brand-400/20 bg-brand-500/[0.06] p-4">
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-brand-100">
-          <Sparkles className="h-3.5 w-3.5 text-brand-300" />
-          Быстрый демо-вход
+          <ShieldCheck className="h-3.5 w-3.5 text-brand-300" />
+          Доступ выдаёт администратор лицея
         </p>
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          {QUICK_LOGIN_ACCOUNTS.map((account) => (
-            <button
-              key={account.email}
-              type="button"
-              onClick={() => fillDemo(account)}
-              className="rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-left text-xs text-slate-200 transition hover:border-brand-400/50 hover:bg-brand-500/15 hover:text-white"
-            >
-              {account.label}
-            </button>
-          ))}
-        </div>
         <p className="text-[11px] leading-relaxed text-slate-400">
-          Нажмите кнопку — Email и пароль заполнятся автоматически. Затем нажмите «Войти».
+          Если пароль не подходит или аккаунт заблокирован — обратитесь к администратору школы.
         </p>
       </div>
 

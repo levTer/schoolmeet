@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Журнал действий",
-  description: "Аудит админ-панели SchoolMeet: смена ролей, блокировки, завершение уроков и объявления.",
+  description: "Аудит админ-панели Лицея Сингулярити: смена ролей, блокировки, завершение уроков и объявления.",
 };
 
 export const dynamic = "force-dynamic";
