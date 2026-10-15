@@ -98,7 +98,7 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
   return (
     <AuthShell
       eyebrow="Создание аккаунта"
-      title="Присоединиться к Лицею Сингулярити"
+      title={`Присоединиться к ${schoolName || "SchoolMeet"}`}
       subtitle={
         inviteRole === "ADMIN"
           ? "Ссылка Администратора: аккаунт будет создан сразу с ролью ADMIN."

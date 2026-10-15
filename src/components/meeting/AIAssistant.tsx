@@ -134,7 +134,7 @@ export function AIAssistant({
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [boardAttached, setBoardAttached] = useState(false);
-  const [providerName, setProviderName] = useState("ИИ-движок Лицея Сингулярити");
+  const [providerName, setProviderName] = useState("ИИ-движок SchoolMeet");
   const [providerIsLocal, setProviderIsLocal] = useState(true);
   const [interim, setInterim] = useState("");
 
@@ -297,7 +297,7 @@ export function AIAssistant({
   /* ----------------------------- Разметка -------------------------------- */
 
   return (
-    <aside className="glass flex h-full w-full flex-col overflow-hidden rounded-3xl md:w-[380px] md:shrink-0">
+    <aside className="glass flex h-full w-full flex-col overflow-hidden rounded-3xl md:w-[420px] md:shrink-0 lg:w-[460px]">
       <header className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-gradient shadow-glow">
           <Sparkles className="h-4 w-4 text-white" />
@@ -412,7 +412,7 @@ export function AIAssistant({
           placeholder="Спросите ИИ что угодно: «реши 2x² − 5x + 3 = 0», «объясни теорему Пифагора», «составь план урока на 45 минут»…"
           aria-label="Вопрос ИИ-помощнику"
           className={cn(
-            "w-full resize-y rounded-2xl border border-white/10 bg-ink-900/70 px-3.5 py-3 text-sm text-slate-100",
+            "min-h-[44px] w-full resize-y rounded-2xl border border-white/10 bg-ink-900/70 px-3.5 py-3 text-sm text-slate-100",
             "placeholder:text-xs placeholder:text-slate-500 focus:border-brand-400/50 focus:outline-none focus:ring-2 focus:ring-brand-500/30",
             interim && "text-slate-400",
           )}

@@ -8,6 +8,11 @@ interface LogoProps {
   /** Размер «плитки» с иконкой. */
   size?: "sm" | "md" | "lg";
   showWordmark?: boolean;
+  /**
+   * Название школы для вордмарка (из сессии: `session.user.schoolName`).
+   * Без названия показывается бренд платформы «SchoolMeet».
+   */
+  schoolName?: string | null;
 }
 
 const sizes = {
@@ -16,12 +21,14 @@ const sizes = {
   lg: "h-12 w-12 rounded-2xl",
 } as const;
 
-export function Logo({ className, size = "md", showWordmark = true }: LogoProps) {
+export function Logo({ className, size = "md", showWordmark = true, schoolName }: LogoProps) {
+  const brandName = schoolName || "SchoolMeet";
+
   return (
     <Link
       href="/"
       className={cn("group inline-flex items-center gap-3", className)}
-      aria-label="Лицей Сингулярити — на главную"
+      aria-label={`${brandName} — на главную`}
     >
       <span className="relative inline-flex">
         <span className="absolute -inset-1 rounded-2xl bg-brand-gradient opacity-40 blur-md transition group-hover:opacity-70" />
@@ -43,7 +50,7 @@ export function Logo({ className, size = "md", showWordmark = true }: LogoProps)
 
       {showWordmark && (
         <span className="text-lg font-semibold tracking-tight text-white">
-          Лицей <span className="text-gradient-brand">Сингулярити</span>
+          <span className="text-gradient-brand">{brandName}</span>
         </span>
       )}
     </Link>
