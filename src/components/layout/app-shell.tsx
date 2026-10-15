@@ -1,4 +1,5 @@
 import { getServerSession } from "next-auth";
+import type { Session } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { Navbar } from "@/components/layout/Navbar";
@@ -19,7 +20,9 @@ interface AppShellProps {
  * «Выйти» попадают сразу в серверную разметку.
  */
 export async function AppShell({ children, className }: AppShellProps) {
-  let session: Awaited<ReturnType<typeof getServerSession>> = null;
+  /* Реальный тип сессии: `Awaited<ReturnType<typeof getServerSession>>`
+     в next-auth 4.24 схлопывается в `unknown` и ломает сборку. */
+  let session: Session | null = null;
   try {
     session = await getServerSession(authOptions);
   } catch (err) {
@@ -27,9 +30,12 @@ export async function AppShell({ children, className }: AppShellProps) {
     session = null;
   }
 
+  // Защита от неожиданной формы сессии: берём `user`, только если он реально есть.
+  const user = session && 'user' in session ? session.user : null;
+
   // Заблокированный аккаунт не должен видеть внутренние разделы даже с живой
   // JWT-cookie: middleware проверяет токен, а здесь данные сессии уже сверены с БД.
-  if (session?.user?.banned) {
+  if (user?.banned) {
     redirect("/banned");
   }
 
@@ -40,7 +46,7 @@ export async function AppShell({ children, className }: AppShellProps) {
         <div className="absolute left-1/2 top-0 h-[24rem] w-[24rem] -translate-x-1/2 rounded-full bg-brand-600/15 blur-[140px]" />
       </div>
 
-      <Navbar user={session?.user ?? null} />
+      <Navbar user={user ?? null} />
 
       <main
         className={cn(
@@ -56,7 +62,7 @@ export async function AppShell({ children, className }: AppShellProps) {
       </footer>
 
       {/* Нижняя навигация для мобильных устройств */}
-      <BottomNav role={session?.user?.role ?? null} />
+      <BottomNav role={user?.role ?? null} />
     </div>
   );
 }

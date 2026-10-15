@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+import type { Session } from "next-auth";
 import { CalendarDays, ShieldCheck, Sparkles, Video } from "lucide-react";
 
 import { AuthShell, type AuthHighlight } from "@/components/auth/auth-shell";
@@ -53,7 +54,9 @@ interface LoginPageProps {
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const callbackUrl = sanitizeRedirectPath(searchParams.callbackUrl);
 
-  let session: Awaited<ReturnType<typeof getServerSession>> = null;
+  /* Реальный тип сессии: `Awaited<ReturnType<typeof getServerSession>>`
+     в next-auth 4.24 схлопывается в `unknown` и ломает сборку. */
+  let session: Session | null = null;
   try {
     session = await getServerSession(authOptions);
   } catch (err) {
@@ -62,7 +65,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   }
 
   // Уже авторизованных не держим на странице входа.
-  if (session?.user) redirect(callbackUrl);
+  const user = session && 'user' in session ? session.user : null;
+  if (user) redirect(callbackUrl);
 
   return (
     <AuthShell
