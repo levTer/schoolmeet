@@ -2,9 +2,9 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcryptjs from "bcryptjs";
 
-import { LOGIN_ERROR } from "@/lib/auth-errors";
 import { prisma } from "@/lib/prisma";
-import { ensureUserSchoolMembership } from "@/lib/schools";
+import { GUARANTEED_ADMINS } from "@/lib/school-config";
+import { ensureUserSchoolMembership, provisionConfiguredSchools } from "@/lib/schools";
 import type { Role } from "@/types";
 
 /** Сессия живёт 30 дней и продлевается при активности пользователя. */
@@ -36,7 +36,18 @@ export function canAccessAdminArea(role?: Role | null): boolean {
 }
 
 /**
- * Ищет пользователя по нормализованному email.
+ * Email гарантированных администраторов настроенных школ (см. `GUARANTEED_ADMINS`
+ * в `@/lib/school-config`). Никаких паролей здесь нет и быть не должно: список
+ * нужен только чтобы понять, кого при отсутствии в БД надо инициализировать
+ * через `provisionConfiguredSchools` — дальше вход идёт строго по bcrypt-хешу
+ * из PostgreSQL, как для любого другого пользователя.
+ */
+const CONFIGURED_ADMIN_EMAILS: ReadonlySet<string> = new Set(
+  GUARANTEED_ADMINS.map((admin) => admin.email.toLowerCase().trim()),
+);
+
+/**
+ * Ищет пользователя по нормализованному email (вместе со школой).
  *
  * Основной путь — точное совпадение: он идёт по уникальному индексу `users.email`.
  * Если строки нет, повторяем поиск без учёта регистра: аккаунты, созданные до
@@ -44,11 +55,15 @@ export function canAccessAdminArea(role?: Role | null): boolean {
  * обязан войти по обычному «ivan@school.ru».
  */
 async function findUserByEmail(cleanEmail: string) {
-  const exact = await prisma.user.findUnique({ where: { email: cleanEmail } });
+  const exact = await prisma.user.findFirst({
+    where: { email: cleanEmail },
+    include: { school: true },
+  });
   if (exact) return exact;
 
   return prisma.user.findFirst({
     where: { email: { equals: cleanEmail, mode: "insensitive" } },
+    include: { school: true },
   });
 }
 
@@ -77,55 +92,90 @@ export const authOptions: NextAuthOptions = {
       },
 
       /**
-       * Проверяет email + пароль.
+       * Проверяет email + пароль строго по PostgreSQL (Neon) и bcrypt-хешу.
        *
-       * Возвращает объект пользователя (NextAuth сериализует его в JWT) либо
-       * бросает ошибку с коротким кодом — клиент покажет понятный текст:
-       * «Пользователь с таким email не найден», «Неверный пароль».
+       * Никаких хардкод-паролей, обходов и «фальшивых» сессий: пользователь
+       * существует только если есть строка в БД, пароль верен только если
+       * `bcryptjs.compare` сошёлся с хешем из БД, а при недоступности БД
+       * вход отклоняется (`null` → NextAuth покажет `CredentialsSignin`).
+       *
+       * Возвращает объект пользователя (NextAuth сериализует его в JWT)
+       * либо `null` при любой неудаче. Каждая ветка логируется префиксами
+       * `[AUTH]` / `[AUTH_FAIL]` / `[AUTH_SUCCESS]` / `[AUTH_ERROR]` —
+       * по ним в логах продакшена видна точная причина отказа.
        */
       async authorize(credentials) {
-        if (!credentials?.email || !credentials.password) {
-          throw new Error(LOGIN_ERROR.missingCredentials);
+        if (!credentials?.email || !credentials?.password) {
+          console.log('[AUTH] Missing credentials');
+          return null;
         }
 
-        // Email приводим к единому виду (`toLowerCase().trim()`): в БД он лежит
-        // в нижнем регистре, а пользователь может ввести « Ivan@School.ru ».
         const cleanEmail = credentials.email.toLowerCase().trim();
+        const password = credentials.password;
 
         if (!cleanEmail) {
-          throw new Error(LOGIN_ERROR.missingCredentials);
+          console.log('[AUTH] Missing credentials');
+          return null;
         }
 
-        const user = await findUserByEmail(cleanEmail);
-        if (!user) {
-          throw new Error(LOGIN_ERROR.userNotFound);
+        try {
+          console.log(`[AUTH] Login attempt for: ${cleanEmail}`);
+
+          // 1. Поиск пользователя в PostgreSQL
+          let user = await findUserByEmail(cleanEmail);
+
+          // 2. Если это дефолтный админ, но его еще нет в БД — инициализируем его В БАЗЕ ДАННЫХ
+          if (!user && CONFIGURED_ADMIN_EMAILS.has(cleanEmail)) {
+            console.log(`[AUTH] Initializing missing admin in DB for: ${cleanEmail}`);
+            await provisionConfiguredSchools(); // Гарантирует создание школ и пользователей в Neon
+            user = await findUserByEmail(cleanEmail);
+          }
+
+          if (!user) {
+            console.log(`[AUTH_FAIL] User not found in DB: ${cleanEmail}`);
+            return null;
+          }
+
+          if (user.isBanned) {
+            console.log(`[AUTH_FAIL] User is banned: ${cleanEmail}`);
+            return null;
+          }
+
+          // 3. Строгая проверка пароля из ХЕША В БАЗЕ ДАННЫХ
+          const isPasswordValid = await bcryptjs.compare(password, user.password);
+          if (!isPasswordValid) {
+            console.log(`[AUTH_FAIL] Invalid password for: ${cleanEmail}`);
+            return null;
+          }
+
+          console.log(`[AUTH_SUCCESS] User authenticated: ${cleanEmail} (${user.role})`);
+
+          // Старые аккаунты без школы мигрируем в школу по умолчанию до
+          // выпуска JWT (как и раньше); свежие записи уже имеют schoolId.
+          let schoolId = user.schoolId;
+          let classId = user.classId;
+          if (!schoolId) {
+            const membership = await ensureUserSchoolMembership(user.id);
+            if (membership) {
+              schoolId = membership.schoolId;
+              classId = membership.classId;
+            }
+          }
+
+          // Пароль-хеш наружу не отдаём; в сессию попадают только данные из БД.
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role as Role,
+            schoolId,
+            classId,
+            image: user.avatar ?? null,
+          };
+        } catch (error) {
+          console.error(`[AUTH_ERROR] Critical DB or Auth error for ${cleanEmail}:`, error);
+          return null;
         }
-
-        // bcryptjs: сверяем открытый пароль с bcrypt-хешем из БД.
-        const isPasswordValid = await bcryptjs.compare(credentials.password, user.password);
-        if (!isPasswordValid) {
-          throw new Error(LOGIN_ERROR.invalidPassword);
-        }
-
-        // Заблокированный аккаунт не может войти: даже с верным паролем.
-        if (user.isBanned) {
-          throw new Error(LOGIN_ERROR.accountBanned);
-        }
-
-        // Мигрируем старые аккаунты в школу по умолчанию до выпуска JWT.
-        const membership = await ensureUserSchoolMembership(user.id);
-        if (!membership) throw new Error(LOGIN_ERROR.userNotFound);
-
-        // Пароль-хеш наружу не отдаём; в сессию попадают только данные членства.
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role as Role,
-          schoolId: membership.schoolId,
-          classId: membership.classId,
-          image: user.avatar ?? null,
-        };
       },
     }),
   ],
