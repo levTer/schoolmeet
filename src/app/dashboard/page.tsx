@@ -25,13 +25,9 @@ import {
 import { AppShell } from "@/components/layout/app-shell";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
 import { loadDashboardData, resolveLessonSnapshot } from "@/lib/dashboard-data";
-import { buildDashboardFallback, viewerFromClaims, type DashboardData } from "@/lib/dashboard-fallback";
+import { buildDashboardFallback, viewerFromClaims, withDeadline, type DashboardData } from "@/lib/dashboard-fallback";
 import { getGreeting } from "@/lib/dashboard-greeting";
-import {
-  recalculateDashboardMetrics,
-  syncOverdueHomeworkStatuses,
-  type DashboardMetrics,
-} from "@/lib/dashboard-maintenance";
+import { recalculateDashboardMetrics, syncOverdueHomeworkStatuses } from "@/lib/dashboard-maintenance";
 import { ROLE_LABELS, getPermissionLabels, type Role } from "@/types";
 
 export const metadata: Metadata = {
@@ -40,6 +36,9 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
+
+/** Общий дедлайн загрузки данных, чтобы последовательные Neon-задержки не превысили лимит RSC. */
+const DASHBOARD_PAGE_DATA_TIMEOUT_MS = 24_000;
 
 const ROLE_BADGES: Record<Role, string> = {
   ADMIN: "border-rose-400/30 bg-rose-500/15 text-rose-200",
@@ -56,7 +55,7 @@ export default async function DashboardPage({
      задержке Neon может бросить исключение. Кабинет из-за этого падать не должен. */
   let session: Session | null = null;
   try {
-    session = await getServerSession(authOptions);
+    session = await withDeadline(getServerSession(authOptions), "dashboard session");
   } catch (err) {
     console.error("[DASHBOARD_SESSION_WARN]", err);
   }
@@ -79,7 +78,16 @@ export default async function DashboardPage({
      всегда, а не показывал экран ошибки Next.js. */
   let data: DashboardData;
   try {
-    data = await loadDashboardData({ userId: id, role, schoolId, classId, now });
+    const loaded = await withDeadline(
+      loadDashboardData({ userId: id, role, schoolId, classId, now }),
+      "dashboard page data",
+      DASHBOARD_PAGE_DATA_TIMEOUT_MS,
+    );
+    data =
+      loaded ??
+      buildDashboardFallback({
+        viewer: viewerFromClaims({ id, role, schoolId, classId, isBanned: session.user.banned }),
+      });
   } catch (err) {
     console.error("[DASHBOARD_DATA_WARN]", err);
     data = buildDashboardFallback({
@@ -96,24 +104,25 @@ export default async function DashboardPage({
     data.viewer ?? viewerFromClaims({ id, role, schoolId, classId, isBanned: session.user.banned });
 
   try {
-    if (!data.degraded) await syncOverdueHomeworkStatuses(maintenanceViewer, now);
+    if (!data.degraded) {
+      void syncOverdueHomeworkStatuses(maintenanceViewer, now).catch((err) => {
+        console.error("[DASHBOARD_HW_UPDATE_WARN]", err);
+      });
+    }
   } catch (err) {
     console.error("[DASHBOARD_HW_UPDATE_WARN]", err);
   }
 
-  /* Фоновая сервисная операция №2: перерасчёт метрик школы. Тоже изолирована:
-     метрики — вспомогательные, без них кабинет полностью работоспособен. */
-  let metrics: DashboardMetrics | null = null;
+  /* Фоновая сервисная операция №2: метрики вспомогательные и не должны
+     удерживать RSC-рендер. Оба уровня ошибок изолированы (вызов и промис). */
   try {
-    metrics = data.degraded ? null : await recalculateDashboardMetrics(maintenanceViewer, now);
+    if (!data.degraded) {
+      void recalculateDashboardMetrics(maintenanceViewer, now).catch((err) => {
+        console.error("[DASHBOARD_METRICS_WARN]", err);
+      });
+    }
   } catch (err) {
-    console.error("[DASHBOARD_HW_UPDATE_WARN]", err);
-  }
-
-  /* Если данные пришли неполными, счётчик очереди проверки добираем из метрик —
-     так виджет не покажет «0 работ» там, где база просто не ответила вовремя. */
-  if (data.degraded && metrics && metrics.pendingReviews > data.review.count) {
-    data = { ...data, review: { ...data.review, count: metrics.pendingReviews } };
+    console.error("[DASHBOARD_METRICS_WARN]", err);
   }
 
   const { live, next } = resolveLessonSnapshot(data.lessons, now);

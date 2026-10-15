@@ -6,6 +6,7 @@ import type { Session } from "next-auth";
 import { AdminNav } from "@/components/admin/admin-nav";
 import { AppShell } from "@/components/layout/app-shell";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
+import { withDeadline } from "@/lib/dashboard-fallback";
 
 export const metadata: Metadata = {
   title: "Админ-панель",
@@ -28,7 +29,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
      аннотация врала и `next build` падал с TS2339. Объявляем реальный тип. */
   let session: Session | null = null;
   try {
-    session = await getServerSession(authOptions);
+    session = await withDeadline(getServerSession(authOptions), "admin layout session");
   } catch (err) {
     console.error('[ADMIN_LAYOUT_SESSION_ERROR]', err);
     session = null;

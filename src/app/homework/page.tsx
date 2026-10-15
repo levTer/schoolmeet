@@ -1,19 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
+import { getServerSession, type Session } from "next-auth";
 import { ArrowLeft, ClipboardList } from "lucide-react";
 
 import { HomeworkCard } from "@/components/homework/homework-card";
 import { HomeworkCreateButton } from "@/components/homework/homework-create-modal";
 import { HomeworkEmptyState } from "@/components/homework/homework-empty-state";
 import { AppShell } from "@/components/layout/app-shell";
+import { FormAlert } from "@/components/ui/form-alert";
 import { authOptions } from "@/lib/auth";
+import { viewerFromClaims, withDeadline } from "@/lib/dashboard-fallback";
 import { listHomeworkForViewer } from "@/lib/homework";
 import { listSubjects } from "@/lib/schedule";
-import { listClassesForSchool } from "@/lib/schools";
-import { getSchoolViewer } from "@/lib/school-viewer";
-import { hasPermission, type HomeworkListItem } from "@/types";
+import { listClassesForSchool, type SchoolClassOption } from "@/lib/schools";
+import { getSchoolViewer, type SchoolViewer } from "@/lib/school-viewer";
+import { hasPermission, type HomeworkListItem, type Subject } from "@/types";
 
 export const metadata: Metadata = {
   title: "Домашние задания",
@@ -27,18 +29,66 @@ export const dynamic = "force-dynamic";
  * со статистикой сдачи и кнопкой «Новое задание».
  */
 export default async function HomeworkPage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) redirect("/login?callbackUrl=/homework");
+  let session: Session | null = null;
+  try {
+    session = await withDeadline(getServerSession(authOptions), "homework session");
+  } catch (err) {
+    console.error("[HOMEWORK_SESSION_WARN]", err);
+  }
+  if (!session?.user?.id) redirect("/login?callbackUrl=/homework");
 
-  const viewer = await getSchoolViewer(session.user.id);
-  if (!viewer) redirect("/login?callbackUrl=/homework");
+  let viewer: SchoolViewer | null = null;
+  let viewerNotFound = false;
+  let databaseDegraded = false;
+  try {
+    // Обёртка сохраняет различие между «БД вернула null» и дедлайном.
+    const result = await withDeadline(
+      getSchoolViewer(session.user.id).then((value) => ({ value })),
+      "homework viewer",
+    );
+    if (result === null) databaseDegraded = true;
+    else if (result.value) viewer = result.value;
+    else viewerNotFound = true;
+  } catch (err) {
+    console.error("[HOMEWORK_VIEWER_WARN]", err);
+    databaseDegraded = true;
+  }
+
+  if (viewerNotFound) redirect("/login?callbackUrl=/homework");
+  if (!viewer) {
+    databaseDegraded = true;
+    viewer = viewerFromClaims({
+      id: session.user.id,
+      role: session.user.role,
+      schoolId: session.user.schoolId,
+      classId: session.user.classId,
+      isBanned: session.user.banned,
+    });
+  }
 
   const canWrite = hasPermission(viewer.role, "homework:write");
-  const [homeworks, subjects, classes] = await Promise.all([
-    listHomeworkForViewer(viewer),
-    canWrite ? listSubjects() : Promise.resolve([]),
-    canWrite && viewer.schoolId ? listClassesForSchool(viewer.schoolId) : Promise.resolve([]),
-  ]);
+
+  /* Данные ДЗ/каталогов: при ошибке или дедлайне остаётся пустой, но валидный UI. */
+  let homeworks: HomeworkListItem[] = [];
+  let subjects: Subject[] = [];
+  let classes: SchoolClassOption[] = [];
+  try {
+    const result = await withDeadline(
+      Promise.all([
+        listHomeworkForViewer(viewer),
+        canWrite ? listSubjects() : Promise.resolve([] as Subject[]),
+        canWrite && viewer.schoolId
+          ? listClassesForSchool(viewer.schoolId)
+          : Promise.resolve([] as SchoolClassOption[]),
+      ]),
+      "homework page data",
+    );
+    if (result) [homeworks, subjects, classes] = result;
+    else databaseDegraded = true;
+  } catch (err) {
+    console.error("[HOMEWORK_DATA_WARN]", err);
+    databaseDegraded = true;
+  }
 
   const role = viewer.role as "STUDENT" | "TEACHER" | "ADMIN";
   const todo = homeworks.filter((item) => !item.mySubmission || item.mySubmission.status === "DRAFT");
@@ -47,6 +97,12 @@ export default async function HomeworkPage() {
   // pt-24 / pt-28 — свободное пространство под фиксированной шапкой (Navbar, z-50).
   return (
     <AppShell className="pt-24 sm:pt-28">
+      {databaseDegraded && (
+        <FormAlert variant="info" className="mb-6">
+          База данных временно отвечает медленно. Страница открыта, но задания не загрузились;
+          попробуйте обновить страницу позже.
+        </FormAlert>
+      )}
       <header className="animate-fade-up flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <Link href="/dashboard" className="inline-flex items-center gap-2 text-xs text-slate-400 transition hover:text-white">
