@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+import type { Session } from "next-auth";
 
 import { AdminNav } from "@/components/admin/admin-nav";
 import { AppShell } from "@/components/layout/app-shell";
@@ -22,7 +23,10 @@ export const dynamic = "force-dynamic";
  * «Доступ открыт только Администратору школы»).
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  let session: Awaited<ReturnType<typeof getServerSession>> = null;
+  /* `Awaited<ReturnType<typeof getServerSession>>` в next-auth 4.24 схлопывается
+     в `unknown` (generic `R` выводится только из аргументов вызова), поэтому
+     аннотация врала и `next build` падал с TS2339. Объявляем реальный тип. */
+  let session: Session | null = null;
   try {
     session = await getServerSession(authOptions);
   } catch (err) {
@@ -30,13 +34,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     session = null;
   }
 
-  if (!session?.user) {
+  /* Защита от неожиданной формы сессии: берём `user`, только если он реально
+     есть в объекте сессии. */
+  const user = session && 'user' in session ? session.user : null;
+  if (!user) {
     redirect("/login?callbackUrl=/admin");
   }
-  if (!canAccessAdminArea(session.user.role)) {
+  if (!canAccessAdminArea(user.role)) {
     redirect("/dashboard?denied=admin");
   }
-  if (session.user.banned) {
+  if (user.banned) {
     redirect("/banned");
   }
 
