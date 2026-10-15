@@ -1,6 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import bcryptjs from "bcryptjs";
-import { prisma } from "@/lib/prisma";
+import { INTERACTIVE_TRANSACTION_OPTIONS, prisma } from "@/lib/prisma";
 import { GRADES, type GradeCode } from "@/lib/schedule-rules";
 import { gradeFromClassName, normalizeSchoolCode } from "@/lib/school-rules";
 import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
@@ -292,7 +292,7 @@ async function mergeSchoolData(db: PrismaClient, sourceSchoolId: string, targetS
     await tx.homework.updateMany({ where: { schoolId: sourceSchoolId }, data: { schoolId: targetSchoolId } });
     await tx.meeting.updateMany({ where: { schoolId: sourceSchoolId }, data: { schoolId: targetSchoolId } });
     await tx.school.delete({ where: { id: sourceSchoolId } });
-  });
+  }, INTERACTIVE_TRANSACTION_OPTIONS);
 }
 
 /**
@@ -378,7 +378,7 @@ async function ensureDefaultSchoolAndBackfill(): Promise<SchoolSummary> {
         data: { schoolId: meetingSchoolId },
       });
     }
-  });
+  }, INTERACTIVE_TRANSACTION_OPTIONS);
 
   return school;
 }

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { conflict, handleRouteError, jsonOk, notFound } from "@/lib/api";
 import { requireRole, requireViewer } from "@/lib/session-viewer";
-import { prisma } from "@/lib/prisma";
+import { INTERACTIVE_TRANSACTION_OPTIONS, prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +35,7 @@ export async function DELETE(
 
         await tx.class.delete({ where: { id: schoolClass.id } });
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      { ...INTERACTIVE_TRANSACTION_OPTIONS, isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
     return jsonOk({ deleted: true });

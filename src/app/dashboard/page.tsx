@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
+import { getServerSession, type Session } from "next-auth";
 import {
   ArrowRight,
   CalendarDays,
   CheckCircle2,
+  CloudOff,
   Mail,
   ShieldCheck,
   Sparkles,
@@ -22,14 +23,16 @@ import {
   UrgentHomeworkWidget,
 } from "@/components/dashboard/widgets";
 import { AppShell } from "@/components/layout/app-shell";
-import { listActiveAnnouncementsForViewer, type AnnouncementDto } from "@/lib/announcements";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
+import { loadDashboardData, resolveLessonSnapshot } from "@/lib/dashboard-data";
+import { buildDashboardFallback, viewerFromClaims, type DashboardData } from "@/lib/dashboard-fallback";
 import { getGreeting } from "@/lib/dashboard-greeting";
-import { getReviewQueue, getUrgentHomework } from "@/lib/homework";
-import { findLiveLesson, findNextLesson, getSchoolClock } from "@/lib/schedule-rules";
-import { listLessonsForViewer } from "@/lib/schedule";
-import { getSchoolViewer } from "@/lib/school-viewer";
-import { ROLE_LABELS, getPermissionLabels, type Role, type Schedule } from "@/types";
+import {
+  recalculateDashboardMetrics,
+  syncOverdueHomeworkStatuses,
+  type DashboardMetrics,
+} from "@/lib/dashboard-maintenance";
+import { ROLE_LABELS, getPermissionLabels, type Role } from "@/types";
 
 export const metadata: Metadata = {
   title: "Кабинет",
@@ -49,45 +52,74 @@ export default async function DashboardPage({
 }: {
   searchParams: { denied?: string };
 }) {
-  const session = await getServerSession(authOptions);
+  /* Сессию читаем в изолированном блоке: callback `jwt` тоже ходит в БД и при
+     задержке Neon может бросить исключение. Кабинет из-за этого падать не должен. */
+  let session: Session | null = null;
+  try {
+    session = await getServerSession(authOptions);
+  } catch (err) {
+    console.error("[DASHBOARD_SESSION_WARN]", err);
+  }
 
+  /* `redirect()` бросает служебное исключение NEXT_REDIRECT, поэтому вызывается
+     строго вне try/catch — иначе мы бы перехватили управляющий сигнал Next.js. */
   if (!session?.user) {
     redirect("/login?callbackUrl=/dashboard");
   }
 
-  const { id, name, email, role } = session.user;
+  const { id, name, email, role, schoolId, classId } = session.user;
   const canOpenAdmin = canAccessAdminArea(role);
   const permissions = getPermissionLabels(role);
 
   const now = new Date();
-  const viewer = await getSchoolViewer(id);
-  let lessons: Schedule[] = [];
-  let urgent: Awaited<ReturnType<typeof getUrgentHomework>> = [];
-  let review: Awaited<ReturnType<typeof getReviewQueue>> = { count: 0, items: [] };
 
-  if (viewer) {
-    [lessons, urgent, review] = await Promise.all([
-      listLessonsForViewer(viewer),
-      getUrgentHomework(viewer, now),
-      getReviewQueue(viewer),
-    ]);
-  }
-
-  const clock = getSchoolClock(now);
-  const live = findLiveLesson(lessons, clock);
-  const next = findNextLesson(lessons, clock);
-
-  /* Объявления школы: ученик видит свою школу и свой класс, персонал — все. */
-  let announcements: AnnouncementDto[] = [];
+  /* ГЛАВНЫЙ try-catch страницы: загрузка данных пользователя, расписания и
+     виджетов. При задержке базы (таймаут, P2028) исключение НЕ уходит наверх —
+     рендерим кабинет с валидным fallback-объектом, чтобы `/dashboard` открывался
+     всегда, а не показывал экран ошибки Next.js. */
+  let data: DashboardData;
   try {
-    announcements = await listActiveAnnouncementsForViewer({
-      id,
-      role,
-      grade: viewer?.grade ?? null,
+    data = await loadDashboardData({ userId: id, role, schoolId, classId, now });
+  } catch (err) {
+    console.error("[DASHBOARD_DATA_WARN]", err);
+    data = buildDashboardFallback({
+      viewer: viewerFromClaims({ id, role, schoolId, classId, isBanned: session.user.banned }),
     });
-  } catch (error) {
-    console.error("[dashboard] Не удалось загрузить объявления:", error);
   }
+
+  /* Фоновая сервисная операция №1: обновление просроченных статусов ДЗ.
+     Сбой фоновой досыпки (именно она бросала P2028 на `homework.updateMany`)
+     логируем и продолжаем рендер — страница от этого не «убивается».
+     Операции пропускаем, когда данные уже пришли неполными: база и так не
+     успевает, лишние запросы только удлинят рендер. */
+  const maintenanceViewer =
+    data.viewer ?? viewerFromClaims({ id, role, schoolId, classId, isBanned: session.user.banned });
+
+  try {
+    if (!data.degraded) await syncOverdueHomeworkStatuses(maintenanceViewer, now);
+  } catch (err) {
+    console.error("[DASHBOARD_HW_UPDATE_WARN]", err);
+  }
+
+  /* Фоновая сервисная операция №2: перерасчёт метрик школы. Тоже изолирована:
+     метрики — вспомогательные, без них кабинет полностью работоспособен. */
+  let metrics: DashboardMetrics | null = null;
+  try {
+    metrics = data.degraded ? null : await recalculateDashboardMetrics(maintenanceViewer, now);
+  } catch (err) {
+    console.error("[DASHBOARD_HW_UPDATE_WARN]", err);
+  }
+
+  /* Если данные пришли неполными, счётчик очереди проверки добираем из метрик —
+     так виджет не покажет «0 работ» там, где база просто не ответила вовремя. */
+  if (data.degraded && metrics && metrics.pendingReviews > data.review.count) {
+    data = { ...data, review: { ...data.review, count: metrics.pendingReviews } };
+  }
+
+  const { live, next } = resolveLessonSnapshot(data.lessons, now);
+  const urgent = data.urgent;
+  const review = data.review;
+  const announcements = data.announcements;
 
   /* Динамическое приветствие по времени суток. */
   const { greeting, emoji } = getGreeting(now);
@@ -150,6 +182,17 @@ export default async function DashboardPage({
         <div className="mt-6">
           {/* toast «Доступ открыт только Администратору школы» + баннер-«след». */}
           <AdminDeniedNotice denied={searchParams.denied} />
+        </div>
+      )}
+
+      {/* Честная деградация: часть данных не пришла, но кабинет работает. */}
+      {data.degraded && (
+        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3">
+          <CloudOff className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+          <p className="text-sm leading-relaxed text-amber-100">
+            Школа отвечает медленнее обычного: часть данных (расписание или задания) не загрузилась.
+            Кабинет доступен — обновите страницу через минуту.
+          </p>
         </div>
       )}
 
