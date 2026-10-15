@@ -91,23 +91,19 @@ export async function listSubjects(): Promise<Subject[]> {
   return prisma.subject.findMany({ select, orderBy: { name: "asc" } });
 }
 
-/**
- * Создаёт отсутствующие предметы эталонного каталога (идемпотентно, по имени).
- *
- * Здесь batch-форма `$transaction([...])`: Prisma принимает для неё только
- * `isolationLevel`, поэтому тайм-ауты (`timeout`/`maxWait` из
- * `INTERACTIVE_TRANSACTION_OPTIONS`) к ней не применимы — они есть у
- * интерактивных транзакций, где как раз и выполняются пачки `updateMany`.
- */
+/** Создаёт недостающие предметы с явными пределами ожидания транзакции. */
 export async function ensureDefaultSubjects(): Promise<void> {
   await prisma.$transaction(
-    DEFAULT_SUBJECTS.map((subject) =>
-      prisma.subject.upsert({
-        where: { name: subject.name },
-        update: { color: subject.color, emoji: subject.emoji },
-        create: { name: subject.name, color: subject.color, emoji: subject.emoji },
-      }),
-    ),
+    async (tx) => {
+      for (const subject of DEFAULT_SUBJECTS) {
+        await tx.subject.upsert({
+          where: { name: subject.name },
+          update: { color: subject.color, emoji: subject.emoji },
+          create: { name: subject.name, color: subject.color, emoji: subject.emoji },
+        });
+      }
+    },
+    INTERACTIVE_TRANSACTION_OPTIONS,
   );
 }
 

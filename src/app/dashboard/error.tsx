@@ -9,7 +9,7 @@ import { AlertTriangle, CalendarDays, Home } from "lucide-react";
  *
  * Страховка последнего рубежа: если RSC-рендер кабинета всё-таки упал (например,
  * база Neon не ответила и запрос завершился фатально), посетитель видит
- * аккуратную glass-morphism страницу с кнопкой «🔄 Обновить дашборд», а не
+ * аккуратную glass-morphism страницу с кнопкой «🔄 Обновить страницу», а не
  * стандартный белый экран ошибки Next.js. Кнопка вызывает `reset()` — Next.js
  * повторяет рендер сегмента, не перезагружая всю страницу.
  */
@@ -56,7 +56,7 @@ export default function DashboardError({
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-6 py-3 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.03]"
           >
             {/* `reset()` перезапускает рендер сегмента без перезагрузки страницы. */}
-            🔄 Обновить дашборд
+            🔄 Обновить страницу
           </button>
           <Link
             href="/schedule"

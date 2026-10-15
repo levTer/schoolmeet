@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { authOptions } from "@/lib/auth";
+import { withDeadline } from "@/lib/dashboard-fallback";
 import { cn } from "@/lib/utils";
 
 interface AppShellProps {
@@ -24,7 +25,7 @@ export async function AppShell({ children, className }: AppShellProps) {
      в next-auth 4.24 схлопывается в `unknown` и ломает сборку. */
   let session: Session | null = null;
   try {
-    session = await getServerSession(authOptions);
+    session = await withDeadline(getServerSession(authOptions), "app shell session");
   } catch (err) {
     console.error('[APP_SHELL_SESSION_ERROR]', err);
     session = null;

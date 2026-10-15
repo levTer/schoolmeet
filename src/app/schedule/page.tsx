@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
+import { getServerSession, type Session } from "next-auth";
 import { ArrowLeft, CalendarDays } from "lucide-react";
 
 import { ScheduleBoard } from "@/components/schedule/schedule-board";
 import { AppShell } from "@/components/layout/app-shell";
+import { FormAlert } from "@/components/ui/form-alert";
 import { authOptions } from "@/lib/auth";
+import { viewerFromClaims, withDeadline } from "@/lib/dashboard-fallback";
 import { listLessonsForViewer, listSubjects } from "@/lib/schedule";
-import { getSchoolViewer } from "@/lib/school-viewer";
-import { listClassesForSchool } from "@/lib/schools";
-import { ROLE_LABELS, hasPermission } from "@/types";
+import { getSchoolViewer, type SchoolViewer } from "@/lib/school-viewer";
+import { listClassesForSchool, type SchoolClassOption } from "@/lib/schools";
+import { ROLE_LABELS, hasPermission, type Schedule, type Subject } from "@/types";
 
 export const metadata: Metadata = {
   title: "Расписание",
@@ -24,22 +26,74 @@ export const dynamic = "force-dynamic";
  * Данные грузим на сервере по роли; таймер, статусы и красная линия считаются в браузере.
  */
 export default async function SchedulePage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  /* Сессию читаем в изолированном блоке: callback `jwt` тоже ходит в БД и при
+     задержке Neon может бросить исключение. Страница из-за этого падать не должна. */
+  let session: Session | null = null;
+  try {
+    session = await withDeadline(getServerSession(authOptions), "schedule session");
+  } catch (err) {
+    console.error("[SCHEDULE_SESSION_WARN]", err);
+  }
+
+  if (!session?.user?.id) {
     redirect("/login?callbackUrl=/schedule");
   }
 
-  const viewer = await getSchoolViewer(session.user.id);
-  if (!viewer) {
+  /* Зритель из БД: при задержке Neon берём роль/школу из подписанного токена. */
+  let viewer: SchoolViewer | null = null;
+  let viewerNotFound = false;
+  let databaseDegraded = false;
+  try {
+    // Обёртка сохраняет различие между «БД вернула null» и дедлайном.
+    const result = await withDeadline(
+      getSchoolViewer(session.user.id).then((value) => ({ value })),
+      "schedule viewer",
+    );
+    if (result === null) databaseDegraded = true;
+    else if (result.value) viewer = result.value;
+    else viewerNotFound = true;
+  } catch (err) {
+    console.error("[SCHEDULE_VIEWER_WARN]", err);
+    databaseDegraded = true;
+  }
+
+  if (viewerNotFound) {
     redirect("/login?callbackUrl=/schedule");
+  }
+  if (!viewer) {
+    databaseDegraded = true;
+    viewer = viewerFromClaims({
+      id: session.user.id,
+      role: session.user.role,
+      schoolId: session.user.schoolId,
+      classId: session.user.classId,
+      isBanned: session.user.banned,
+    });
   }
 
   const canEdit = hasPermission(viewer.role, "schedule:write");
-  const [lessons, subjects, classes] = await Promise.all([
-    listLessonsForViewer(viewer),
-    canEdit ? listSubjects() : Promise.resolve([]),
-    canEdit && viewer.schoolId ? listClassesForSchool(viewer.schoolId) : Promise.resolve([]),
-  ]);
+
+  /* Данные расписания: при сбое/тайм-ауте БД — валидный fallback с пустыми массивами. */
+  let lessons: Schedule[] = [];
+  let subjects: Subject[] = [];
+  let classes: SchoolClassOption[] = [];
+  try {
+    const result = await withDeadline(
+      Promise.all([
+        listLessonsForViewer(viewer),
+        canEdit ? listSubjects() : Promise.resolve([] as Subject[]),
+        canEdit && viewer.schoolId
+          ? listClassesForSchool(viewer.schoolId)
+          : Promise.resolve([] as SchoolClassOption[]),
+      ]),
+      "schedule page data",
+    );
+    if (result) [lessons, subjects, classes] = result;
+    else databaseDegraded = true;
+  } catch (err) {
+    console.error("[SCHEDULE_DATA_WARN]", err);
+    databaseDegraded = true;
+  }
 
   const description = canEdit
     ? "Планируйте уроки по классам: предмет, время и кабинет. Каждый урок получает комнату для входа."
@@ -51,6 +105,12 @@ export default async function SchedulePage() {
 
   return (
     <AppShell>
+      {databaseDegraded && (
+        <FormAlert variant="info" className="mb-6">
+          База данных временно отвечает медленно. Расписание открыто, но часть данных не загрузилась;
+          попробуйте обновить страницу позже.
+        </FormAlert>
+      )}
       <header className="animate-fade-up">
         <Link
           href="/dashboard"

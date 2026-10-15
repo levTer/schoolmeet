@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
+import { getServerSession, type Session } from "next-auth";
 import {
   ArrowRight,
   Ban,
@@ -26,13 +26,9 @@ import { FormAlert } from "@/components/ui/form-alert";
 import { auditActionLabel, auditActionTone, formatAuditDetails } from "@/lib/audit";
 import { getAdminOverview, getAdminSecondaryMetrics, type AdminOverview } from "@/lib/admin-stats";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
+import { withDeadline } from "@/lib/dashboard-fallback";
 import { getSchoolViewer } from "@/lib/school-viewer";
-import {
-  getSchoolInviteSummary,
-  listClassesForSchool,
-  type SchoolClassOption,
-  type SchoolInviteSummary,
-} from "@/lib/schools";
+import { getSchoolInviteSummary, listClassesForSchool } from "@/lib/schools";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -72,64 +68,115 @@ function formatDateTime(iso: string): string {
   });
 }
 
+/** Валидный обзор для рендера, если Neon не ответил вовремя. */
+function emptyAdminOverview(): AdminOverview {
+  return {
+    metrics: [
+      { key: "students", label: "Всего учеников", value: 0, hint: "Данные временно недоступны" },
+      { key: "teachers", label: "Учителей", value: 0, hint: "Данные временно недоступны" },
+      { key: "live", label: "Активных уроков сейчас", value: 0, hint: "Данные временно недоступны" },
+      { key: "homework", label: "Сданных ДЗ за неделю", value: 0, hint: "Данные временно недоступны" },
+    ],
+    callActivity: [],
+    grades: [],
+    recentAudit: [],
+    totals: {
+      users: 0,
+      students: 0,
+      teachers: 0,
+      admins: 0,
+      banned: 0,
+      liveRooms: 0,
+      liveParticipants: 0,
+    },
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 /**
  * Обзор (`/admin`): метрики школы, графики активности и успеваемости,
  * быстрая кнопка «Создать объявление» и последние действия администрации.
  */
 export default async function AdminPage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) redirect("/login?callbackUrl=/admin");
+  let session: Session | null = null;
+  try {
+    session = await withDeadline(getServerSession(authOptions), "admin session");
+  } catch (error) {
+    console.error("[ADMIN_SESSION_WARN]", error);
+  }
+  if (!session?.user?.id) redirect("/login?callbackUrl=/admin");
   if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
 
-  let overview: AdminOverview | null = null;
-  let secondary: { pendingReview: number; banned: number; todayJoins: number } | null = null;
-  let schoolSettings: { school: SchoolInviteSummary; classes: SchoolClassOption[] } | null = null;
-  let databaseError = false;
-
-  try {
-    const viewer = await getSchoolViewer(session.user.id);
-    if (viewer?.schoolId) {
-      const school = await getSchoolInviteSummary(viewer.schoolId);
-      if (school) {
-        schoolSettings = {
-          school,
-          classes: await listClassesForSchool(viewer.schoolId),
+  const [schoolResult, metricsResult] = await Promise.all([
+    (async () => {
+      try {
+        const settings = await withDeadline(
+          (async () => {
+            const viewer = await getSchoolViewer(session.user.id);
+            if (!viewer?.schoolId) return null;
+            const school = await getSchoolInviteSummary(viewer.schoolId);
+            if (!school) return null;
+            return {
+              school,
+              classes: await listClassesForSchool(viewer.schoolId),
+            };
+          })(),
+          "admin school settings",
+        );
+        return { settings, unavailable: settings === null };
+      } catch (error) {
+        console.error("[ADMIN_SCHOOL_DATA_WARN]", error);
+        return { settings: null, unavailable: true };
+      }
+    })(),
+    (async () => {
+      try {
+        const metrics = await withDeadline(
+          Promise.all([getAdminOverview(), getAdminSecondaryMetrics()]),
+          "admin overview metrics",
+        );
+        return metrics
+          ? { overview: metrics[0], secondary: metrics[1], unavailable: false }
+          : {
+              overview: emptyAdminOverview(),
+              secondary: { pendingReview: 0, banned: 0, todayJoins: 0 },
+              unavailable: true,
+            };
+      } catch (error) {
+        // При сбое метрик продолжаем рендер с валидным нулевым обзором.
+        console.error("[ADMIN_METRICS_WARN]", error);
+        return {
+          overview: emptyAdminOverview(),
+          secondary: { pendingReview: 0, banned: 0, todayJoins: 0 },
+          unavailable: true,
         };
       }
-    }
-  } catch (error) {
-    console.error("[admin] Не удалось загрузить данные школы:", error);
-  }
+    })(),
+  ]);
 
-  try {
-    [overview, secondary] = await Promise.all([getAdminOverview(), getAdminSecondaryMetrics()]);
-  } catch (error) {
-    // База недоступна (или миграции не применены) — показываем понятный экран.
-    console.error("[admin] Не удалось загрузить метрики:", error);
-    databaseError = true;
-  }
-
-  if (databaseError || !overview || !secondary) {
-    return (
-      <div className="space-y-6">
-        <FormAlert variant="error">
-          Не удалось загрузить статистику. Проверьте, что база данных доступна и миграции применены
-          (<span className="font-mono text-xs">npm run db:push</span>).
-        </FormAlert>
-      </div>
-    );
-  }
+  const schoolSettings = schoolResult.settings;
+  const schoolSettingsUnavailable = schoolResult.unavailable;
+  const { overview, secondary } = metricsResult;
+  const databaseError = metricsResult.unavailable;
 
   return (
     <div className="space-y-8">
+      {databaseError && (
+        <FormAlert variant="info">
+          Не удалось загрузить актуальную статистику. Показаны пустые значения; попробуйте обновить страницу позже.
+        </FormAlert>
+      )}
+      {schoolSettingsUnavailable && (
+        <FormAlert variant="info">
+          Настройки школы временно недоступны. Остальная часть админ-панели продолжает работать.
+        </FormAlert>
+      )}
       {schoolSettings ? (
         <>
           <SchoolSettingsPanel school={schoolSettings.school} initialClasses={schoolSettings.classes} />
           <InviteLinksPanel school={schoolSettings.school} />
         </>
-      ) : (
-        <FormAlert variant="error">Не удалось загрузить код школы и список классов.</FormAlert>
-      )}
+      ) : null}
 
       {/* Метрики */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
