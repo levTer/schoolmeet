@@ -42,6 +42,9 @@ const MAX_PROMPT_LENGTH = 2000;
  * рукописных формул (Gemini Vision) требуются полноценные снимки области.
  */
 const MAX_IMAGE_LENGTH = 6 * 1024 * 1024;
+/** Bound in-flight model/image work so AI traffic cannot exhaust the web process. */
+const MAX_CONCURRENT_AI_REQUESTS = 4;
+let activeAiRequests = 0;
 
 /** Роль пользователя в сессии (см. `src/types/next-auth.d.ts`). */
 type SessionRole = "ADMIN" | "TEACHER" | "STUDENT";
@@ -122,6 +125,16 @@ export async function POST(request: Request): Promise<NextResponse> {
     context: typeof meetingTitle === "string" ? { meetingTitle: meetingTitle.slice(0, 120) } : undefined,
   };
 
+  // Provider network calls use native async fetch, so waiting for a model does
+  // not block the Node event loop or other HTTP endpoints. Shed excess work
+  // instead of retaining dozens of 6 MB Vision payloads in a 512 MB process.
+  if (activeAiRequests >= MAX_CONCURRENT_AI_REQUESTS) {
+    return NextResponse.json(
+      { ok: false, error: "ИИ-помощник занят. Повторите запрос через несколько секунд.", code: "AI_BUSY" },
+      { status: 503, headers: { "Retry-After": "3" } },
+    );
+  }
+  activeAiRequests += 1;
   try {
     // Цепочка AutoAIProvider гарантирует ответ (последнее звено — локальный Mock).
     const response = await getAIProvider().complete(aiRequest);
@@ -132,5 +145,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       { ok: false, error: "ИИ-помощник временно недоступен", code: "PROVIDER_ERROR" },
       { status: 500 },
     );
+  } finally {
+    activeAiRequests -= 1;
   }
 }

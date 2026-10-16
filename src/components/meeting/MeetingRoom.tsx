@@ -92,7 +92,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
   const rtc = useWebRTC({ sendSignal: socket.sendSignal, onSignal: socket.onSignal });
   const { requestMedia, hangUp, connectToPeers, dropPeer, dropAllPeers, toggleMic, toggleCamera, toggleScreenShare } =
     rtc;
-  const { sendMediaState, setHandRaised, sendChat, leaveRoom, disconnect } = socket;
+  const { sendMediaState, setHandRaised, sendChat, sendTyping, leaveRoom, disconnect } = socket;
 
   /** Адаптер доски поверх сокета — передаётся в Whiteboard/useWhiteboard. */
   const boardSync = useMemo<WhiteboardSync>(
@@ -432,6 +432,8 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
                     selfUserId={self.id}
                     recipients={chatRecipients}
                     onSend={sendMessage}
+                    onTyping={sendTyping}
+                    typingNames={socket.typingUsers.map((user) => user.name)}
                     onClose={() => setChatOpen(false)}
                   />
                 </div>
@@ -446,6 +448,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
                   selfUserId={self.id}
                   recipients={chatRecipients}
                   onSend={sendMessage}
+                  onTyping={sendTyping}
                   onClose={() => setChatOpen(false)}
                 />
               </div>

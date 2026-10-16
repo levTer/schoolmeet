@@ -142,6 +142,8 @@ export interface ClientToServerEvents {
    * `recipientId` не указан или `null` — сообщение для всей комнаты,
    * иначе это приватное сообщение конкретному участнику урока.
    */
+  /** Сигнал активности в чате; сервер ограничивает рассылку раз в 3 секунды. */
+  typing: () => void;
   "chat-message": (
     payload: { ciphertext: string; recipientId?: string | null },
     ack?: (result: Ack<{ id: string }>) => void,
@@ -195,6 +197,7 @@ export interface ServerToClientEvents {
   signal: (payload: { from: string; data: SignalData }) => void;
   "raise-hand": (payload: { socketId: string; raised: boolean }) => void;
   "chat-message": (message: ChatEnvelope) => void;
+  typing: (payload: { socketId: string; name: string }) => void;
   "media-state": (payload: { socketId: string; media: MediaState }) => void;
 
   /* Доска: события приходят от других участников (автор не получает эхо) */

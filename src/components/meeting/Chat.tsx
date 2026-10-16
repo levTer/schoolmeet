@@ -31,6 +31,8 @@ interface ChatProps {
   /** Участники урока, которым можно написать приватно (без самого автора). */
   recipients: ChatRecipientOption[];
   onSend: (text: string, recipientId: string | null) => Promise<boolean>;
+  onTyping?: () => void;
+  typingNames?: string[];
   onClose: () => void;
 }
 
@@ -38,13 +40,14 @@ interface ChatProps {
  * Боковая панель чата урока. Сообщение шифруется AES-256 до отправки и
  * расшифровывается здесь же; сервер хранит и пересылает только шифротекст.
  */
-export function Chat({ messages, selfUserId, recipients, onSend, onClose }: ChatProps) {
+export function Chat({ messages, selfUserId, recipients, onSend, onTyping, typingNames = [], onClose }: ChatProps) {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** `null` — «Всем» (публичное сообщение), иначе id участника урока. */
   const [recipientId, setRecipientId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const lastTypingAtRef = useRef(0);
 
   const recipient = useMemo(
     () => recipients.find((item) => item.userId === recipientId) ?? null,
@@ -117,6 +120,11 @@ export function Chat({ messages, selfUserId, recipients, onSend, onClose }: Chat
         {messages.map((message) => (
           <MessageBubble key={message.id} message={message} mine={message.author.userId === selfUserId} />
         ))}
+        {typingNames.length > 0 && (
+          <p className="text-[11px] text-slate-500" aria-live="polite">
+            {typingNames.join(", ")} {typingNames.length === 1 ? "печатает…" : "печатают…"}
+          </p>
+        )}
       </div>
 
       <form onSubmit={submit} className="border-t border-white/10 p-3">
@@ -161,7 +169,15 @@ export function Chat({ messages, selfUserId, recipients, onSend, onClose }: Chat
         <div className="flex items-end gap-2">
           <textarea
             value={draft}
-            onChange={(event) => setDraft(event.target.value.slice(0, CHAT_MAX_MESSAGE_LENGTH))}
+            onChange={(event) => {
+              const nextDraft = event.target.value.slice(0, CHAT_MAX_MESSAGE_LENGTH);
+              setDraft(nextDraft);
+              const now = Date.now();
+              if (nextDraft.trim() && now - lastTypingAtRef.current >= 3000) {
+                lastTypingAtRef.current = now;
+                onTyping?.();
+              }
+            }}
             onKeyDown={onKeyDown}
             rows={1}
             placeholder={recipient ? `Приватно для ${recipient.name}…` : "Написать сообщение…"}
