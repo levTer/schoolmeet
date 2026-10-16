@@ -3,7 +3,7 @@ import type { DefaultSession } from "next-auth";
 import type { Role } from "./index";
 
 /**
- * Расширяем типы NextAuth, чтобы `session.user` содержал роль Лицея Сингулярити.
+ * Расширяем типы NextAuth, чтобы `session.user` содержал роль и принадлежность к школе.
  * Используется в этапе 2 (авторизация и защита маршрутов).
  */
 declare module "next-auth" {

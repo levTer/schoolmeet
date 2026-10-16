@@ -33,6 +33,7 @@ export async function AppShell({ children, className }: AppShellProps) {
 
   // Защита от неожиданной формы сессии: берём `user`, только если он реально есть.
   const user = session && 'user' in session ? session.user : null;
+  const schoolName = session?.user?.schoolName || "SchoolMeet";
 
   // Заблокированный аккаунт не должен видеть внутренние разделы даже с живой
   // JWT-cookie: middleware проверяет токен, а здесь данные сессии уже сверены с БД.
@@ -59,7 +60,7 @@ export async function AppShell({ children, className }: AppShellProps) {
       </main>
 
       <footer className="hidden border-t border-white/5 px-5 py-6 text-center text-xs text-slate-500 sm:px-8 md:block">
-        {user?.schoolName || "SchoolMeet"} · платформа видеоуроков, ИИ-доски и расписания
+        {schoolName} · платформа видеоуроков, ИИ-доски и расписания
       </footer>
 
       {/* Нижняя навигация для мобильных устройств */}
