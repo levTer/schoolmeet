@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 
+import { canViewChatEnvelope, chatVisibilityWhere } from "@/lib/chat-rules";
 import { prisma } from "@/lib/prisma";
 import { buildLessonCodeCandidate } from "@/lib/lesson-code";
 import { CHAT_HISTORY_LIMIT, hasSchoolAccess, type ChatEnvelope } from "@/lib/realtime";
@@ -93,36 +94,67 @@ export async function createMeeting(params: { title: string; hostId: string }): 
   throw new Error("Не удалось подобрать свободный код урока");
 }
 
+/** Поля сообщения, которые сервер отдаёт клиенту (автор и адресат — без лишнего). */
+const chatMessageInclude = {
+  user: { select: { id: true, name: true, role: true } },
+  recipient: { select: { id: true, name: true } },
+} as const;
+
+/**
+ * Сохраняет сообщение чата.
+ *
+ * `recipientId = null` — публичное сообщение для всей комнаты. Иначе сообщение
+ * приватное: адресат обязан существовать и учиться в той же школе, что и урок,
+ * иначе приватную переписку можно было бы использовать для пробоя между
+ * тенантами (ошибка `CHAT_RECIPIENT_NOT_FOUND`).
+ */
 export async function saveChatMessage(params: {
   meetingId: string;
   userId: string;
   ciphertext: string;
+  recipientId?: string | null;
 }): Promise<ChatEnvelope> {
-  const [user, meeting] = await Promise.all([
+  const recipientId = params.recipientId ?? null;
+
+  const [user, meeting, recipient] = await Promise.all([
     prisma.user.findUnique({ where: { id: params.userId }, select: { schoolId: true } }),
     prisma.meeting.findUnique({ where: { id: params.meetingId }, include: meetingInclude }),
+    recipientId
+      ? prisma.user.findUnique({ where: { id: recipientId }, select: { id: true, schoolId: true } })
+      : Promise.resolve(null),
   ]);
   if (!user || !meeting || !hasSchoolAccess(user.schoolId, getMeetingSchoolId(meeting))) {
     throw new Error("CHAT_SCHOOL_MISMATCH");
+  }
+  if (recipientId && (!recipient || !hasSchoolAccess(recipient.schoolId, getMeetingSchoolId(meeting)))) {
+    throw new Error("CHAT_RECIPIENT_NOT_FOUND");
   }
 
   const message = await prisma.chatMessage.create({
     data: {
       meetingId: params.meetingId,
       userId: params.userId,
+      recipientId,
       content: params.ciphertext,
       encrypted: true,
     },
-    include: { user: { select: { id: true, name: true, role: true } } },
+    include: chatMessageInclude,
   });
 
   return toEnvelope(message);
 }
 
-/** Последние сообщения урока в хронологическом порядке (только шифротекст). */
+/**
+ * Последние сообщения урока в хронологическом порядке (только шифротекст).
+ *
+ * Выборка сразу отсечена по видимости (`chatVisibilityWhere`): зрителю приходят
+ * публичные сообщения, адресованные лично ему и отправленные им самим — чужая
+ * приватная переписка не покидает базу.
+ */
 export async function loadRecentMessages(
   meetingId: string,
   schoolId: string,
+  viewerUserId: string,
   limit = CHAT_HISTORY_LIMIT,
 ): Promise<ChatEnvelope[]> {
   const meeting = await prisma.meeting.findUnique({ where: { id: meetingId }, include: meetingInclude });
@@ -131,13 +163,17 @@ export async function loadRecentMessages(
   }
 
   const messages = await prisma.chatMessage.findMany({
-    where: { meetingId },
+    where: { meetingId, OR: chatVisibilityWhere(viewerUserId) },
     orderBy: { createdAt: "desc" },
     take: limit,
-    include: { user: { select: { id: true, name: true, role: true } } },
+    include: chatMessageInclude,
   });
 
-  return messages.reverse().map(toEnvelope);
+  // Контрольная проверка поверх SQL-фильтра: правила видимости одни и те же.
+  return messages
+    .reverse()
+    .map(toEnvelope)
+    .filter((envelope) => canViewChatEnvelope(envelope, viewerUserId));
 }
 
 interface ChatMessageRow {
@@ -145,6 +181,8 @@ interface ChatMessageRow {
   content: string;
   createdAt: Date;
   user: { id: string; name: string; role: Role };
+  recipientId: string | null;
+  recipient: { id: string; name: string } | null;
 }
 
 function toEnvelope(message: ChatMessageRow): ChatEnvelope {
@@ -153,5 +191,8 @@ function toEnvelope(message: ChatMessageRow): ChatEnvelope {
     ciphertext: message.content,
     createdAt: message.createdAt.toISOString(),
     author: { userId: message.user.id, name: message.user.name, role: message.user.role },
+    recipient: message.recipientId
+      ? { userId: message.recipientId, name: message.recipient?.name ?? "" }
+      : null,
   };
 }

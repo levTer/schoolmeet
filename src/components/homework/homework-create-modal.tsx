@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useHomeworkCreateModal } from "@/components/homework/homework-create-store";
 import { TextField } from "@/components/ui/field";
 import { SelectField, TextAreaField } from "@/components/ui/form-controls";
+import { Modal } from "@/components/ui/modal";
 import { apiRequest } from "@/lib/client-api";
 import { HOMEWORK_LIMITS, validateCreateHomework } from "@/lib/homework-rules";
 import { formatSchoolLocalInput, schoolLocalToDate, type GradeCode } from "@/lib/schedule-rules";
@@ -92,19 +93,8 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
     setErrors({});
   }, [open, subjects, classes]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !submitting) onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose, submitting]);
-
   const descriptionLength = form.description.length;
   const minDeadline = formatSchoolLocalInput(new Date());
-
-  if (!open) return null;
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -159,141 +149,134 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-4 pt-24 md:pt-32 pb-12 flex justify-center items-start"
-      onClick={(event) => {
-        if (event.target === event.currentTarget && !submitting) onClose();
-      }}
+    <Modal
+      open={open}
+      onClose={onClose}
+      disableClose={submitting}
+      labelledBy="homework-modal-title"
+      className="p-6"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="homework-modal-title"
-        className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl mt-4 pt-6 px-6 pb-6 overflow-hidden shrink-0"
-      >
-        <div aria-hidden className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/20 md:hidden" />
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 id="homework-modal-title" className="flex items-center gap-2 text-lg font-semibold text-white">
-              <CalendarPlus className="h-5 w-5 text-brand-300" />
-              Новое домашнее задание
-            </h2>
-            <p className="mt-1 text-xs text-slate-400">Условие можно писать в Markdown и вставлять формулы LaTeX: $x^2$ или $$…$$.</p>
-          </div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 id="homework-modal-title" className="flex items-center gap-2 text-lg font-semibold text-white">
+            <CalendarPlus className="h-5 w-5 text-brand-300" />
+            Новое домашнее задание
+          </h2>
+          <p className="mt-1 text-xs text-slate-400">Условие можно писать в Markdown и вставлять формулы LaTeX: $x^2$ или $$…$$.</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          aria-label="Закрыть"
+          className="rounded-full p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} noValidate className="mt-5 grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <TextField
+            label="Название задания"
+            value={form.title}
+            maxLength={HOMEWORK_LIMITS.titleMax}
+            onChange={(event) => update("title", event.target.value)}
+            error={errors.title}
+          />
+        </div>
+
+        <SelectField
+          label="Предмет"
+          value={form.subjectId}
+          onChange={(event) => update("subjectId", event.target.value)}
+          error={errors.subjectId}
+        >
+          {subjects.map((subject) => (
+            <option key={subject.id} value={subject.id} className="bg-ink-900">
+              {subject.emoji} {subject.name}
+            </option>
+          ))}
+        </SelectField>
+
+        <SelectField
+          label="Класс"
+          value={form.classId}
+          onChange={(event) => {
+            const selected = classes.find((schoolClass) => schoolClass.id === event.target.value);
+            if (!selected) return;
+            update("classId", selected.id);
+            update("grade", selected.grade);
+          }}
+          error={errors.classId}
+        >
+          {classes.length === 0 ? (
+            <option value="" className="bg-ink-900">Нет доступных классов</option>
+          ) : (
+            classes.map((schoolClass) => (
+              <option key={schoolClass.id} value={schoolClass.id} className="bg-ink-900">
+                {schoolClass.name}
+              </option>
+            ))
+          )}
+        </SelectField>
+
+        <TextField
+          label="Дедлайн (время школы)"
+          type="datetime-local"
+          min={minDeadline}
+          value={form.deadline}
+          onChange={(event) => update("deadline", event.target.value)}
+          error={errors.deadline}
+        />
+
+        <SelectField
+          label="Максимальный балл"
+          value={form.maxScore}
+          onChange={(event) => update("maxScore", event.target.value)}
+          error={errors.maxScore}
+        >
+          {Array.from({ length: HOMEWORK_LIMITS.maxScoreMax - HOMEWORK_LIMITS.maxScoreMin + 1 }, (_, index) => {
+            const value = HOMEWORK_LIMITS.maxScoreMin + index;
+            return (
+              <option key={value} value={value} className="bg-ink-900">
+                {value}
+              </option>
+            );
+          })}
+        </SelectField>
+
+        <div className="sm:col-span-2">
+          <TextAreaField
+            label="Условие"
+            value={form.description}
+            maxLength={HOMEWORK_LIMITS.descriptionMax}
+            onChange={(event) => update("description", event.target.value)}
+            error={errors.description}
+            hint={`${descriptionLength} / ${HOMEWORK_LIMITS.descriptionMax}`}
+            placeholder={"## Задание\n\nРешите уравнение $x^2 - 5x + 6 = 0$"}
+            rows={7}
+          />
+        </div>
+
+        <div className="sm:col-span-2 flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            aria-label="Закрыть"
-            className="rounded-full p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
+            className="rounded-xl border border-white/10 px-5 py-2.5 text-sm text-slate-300 transition hover:bg-white/5 disabled:opacity-50"
           >
-            <X className="h-4 w-4" />
+            Отмена
+          </button>
+          <button
+            type="submit"
+            disabled={submitting || subjects.length === 0 || classes.length === 0}
+            className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? "Создание..." : "Выдать задание"}
           </button>
         </div>
-
-        <form onSubmit={handleSubmit} noValidate className="mt-5 grid gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <TextField
-              label="Название задания"
-              value={form.title}
-              maxLength={HOMEWORK_LIMITS.titleMax}
-              onChange={(event) => update("title", event.target.value)}
-              error={errors.title}
-            />
-          </div>
-
-          <SelectField
-            label="Предмет"
-            value={form.subjectId}
-            onChange={(event) => update("subjectId", event.target.value)}
-            error={errors.subjectId}
-          >
-            {subjects.map((subject) => (
-              <option key={subject.id} value={subject.id} className="bg-ink-900">
-                {subject.emoji} {subject.name}
-              </option>
-            ))}
-          </SelectField>
-
-          <SelectField
-            label="Класс"
-            value={form.classId}
-            onChange={(event) => {
-              const selected = classes.find((schoolClass) => schoolClass.id === event.target.value);
-              if (!selected) return;
-              update("classId", selected.id);
-              update("grade", selected.grade);
-            }}
-            error={errors.classId}
-          >
-            {classes.length === 0 ? (
-              <option value="" className="bg-ink-900">Нет доступных классов</option>
-            ) : (
-              classes.map((schoolClass) => (
-                <option key={schoolClass.id} value={schoolClass.id} className="bg-ink-900">
-                  {schoolClass.name}
-                </option>
-              ))
-            )}
-          </SelectField>
-
-          <TextField
-            label="Дедлайн (время школы)"
-            type="datetime-local"
-            min={minDeadline}
-            value={form.deadline}
-            onChange={(event) => update("deadline", event.target.value)}
-            error={errors.deadline}
-          />
-
-          <SelectField
-            label="Максимальный балл"
-            value={form.maxScore}
-            onChange={(event) => update("maxScore", event.target.value)}
-            error={errors.maxScore}
-          >
-            {Array.from({ length: HOMEWORK_LIMITS.maxScoreMax - HOMEWORK_LIMITS.maxScoreMin + 1 }, (_, index) => {
-              const value = HOMEWORK_LIMITS.maxScoreMin + index;
-              return (
-                <option key={value} value={value} className="bg-ink-900">
-                  {value}
-                </option>
-              );
-            })}
-          </SelectField>
-
-          <div className="sm:col-span-2">
-            <TextAreaField
-              label="Условие"
-              value={form.description}
-              maxLength={HOMEWORK_LIMITS.descriptionMax}
-              onChange={(event) => update("description", event.target.value)}
-              error={errors.description}
-              hint={`${descriptionLength} / ${HOMEWORK_LIMITS.descriptionMax}`}
-              placeholder={"## Задание\n\nРешите уравнение $x^2 - 5x + 6 = 0$"}
-              rows={7}
-            />
-          </div>
-
-          <div className="sm:col-span-2 flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="rounded-xl border border-white/10 px-5 py-2.5 text-sm text-slate-300 transition hover:bg-white/5 disabled:opacity-50"
-            >
-              Отмена
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || subjects.length === 0 || classes.length === 0}
-              className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting ? "Создание..." : "Выдать задание"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 }

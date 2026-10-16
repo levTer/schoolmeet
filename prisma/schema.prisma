@@ -106,17 +106,20 @@ model User {
   updatedAt DateTime    @updatedAt
 
   // Связи
-  hostedMeetings Meeting[]            @relation("MeetingHost")
-  schedules      Schedule[]           @relation("ScheduleTeacher")
-  homeworks      Homework[]           @relation("HomeworkTeacher")
-  submissions    HomeworkSubmission[] @relation("SubmissionStudent")
-  reviews        HomeworkReview[]     @relation("HomeworkReviewer")
-  messages       ChatMessage[]
-  announcements  Announcement[]
-  attendance     AttendanceRecord[]
-  auditLogs      AuditLog[]
-  school         School?              @relation(fields: [schoolId], references: [id], onDelete: SetNull)
-  schoolClass    Class?                @relation(fields: [classId], references: [id], onDelete: SetNull)
+  hostedMeetings   Meeting[]            @relation("MeetingHost")
+  schedules        Schedule[]           @relation("ScheduleTeacher")
+  homeworks        Homework[]           @relation("HomeworkTeacher")
+  submissions      HomeworkSubmission[] @relation("SubmissionStudent")
+  reviews          HomeworkReview[]     @relation("HomeworkReviewer")
+  /// Сообщения, которые пользователь отправил в чатах уроков.
+  messages         ChatMessage[]        @relation("ChatMessageAuthor")
+  /// Приватные сообщения, адресованные пользователю.
+  receivedMessages ChatMessage[]        @relation("ChatMessageRecipient")
+  announcements    Announcement[]
+  attendance       AttendanceRecord[]
+  auditLogs        AuditLog[]
+  school           School?              @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  schoolClass      Class?               @relation(fields: [classId], references: [id], onDelete: SetNull)
 
   @@index([role])
   @@index([grade])
@@ -301,19 +304,24 @@ model HomeworkReview {
 }
 
 model ChatMessage {
-  id        String   @id @default(cuid())
-  meetingId String
-  userId    String
-  content   String // зашифрованный AES-256 текст (base64) либо открытый текст
-  encrypted Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  meetingId   String
+  /// Автор сообщения.
+  userId      String
+  /// Получатель приватного сообщения; `null` — сообщение публичное, его видит вся комната.
+  recipientId String?
+  content     String // зашифрованный AES-256 текст (base64) либо открытый текст
+  encrypted   Boolean  @default(true)
+  createdAt   DateTime @default(now())
 
   // Связи
-  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user      User    @relation("ChatMessageAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  recipient User?   @relation("ChatMessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@index([meetingId])
   @@index([userId])
+  @@index([recipientId])
   @@map("chat_messages")
 }
 

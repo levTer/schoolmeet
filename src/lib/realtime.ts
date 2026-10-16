@@ -85,15 +85,26 @@ export interface ChatAuthor {
   role: Role;
 }
 
+/** Адресат приватного сообщения. Имя нужно ленте чата для подписи «Приватно для …». */
+export interface ChatRecipient {
+  userId: string;
+  name: string;
+}
+
 /**
  * Зашифрованное сообщение чата. Сервер видит только `ciphertext` (формат см.
  * в `src/lib/crypto.ts`), текст сообщения он не знает.
+ *
+ * `recipient === null` — сообщение публичное, его получает вся комната.
+ * Иначе конверт уходит только автору и адресату (см. `src/server/realtime.ts`),
+ * а история отдаётся с фильтром видимости (`src/lib/chat-rules.ts`).
  */
 export interface ChatEnvelope {
   id: string;
   ciphertext: string;
   createdAt: string;
   author: ChatAuthor;
+  recipient: ChatRecipient | null;
 }
 
 /** SDP-описание и ICE-кандидаты, которыми обмениваются пиры через сервер. */
@@ -126,8 +137,15 @@ export interface ClientToServerEvents {
   signal: (payload: { to: string; data: SignalData }) => void;
   /** Поднять / опустить руку. */
   "raise-hand": (payload: { raised: boolean }) => void;
-  /** Сообщение чата — уже зашифровано на клиенте (AES-256). */
-  "chat-message": (payload: { ciphertext: string }, ack?: (result: Ack<{ id: string }>) => void) => void;
+  /**
+   * Сообщение чата — уже зашифровано на клиенте (AES-256).
+   * `recipientId` не указан или `null` — сообщение для всей комнаты,
+   * иначе это приватное сообщение конкретному участнику урока.
+   */
+  "chat-message": (
+    payload: { ciphertext: string; recipientId?: string | null },
+    ack?: (result: Ack<{ id: string }>) => void,
+  ) => void;
   /** Изменение состояния микрофона / камеры / экрана. */
   "media-state": (payload: MediaState) => void;
 

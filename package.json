@@ -9,12 +9,14 @@
     "lint": "next lint",
     "test:ai": "tsx scripts/smoke-ai.ts",
     "test:rules": "tsx --test scripts/rules.test.ts",
+    "test:ui": "tsx --test scripts/ui-patterns.test.ts",
+    "test:chat": "tsx --test scripts/chat-rules.test.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev --name init",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "test": "npm run test:ai && npm run test:rules"
+    "test": "npm run test:ai && npm run test:rules && npm run test:ui && npm run test:chat"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

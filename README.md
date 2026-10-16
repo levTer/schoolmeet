@@ -113,11 +113,13 @@ src/app/login|register             Страницы входа и регистр
 src/app/dashboard|admin            Кабинет пользователя и админ-панель (только ADMIN)
 server.ts                          Точка входа: один HTTP-сервер для Next.js и Socket.IO (dev и start)
 src/server/realtime.ts             Socket.IO: авторизация по JWT-сессии, проверка Origin, комнаты,
-                                   signal / raise-hand / chat-message, лимиты и история чата
+                                   signal / raise-hand / chat-message, лимиты и история чата,
+                                   приватная доставка сообщения только автору и адресату
 src/lib/realtime.ts                Контракт событий Socket.IO, лимиты, проверка кода комнаты
 src/lib/crypto.ts                  encryptMessage / decryptMessage: AES-256-CBC + HMAC (crypto-js)
 src/lib/lesson-code.ts             Читаемые коды уроков (matematika-101-klass) с суффиксом при коллизии
 src/lib/meetings.ts                Доступ к данным уроков и сообщений чата (Prisma)
+src/lib/chat-rules.ts              Приватные сообщения чата: адресат, видимость, подписи ленты
 src/lib/webrtc-config.ts           ICE: пул STUN Google + TURN из NEXT_PUBLIC_TURN_SERVERS
                                    (legacy-override — NEXT_PUBLIC_ICE_SERVERS)
 src/app/api/meetings/route.ts      POST — создать урок (только TEACHER / ADMIN)
@@ -143,7 +145,8 @@ src/lib/drawing-engine.ts          JSON-инструкции ИИ → фигур
 src/app/api/ai/route.ts            POST/GET — серверный ИИ-прокси (ТОЛЬКО TEACHER / ADMIN, STUDENT → 403)
 src/components/meeting/            MeetingRoom, PreJoinScreen, VideoGrid, Controls, Chat, MeetingLobby,
                                    Whiteboard (доска + курсоры), AIAssistant (панель учителя)
-src/components/ui/                 Поля формы, градиентная кнопка, алерты, Markdown-рендер
+src/components/ui/                 Поля формы, градиентная кнопка, алерты, Markdown-рендер,
+                                   каркас модалок modal.tsx (z-[999], центрирование, скролл)
 src/components/layout/app-shell.tsx Каркас внутренних страниц: навбар + контент
 src/components/layout/Navbar.tsx   Шапка с профилем, ролью и кнопкой «Выйти» (signOut)
 src/components/layout/app-shell.tsx Каркас внутренних страниц: навбар + контент
@@ -212,7 +215,9 @@ Email на регистрации и на входе приводится к о�
 - **Meeting** — `id`, `title`, `meetingCode`, `hostId`, `startTime`, `endTime`, `isActive`, `encryptionKey`.
 - **Schedule** — `id`, `title`, `subject`, `teacherId`, `dayOfWeek` (1–7 по ISO), `startTime`/`endTime`
   (`"HH:mm"`), `meetingId`.
-- **ChatMessage** — `id`, `meetingId`, `userId`, `content`, `encrypted`, `createdAt`.
+- **ChatMessage** — `id`, `meetingId`, `userId`, `recipientId` (`null` — сообщение видит вся
+  комната урока, иначе это приватное сообщение одному участнику), `content`, `encrypted`,
+  `createdAt`.
 - **AttendanceRecord** — `id`, `meetingId`, `userId`, `joinedAt`, `leftAt`, `durationMinutes`:
   вход в урок и выход из него (пишется Socket.IO-сервером, «зависшие» записи закрываются по таймауту).
 - **Announcement** — `id`, `title`, `content`, `targetGrade` (класс 5–11 или `null` — вся школа),
@@ -233,6 +238,11 @@ Email на регистрации и на входе приводится к о�
   хранит и пересылает только шифротекст. Ключ урока (`encryptionKey`, уникален для каждого урока)
   выдаётся только участникам после входа, поэтому это шифрование при хранении и передаче, а не
   сквозное шифрование «end-to-end» (сервер может расшифровать сообщения своим ключом).
+- Приватные сообщения урока (`ChatMessage.recipientId`) доставляются только автору и адресату:
+  сервер отправляет событие их сокетам, а история чата выбирается с фильтром видимости
+  (`chatVisibilityWhere` в `src/lib/chat-rules.ts`) — третий участник не увидит чужую переписку
+  ни в ленте, ни после перезахода в урок. Адресат обязан быть в комнате и учиться в той же школе
+  (`RECIPIENT_NOT_IN_ROOM` / `CHAT_RECIPIENT_NOT_FOUND`), сообщение себе отклоняется.
 - Медиапоток идёт напрямую между браузерами по WebRTC/SRTP (mesh: каждый с каждым). Сигналинг
   (SDP и ICE) проходит через Socket.IO, медиа через сервер не проходит.
 - ИИ-панель и `/api/ai` открыты **только для TEACHER и ADMIN**: ученики не видят UI ИИ, а сервер
@@ -292,6 +302,14 @@ Email на регистрации и на входе приводится к о�
   со снимком доски в Gemini Vision), сетка карточек предметов в модалке расписания (каталог
   `src/lib/subjects.ts`, автозаполнение пустой таблицы `subjects`), слои модалок `z-[100]`/`z-[90]`
   и отступ `pt-24/28` на `/homework`, админ-панель строго для `ADMIN`.
+
+- ✅ **Этап 8+ (модалки и приватный чат)** — единый каркас модалок `src/components/ui/modal.tsx`
+  (подложка `fixed inset-0 z-[999]` с собственным скроллом, центрирование `min-h-full`, карточка
+  `sm:w-full sm:max-w-2xl`): модалка домашнего задания больше не растягивается по горизонтали и не
+  обрезается, страховка от регресса — `npm run test:ui`. Приватные сообщения в чате урока:
+  `ChatMessage.recipientId`, компактный селект адресата «Всем» / участник, доставка только автору и
+  адресату, фильтр истории по видимости (`src/lib/chat-rules.ts`) и выделение в ленте —
+  `bg-indigo-900/40`, 🔒 и подпись «Приватно для …» / «Приватно от …». Тесты: `npm run test:chat`.
 
 **Проект завершён.** Итоговая сборка: `npm run build`, запуск: `npm run start` (или деплой на
 Vercel — [DEPLOYMENT.md](DEPLOYMENT.md)).

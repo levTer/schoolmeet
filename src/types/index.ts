@@ -320,7 +320,10 @@ export type HomeworkDetailView =
 export interface ChatMessage {
   id: string;
   meetingId: string;
+  /** Автор сообщения. */
   userId: string;
+  /** Получатель приватного сообщения; `null` — сообщение видит вся комната урока. */
+  recipientId: string | null;
   /** Зашифрованный AES-256 (base64) или открытый текст сообщения. */
   content: string;
   encrypted: boolean;
@@ -328,6 +331,7 @@ export interface ChatMessage {
 
   // Развёрнутые связи
   user?: Pick<SafeUser, "id" | "name" | "avatar" | "role">;
+  recipient?: Pick<SafeUser, "id" | "name" | "avatar" | "role"> | null;
   meeting?: Meeting;
 }
 
