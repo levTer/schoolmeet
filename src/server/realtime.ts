@@ -90,6 +90,7 @@ interface SocketData {
   wbCount: number;
   wbCursorWindowStart: number;
   wbCursorCount: number;
+  typingLastSentAt: number;
 }
 
 type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
@@ -586,6 +587,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           wbCount: 0,
           wbCursorWindowStart: 0,
           wbCursorCount: 0,
+          typingLastSentAt: 0,
         };
         next();
       })
@@ -702,6 +704,14 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
 
       socket.data.media = { audio: payload.audio, video: payload.video, screen: payload.screen };
       socket.to(roomId).emit("media-state", { socketId: socket.id, media: socket.data.media });
+    });
+
+    socket.on("typing", () => {
+      const { roomId } = socket.data;
+      const now = Date.now();
+      if (!roomId || now - socket.data.typingLastSentAt < 3000) return;
+      socket.data.typingLastSentAt = now;
+      socket.to(roomId).emit("typing", { socketId: socket.id, name: socket.data.user.name });
     });
 
     socket.on("chat-message", async (payload, ack) => {
@@ -957,6 +967,10 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
 
     socket.on("disconnect", () => {
       leaveCurrentRoom(socket);
+      // Socket.IO normally clears rooms after the disconnect callback. Do it
+      // explicitly as well so every disconnect path (including extra rooms)
+      // is guaranteed to release its memberships immediately.
+      for (const room of Array.from(socket.rooms)) void socket.leave(room);
     });
   });
 

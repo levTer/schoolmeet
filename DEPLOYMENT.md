@@ -59,7 +59,10 @@
    postgresql://user:password@ep-xxxx-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require
    ```
 
-4. Это значение — ваш `DATABASE_URL`.
+4. Это значение — ваш `DATABASE_URL`. Приложение дополнительно ограничивает пул Prisma
+   десятью соединениями на процесс и автоматически добавляет `pgbouncer=true` для Neon.
+   Используйте именно hostname с `-pooler`; авто-подстановка служит защитой от ошибочной
+   прямой строки, но не заменяет проверку настроек проекта в панели Neon.
 
 ### Вариант B — Supabase
 

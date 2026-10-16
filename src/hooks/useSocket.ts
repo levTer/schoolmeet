@@ -46,7 +46,7 @@ type WhiteboardHandler = (event: WhiteboardServerEvent) => void;
  */
 const FATAL_CONNECT_ERRORS = new Set(["UNAUTHORIZED", "FORBIDDEN_ORIGIN", "ACCOUNT_BANNED", "RATE_LIMITED"]);
 
-const MAX_CHAT_HISTORY = 200;
+const MAX_CHAT_HISTORY = 100;
 
 export interface UseSocketOptions {
   /** Участник вышел из комнаты — закрыть его WebRTC-соединение. */
@@ -65,6 +65,7 @@ export function useSocket(options: UseSocketOptions = {}) {
   const [selfId, setSelfId] = useState<string | null>(null);
   const [participants, setParticipants] = useState<RoomParticipant[]>([]);
   const [messages, setMessages] = useState<ChatEnvelope[]>([]);
+  const [typingUsers, setTypingUsers] = useState<Array<{ socketId: string; name: string }>>([]);
 
   const socketRef = useRef<ClientSocket | null>(null);
   const roomRef = useRef<string | null>(null);
@@ -73,6 +74,7 @@ export function useSocket(options: UseSocketOptions = {}) {
   const terminatedRef = useRef(false);
   const signalHandlersRef = useRef(new Set<SignalHandler>());
   const whiteboardHandlersRef = useRef(new Set<WhiteboardHandler>());
+  const typingTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const optionsRef = useRef(options);
 
   const emitWhiteboard = useCallback((event: WhiteboardServerEvent) => {
@@ -94,6 +96,9 @@ export function useSocket(options: UseSocketOptions = {}) {
     setSelfId(result.self.socketId);
     setParticipants(result.participants);
     setMessages(result.history.slice(-MAX_CHAT_HISTORY));
+    setTypingUsers([]);
+    typingTimersRef.current.forEach(clearTimeout);
+    typingTimersRef.current.clear();
   }, []);
 
   /** Создаём сокет один раз и вешаем постоянные обработчики. */
@@ -204,6 +209,19 @@ export function useSocket(options: UseSocketOptions = {}) {
       setMessages((prev) => [...prev, message].slice(-MAX_CHAT_HISTORY));
     });
 
+    socket.on("typing", ({ socketId, name }) => {
+      setTypingUsers((previous) => [
+        ...previous.filter((user) => user.socketId !== socketId),
+        { socketId, name },
+      ]);
+      const existing = typingTimersRef.current.get(socketId);
+      if (existing) clearTimeout(existing);
+      typingTimersRef.current.set(socketId, setTimeout(() => {
+        typingTimersRef.current.delete(socketId);
+        setTypingUsers((previous) => previous.filter((user) => user.socketId !== socketId));
+      }, 3500));
+    });
+
     socket.on("whiteboard-add", (payload) => emitWhiteboard({ type: "add", payload }));
     socket.on("whiteboard-modify", (payload) => emitWhiteboard({ type: "modify", payload }));
     socket.on("whiteboard-delete", (payload) => emitWhiteboard({ type: "delete", payload }));
@@ -275,6 +293,9 @@ export function useSocket(options: UseSocketOptions = {}) {
     roomRef.current = null;
     setParticipants([]);
     setMessages([]);
+    setTypingUsers([]);
+    typingTimersRef.current.forEach(clearTimeout);
+    typingTimersRef.current.clear();
     socketRef.current?.emit("leave-room");
   }, []);
 
@@ -305,6 +326,10 @@ export function useSocket(options: UseSocketOptions = {}) {
 
   const sendMediaState = useCallback((media: MediaState) => {
     socketRef.current?.emit("media-state", media);
+  }, []);
+
+  const sendTyping = useCallback(() => {
+    socketRef.current?.emit("typing");
   }, []);
 
   /**
@@ -404,8 +429,11 @@ export function useSocket(options: UseSocketOptions = {}) {
 
   // Отключаемся при размонтировании страницы урока.
   useEffect(() => {
+    const typingTimers = typingTimersRef.current;
     return () => {
       socketRef.current?.disconnect();
+      typingTimers.forEach(clearTimeout);
+      typingTimers.clear();
       socketRef.current = null;
       hasConnectedRef.current = false;
     };
@@ -417,6 +445,7 @@ export function useSocket(options: UseSocketOptions = {}) {
     selfId,
     participants,
     messages,
+    typingUsers,
     connect,
     joinRoom,
     leaveRoom,
@@ -425,6 +454,7 @@ export function useSocket(options: UseSocketOptions = {}) {
     onSignal,
     setHandRaised,
     sendMediaState,
+    sendTyping,
     sendChat,
     sendWhiteboardAdd,
     sendWhiteboardModify,
