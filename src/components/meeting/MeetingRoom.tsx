@@ -5,7 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Clock3, LogOut, PhoneOff, ShieldAlert, Users, Wifi, WifiOff } from "lucide-react";
 
-import { Chat, CHAT_MAX_MESSAGE_LENGTH, type ChatViewMessage } from "@/components/meeting/Chat";
+import {
+  Chat,
+  CHAT_MAX_MESSAGE_LENGTH,
+  type ChatRecipientOption,
+  type ChatViewMessage,
+} from "@/components/meeting/Chat";
 import { Controls } from "@/components/meeting/Controls";
 import { PreJoinScreen } from "@/components/meeting/PreJoinScreen";
 import { VideoGrid, type GridTile } from "@/components/meeting/VideoGrid";
@@ -237,10 +242,23 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
         id: message.id,
         createdAt: message.createdAt,
         author: message.author,
+        recipient: message.recipient,
         text: tryDecrypt(message.ciphertext, encryptionKey),
       })),
     [socket.messages, encryptionKey],
   );
+
+  /** Кому можно написать приватно: участники урока, кроме самого автора. */
+  const chatRecipients: ChatRecipientOption[] = useMemo(() => {
+    const seen = new Set<string>();
+    const options: ChatRecipientOption[] = [];
+    for (const participant of socket.participants) {
+      if (participant.userId === self.id || seen.has(participant.userId)) continue;
+      seen.add(participant.userId);
+      options.push({ userId: participant.userId, name: participant.name });
+    }
+    return options.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  }, [socket.participants, self.id]);
 
   useEffect(() => {
     if (chatOpen) setSeenCount(messages.length);
@@ -248,11 +266,12 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
 
   const unreadCount = chatOpen ? 0 : Math.max(0, messages.length - seenCount);
 
-  const sendMessage = async (text: string): Promise<boolean> => {
+  /** `recipientId = null` — сообщение всей комнате, иначе приватное адресату. */
+  const sendMessage = async (text: string, recipientId: string | null): Promise<boolean> => {
     if (text.length > CHAT_MAX_MESSAGE_LENGTH) return false;
     setChatError(null);
     const ciphertext = encryptMessage(text, encryptionKey);
-    const ack = await sendChat(ciphertext);
+    const ack = await sendChat(ciphertext, recipientId);
     if (!ack.ok) setChatError(ack.error);
     return ack.ok;
   };
@@ -411,6 +430,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
                   <Chat
                     messages={messages}
                     selfUserId={self.id}
+                    recipients={chatRecipients}
                     onSend={sendMessage}
                     onClose={() => setChatOpen(false)}
                   />
@@ -424,6 +444,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
                 <Chat
                   messages={messages}
                   selfUserId={self.id}
+                  recipients={chatRecipients}
                   onSend={sendMessage}
                   onClose={() => setChatOpen(false)}
                 />

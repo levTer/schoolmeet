@@ -32,6 +32,7 @@ import {
   type WhiteboardObjectPayload,
   type WhiteboardState,
 } from "@/lib/realtime";
+import { resolveRecipientId } from "@/lib/chat-rules";
 import { closeAttendance, openAttendance } from "@/lib/attendance";
 import { findMeetingByCode, loadRecentMessages, saveChatMessage } from "@/lib/meetings";
 import { getMeetingSchoolId, ensureUserSchoolMembership } from "@/lib/schools";
@@ -59,7 +60,9 @@ import type { Role } from "@/types";
  *    cross-site WebSocket hijacking — cookie уходят с любым WebSocket-запросом);
  *  - вход в комнату проверяет, что урок с таким кодом существует в БД и не
  *    закрыт администратором;
- *  - сообщения чата приходят уже зашифрованными, сервер их не расшифровывает.
+ *  - сообщения чата приходят уже зашифрованными, сервер их не расшифровывает;
+ *  - приватное сообщение (`recipientId`) уходит только автору и адресату, а
+ *    история чата отдаётся с фильтром видимости (`src/lib/chat-rules.ts`).
  *
  * Дополнительно сервер ведёт посещаемость (`AttendanceRecord`) и публикует
  * управляющий интерфейс (`RealtimeControl`) для админ-панели: принудительное
@@ -365,6 +368,19 @@ function isRoomClosed(meeting: { endTime: Date | null; startTime: Date }): boole
   return Date.now() - meeting.endTime.getTime() < CLOSED_ROOM_COOLDOWN_MS;
 }
 
+/** Живые сокеты комнаты: у участника может быть несколько вкладок одного урока. */
+function roomSockets(io: RealtimeServer, roomId: string): RealtimeSocket[] {
+  const ids = io.sockets.adapter.rooms.get(roomId);
+  if (!ids) return [];
+
+  const sockets: RealtimeSocket[] = [];
+  ids.forEach((id) => {
+    const socket = io.sockets.sockets.get(id);
+    if (socket) sockets.push(socket);
+  });
+  return sockets;
+}
+
 function toLiveParticipant(socket: RealtimeSocket): LiveParticipant {
   return {
     socketId: socket.id,
@@ -378,17 +394,7 @@ function toLiveParticipant(socket: RealtimeSocket): LiveParticipant {
 
 /** Публикует для API админ-панели управление живыми сессиями. */
 function buildRealtimeControl(io: RealtimeServer): RealtimeControl {
-  const socketsInRoom = (roomId: string): RealtimeSocket[] => {
-    const ids = io.sockets.adapter.rooms.get(roomId);
-    if (!ids) return [];
-
-    const sockets: RealtimeSocket[] = [];
-    ids.forEach((id) => {
-      const socket = io.sockets.sockets.get(id);
-      if (socket) sockets.push(socket);
-    });
-    return sockets;
-  };
+  const socketsInRoom = (roomId: string): RealtimeSocket[] => roomSockets(io, roomId);
 
   return {
     listLiveRooms() {
@@ -652,7 +658,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
 
         const [participants, history] = await Promise.all([
           listParticipants(io, roomId),
-          loadRecentMessages(meeting.id, socket.data.user.schoolId),
+          loadRecentMessages(meeting.id, socket.data.user.schoolId, socket.data.user.id),
         ]);
 
         reply<JoinRoomResult>(ack, {
@@ -711,6 +717,18 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         return;
       }
 
+      // Приватное сообщение: адресат обязан быть участником этого урока.
+      const recipient = resolveRecipientId(payload?.recipientId, socket.data.user.id);
+      if (!recipient.ok) {
+        reply(ack, { ok: false, code: recipient.code, error: recipient.error });
+        return;
+      }
+      const recipientId = recipient.recipientId;
+      if (recipientId && !roomSockets(io, roomId).some((target) => target.data.user.id === recipientId)) {
+        reply(ack, { ok: false, code: "RECIPIENT_NOT_IN_ROOM", error: "Получатель не в этом уроке" });
+        return;
+      }
+
       if (!takeChatToken(socket)) {
         reply(ack, { ok: false, code: "RATE_LIMIT", error: "Слишком много сообщений, подождите секунду" });
         return;
@@ -721,11 +739,28 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           meetingId,
           userId: socket.data.user.id,
           ciphertext,
+          recipientId,
         });
-        io.in(roomId).emit("chat-message", envelope);
+
+        if (envelope.recipient) {
+          // Приватное сообщение получают только автор и адресат — не вся комната.
+          for (const target of roomSockets(io, roomId)) {
+            const targetUserId = target.data.user.id;
+            if (targetUserId === envelope.author.userId || targetUserId === envelope.recipient.userId) {
+              target.emit("chat-message", envelope);
+            }
+          }
+        } else {
+          io.in(roomId).emit("chat-message", envelope);
+        }
+
         reply(ack, { ok: true, data: { id: envelope.id } });
       } catch (error) {
         console.error("[realtime] chat-message:", error);
+        if (error instanceof Error && error.message === "CHAT_RECIPIENT_NOT_FOUND") {
+          reply(ack, { ok: false, code: "RECIPIENT_NOT_FOUND", error: "Получатель не найден" });
+          return;
+        }
         reply(ack, { ok: false, code: "SAVE_FAILED", error: "Не удалось отправить сообщение" });
       }
     });

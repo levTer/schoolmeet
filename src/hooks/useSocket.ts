@@ -307,15 +307,20 @@ export function useSocket(options: UseSocketOptions = {}) {
     socketRef.current?.emit("media-state", media);
   }, []);
 
-  /** Отправляет уже зашифрованное сообщение. Возвращает ack сервера. */
+  /**
+   * Отправляет уже зашифрованное сообщение. Возвращает ack сервера.
+   *
+   * `recipientId = null` (по умолчанию) — сообщение для всей комнаты,
+   * иначе сервер доставит его только адресату и автору.
+   */
   const sendChat = useCallback(
-    (ciphertext: string): Promise<Ack<{ id: string }>> => {
+    (ciphertext: string, recipientId: string | null = null): Promise<Ack<{ id: string }>> => {
       const socket = socketRef.current;
       if (!socket?.connected) {
         return Promise.resolve({ ok: false, code: "OFFLINE", error: "Нет соединения с сервером" });
       }
       return new Promise((resolve) => {
-        socket.emit("chat-message", { ciphertext }, (ack) => resolve(ack));
+        socket.emit("chat-message", { ciphertext, recipientId }, (ack) => resolve(ack));
       });
     },
     [],
