@@ -22,11 +22,14 @@
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
+  Bot,
+  Expand,
   Loader2,
   Mic,
   MicOff,
   MonitorUp,
   Send,
+  Shrink,
   Sparkles,
   X,
   Zap,
@@ -93,6 +96,14 @@ const QUICK_HINTS: Array<{ action: AIAction; icon: LucideIcon }> = [
   { action: "draw", icon: Sparkles },
 ];
 
+/** Готовые текстовые запросы в пустом состоянии: их можно отредактировать до отправки. */
+const QUICK_PROMPTS = [
+  { label: "💡 Объясни тему по шагам", prompt: "Объясни тему по шагам" },
+  { label: "📝 Составь план подготовки", prompt: "Составь план подготовки" },
+  { label: "🔍 Проверь моё решение", prompt: "Проверь моё решение" },
+  { label: "⚡ Сделай краткую выжимку ДЗ", prompt: "Сделай краткую выжимку ДЗ" },
+] as const;
+
 const ACTION_DEFAULT_PROMPTS: Record<AIAction, string> = {
   ask: "",
   draw: "Треугольник ABC, прямоугольный в B, катеты AB = 3, BC = 4. Построй чертёж.",
@@ -131,6 +142,7 @@ export function AIAssistant({
   const [pendingAction, setPendingAction] = useState<AIAction | null>(null);
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [boardAttached, setBoardAttached] = useState(false);
@@ -274,6 +286,14 @@ export function AIAssistant({
     inputRef.current?.focus();
   }, []);
 
+  const pickQuickPrompt = useCallback((prompt: string) => {
+    setPendingAction(null);
+    setInterim("");
+    setInput(prompt);
+    setError(null);
+    inputRef.current?.focus();
+  }, []);
+
   const onInputChange = useCallback((value: string) => {
     setInterim("");
     setInput(value);
@@ -284,7 +304,8 @@ export function AIAssistant({
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      const isSendShortcut = !event.shiftKey || event.ctrlKey || event.metaKey;
+      if (event.key === "Enter" && isSendShortcut && !event.nativeEvent.isComposing) {
         event.preventDefault();
         void send();
       }
@@ -297,7 +318,14 @@ export function AIAssistant({
   /* ----------------------------- Разметка -------------------------------- */
 
   return (
-    <aside className="glass flex h-full w-full flex-col overflow-hidden rounded-3xl md:w-[420px] md:shrink-0 lg:w-[460px]">
+    <aside
+      className={cn(
+        "glass flex min-h-0 flex-col overflow-hidden rounded-3xl",
+        isMaximized
+          ? "fixed inset-4 md:inset-10 z-50 max-w-none max-h-none shadow-2xl"
+          : "h-full w-full md:w-[420px] md:shrink-0 lg:w-[460px]",
+      )}
+    >
       <header className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-gradient shadow-glow">
           <Sparkles className="h-4 w-4 text-white" />
@@ -308,6 +336,16 @@ export function AIAssistant({
             {providerName} · {providerIsLocal ? "локальный режим" : "серверный прокси · работает без VPN"}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setIsMaximized((maximized) => !maximized)}
+          aria-label={isMaximized ? "Свернуть ИИ-панель" : "Развернуть ИИ-панель"}
+          aria-expanded={isMaximized}
+          title={isMaximized ? "Свернуть окно" : "Развернуть на весь экран"}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 text-slate-300 transition hover:bg-white/10"
+        >
+          {isMaximized ? <Shrink className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
+        </button>
         <button
           type="button"
           onClick={onClose}
@@ -321,11 +359,30 @@ export function AIAssistant({
       {/* Ответы */}
       <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {entries.length === 0 && !loading && (
-          <div className="rounded-2xl border border-dashed border-white/15 p-4 text-xs leading-relaxed text-slate-400">
-            Напишите или надиктуйте (🎤) любой вопрос: тему, уравнение, условие задачи, просьбу
-            объяснить правило. Нажмите «Отправить» — ответит ИИ (Groq / Gemini).
-            <br />
-            Включите «Передать доску», если хотите, чтобы ИИ посмотрел на записи с доски.
+          <div className="mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center rounded-3xl border border-white/10 bg-gradient-to-br from-brand-500/10 via-white/[0.03] to-indigo-500/10 px-5 py-8 text-center">
+            <span className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-brand-400/30 bg-brand-500/15 text-brand-200 shadow-glow">
+              <Bot className="h-7 w-7" aria-hidden="true" />
+            </span>
+            <h2 className="text-base font-semibold text-white">Привет! Я ИИ-помощник</h2>
+            <p className="mt-2 max-w-xl text-xs leading-relaxed text-slate-400">
+              Помогу разобраться в теме, подготовиться к уроку или проверить решение. Напишите вопрос
+              ниже, надиктуйте его или выберите одну из подсказок.
+            </p>
+            <div className="mt-5 flex w-full flex-wrap justify-center gap-2">
+              {QUICK_PROMPTS.map((quickPrompt) => (
+                <button
+                  key={quickPrompt.label}
+                  type="button"
+                  onClick={() => pickQuickPrompt(quickPrompt.prompt)}
+                  className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-[11px] font-medium text-slate-200 transition hover:border-brand-400/40 hover:bg-brand-500/10 hover:text-white"
+                >
+                  {quickPrompt.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-4 text-[10px] leading-relaxed text-slate-500">
+              Можно приложить снимок доски кнопкой «Передать доску» — я учту его в ответе.
+            </p>
           </div>
         )}
 
@@ -412,8 +469,7 @@ export function AIAssistant({
           placeholder="Спросите ИИ что угодно: «реши 2x² − 5x + 3 = 0», «объясни теорему Пифагора», «составь план урока на 45 минут»…"
           aria-label="Вопрос ИИ-помощнику"
           className={cn(
-            "min-h-[44px] w-full resize-y rounded-2xl border border-white/10 bg-ink-900/70 px-3.5 py-3 text-sm text-slate-100",
-            "placeholder:text-xs placeholder:text-slate-500 focus:border-brand-400/50 focus:outline-none focus:ring-2 focus:ring-brand-500/30",
+            "resize-y min-h-[52px] max-h-[220px] rounded-xl bg-slate-800/80 border border-slate-700/80 p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-full scrollbar-thin text-slate-100 placeholder:text-slate-500 focus:border-indigo-500",
             interim && "text-slate-400",
           )}
         />

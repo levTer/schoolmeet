@@ -196,7 +196,7 @@ export const authOptions: NextAuthOptions = {
           token.role = (user.role as Role) || "STUDENT";
           token.schoolId = user.schoolId ?? null;
           token.classId = user.classId ?? null;
-          token.schoolName = user.school?.name || user.schoolName || token.schoolName;
+          token.schoolName = user.school?.name || user.schoolName || null;
           token.name = user.name ?? token.name;
           token.email = user.email ?? token.email;
           token.picture = user.image ?? null;
@@ -213,58 +213,64 @@ export const authOptions: NextAuthOptions = {
         }
 
         const userId = typeof token.id === "string" && token.id ? token.id : token.sub;
-      const needsSync =
-        // Явное обновление сессии (например, после повышения до ADMIN по
-        // секретной ссылке) требует свежей роли немедленно, без ожидания 60 с.
-        trigger === "update" ||
-        !token.role ||
-        token.schoolId === undefined ||
-        token.classId === undefined ||
-        Date.now() - (typeof token.syncedAt === "number" ? token.syncedAt : 0) > SESSION_REFRESH_MS;
+        const lastSyncedAt = typeof token.syncedAt === "number" ? token.syncedAt : 0;
+        const needsSchoolNameSync =
+          Boolean(token.schoolId && !token.schoolName) &&
+          (Boolean(user) || Date.now() - lastSyncedAt > SESSION_REFRESH_MS);
+        const needsSync =
+          // Явное обновление сессии (например, после повышения до ADMIN по
+          // секретной ссылке) требует свежей роли немедленно, без ожидания 60 с.
+          trigger === "update" ||
+          !token.role ||
+          token.schoolId === undefined ||
+          token.classId === undefined ||
+          needsSchoolNameSync ||
+          Date.now() - lastSyncedAt > SESSION_REFRESH_MS;
 
-      /**
-       * Сверка с БД: смена роли, имени и блокировка применяются к уже вошедшим
-       * пользователям (не чаще одного раза в минуту). Страховка для cookie,
-       * выпущенных до появления поля role, работает на этом же запросе.
-       */
-      if (userId && needsSync) {
-        try {
-          let dbUser = await prisma.user.findUnique({
-            where: { id: userId },
-            select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true, school: { select: { name: true } } },
-          });
-
-          if (dbUser && (!dbUser.schoolId || (dbUser.role === "STUDENT" && !dbUser.classId))) {
-            await ensureUserSchoolMembership(userId);
-            dbUser = await prisma.user.findUnique({
+        /**
+         * Сверка с БД: смена роли, имени и блокировка применяются к уже вошедшим
+         * пользователям (не чаще одного раза в минуту). Страховка для cookie,
+         * выпущенных до появления поля role, работает на этом же запросе.
+         */
+        if (userId && needsSync) {
+          try {
+            let dbUser = await prisma.user.findUnique({
               where: { id: userId },
               select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true, school: { select: { name: true } } },
             });
-          }
 
-          if (dbUser) {
-            token.id = userId;
-            token.role = dbUser.role as Role;
-            token.schoolId = dbUser.schoolId;
-            token.classId = dbUser.classId;
-            token.schoolName = dbUser.school?.name ?? null;
-            token.name = dbUser.name;
-            token.picture = dbUser.avatar ?? null;
-            token.banned = dbUser.isBanned;
+            if (dbUser && (!dbUser.schoolId || (dbUser.role === "STUDENT" && !dbUser.classId))) {
+              await ensureUserSchoolMembership(userId);
+              dbUser = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true, school: { select: { name: true } } },
+              });
+            }
+
+            if (dbUser) {
+              token.id = userId;
+              token.role = dbUser.role as Role;
+              token.schoolId = dbUser.schoolId;
+              token.classId = dbUser.classId;
+              token.schoolName = dbUser.school?.name ?? null;
+              token.name = dbUser.name;
+              token.picture = dbUser.avatar ?? null;
+              token.banned = dbUser.isBanned;
+            }
+          } catch (error) {
+            // БД недоступна — не ломаем сессию, просто не обновляем данные.
+            console.error("[auth] Не удалось обновить данные сессии:", error);
           }
-        } catch (error) {
-          // БД недоступна — не ломаем сессию, просто не обновляем данные.
-          console.error("[auth] Не удалось обновить данные сессии:", error);
+          token.syncedAt = Date.now();
         }
-        token.syncedAt = Date.now();
-      }
 
-      return token;
+        return token;
       } catch (err) {
         console.error('[NEXTAUTH_JWT_ERROR]', err);
         return token;
       }
-    },    /** Отдаёт приложению `session.user.id` и `session.user.role`. */
+    },
+    /** Отдаёт приложению `session.user.id` и `session.user.role`. */
     async session({ session, token }) {
       try {
         if (session?.user) {
@@ -272,7 +278,7 @@ export const authOptions: NextAuthOptions = {
           session.user.role = (token?.role as Role | undefined) || "STUDENT";
           session.user.schoolId = (token?.schoolId as string) || null;
           session.user.classId = typeof token?.classId === "string" ? token.classId : null;
-          session.user.schoolName = token.schoolName;
+          session.user.schoolName = token.schoolName as string | null;
           session.user.banned = token?.banned === true;
 
           if (typeof token?.name === "string") session.user.name = token.name;

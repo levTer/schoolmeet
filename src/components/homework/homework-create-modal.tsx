@@ -160,7 +160,7 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 backdrop-blur-sm md:items-center md:p-4 md:pt-20"
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-4 pt-24 md:pt-32 pb-12 flex justify-center items-start"
       onClick={(event) => {
         if (event.target === event.currentTarget && !submitting) onClose();
       }}
@@ -169,7 +169,7 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
         role="dialog"
         aria-modal="true"
         aria-labelledby="homework-modal-title"
-        className="ring-gradient glass-card animate-fade-up relative z-[100] max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl rounded-b-none bg-ink-900/95 p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-glow md:max-h-[85vh] md:rounded-3xl md:p-6 md:pb-6"
+        className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl mt-4 pt-6 px-6 pb-6 overflow-hidden shrink-0"
       >
         <div aria-hidden className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/20 md:hidden" />
         <div className="flex items-start justify-between gap-4">
