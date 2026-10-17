@@ -31,7 +31,9 @@ import {
   buildReviewUserPrompt,
   buildSystemPrompt,
   buildUserPrompt,
+  drawingFromModelJson,
   extractJsonObject,
+  splitDrawCommand,
   isModelUnavailableError,
   normalizeReviewDraft,
   postJson,
@@ -275,7 +277,7 @@ export class GroqProvider implements AIProvider {
 
     if (request.action === "draw") {
       const json = extractJsonObject(content);
-      const drawing = Array.isArray(json?.drawing) ? (json.drawing as AIResponse["drawing"]) : undefined;
+      const drawing = drawingFromModelJson(json);
       const text = typeof json?.text === "string" && json.text.trim() ? json.text.trim() : "## Чертёж по условию";
       if (!drawing || drawing.length === 0) {
         throw new AIProviderError("Groq: модель не вернула валидные инструкции черчения", { retryable: true });
@@ -289,7 +291,9 @@ export class GroqProvider implements AIProvider {
       return { ...base, text: content, latex: content };
     }
 
-    return { ...base, text: content };
+    // Команда рисования {"action":"draw",…} в свободном ответе → `drawing` + чистый текст.
+    const split = splitDrawCommand(content);
+    return { ...base, text: split.text, ...(split.drawing ? { drawing: split.drawing } : {}) };
   }
 }
 

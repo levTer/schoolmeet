@@ -18,7 +18,8 @@
     "db:migrate": "prisma migrate dev --name init",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "test": "npm run test:ai && npm run test:rules && npm run test:ui && npm run test:chat && npm run test:security"
+    "test": "npm run test:ai && npm run test:rules && npm run test:ui && npm run test:chat && npm run test:security && npm run test:bridge",
+    "test:bridge": "tsx --test scripts/whiteboard-bridge.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

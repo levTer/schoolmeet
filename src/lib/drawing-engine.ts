@@ -10,6 +10,7 @@
 
 import { Circle, Group, Line, Path, Polygon, Rect, Textbox, type Canvas, type FabricObject } from "fabric";
 
+import { commandToInstructions, shapesToInstructions } from "@/lib/whiteboard-bridge";
 import type {
   CircleInstruction,
   DrawingInstruction,
@@ -59,12 +60,24 @@ function asString(value: unknown, fallback = ""): string {
  * отбрасываются; возвращается только то, что движок гарантированно нарисует.
  */
 export function parseDrawingInstructions(value: unknown): DrawingInstruction[] {
-  if (!Array.isArray(value)) return [];
+  // Компактная команда целиком ({"action":"draw","shapes":[…]}) — нормализуем
+  // мостом и валидируем результат обычным путём.
+  if (!Array.isArray(value)) {
+    const normalized = commandToInstructions(value);
+    return normalized.length > 0 ? parseDrawingInstructions(normalized) : [];
+  }
   const result: DrawingInstruction[] = [];
 
   for (const item of value.slice(0, MAX_INSTRUCTIONS)) {
     const raw = asRecord(item);
     if (!raw) continue;
+
+    // Компактная фигура {"type":"triangle","x":100,"y":100,"size":80} вместо
+    // полной {"shape":"triangle","points":[…]} — приводим через мост ИИ↔доска.
+    if (!raw.shape && raw.type) {
+      result.push(...shapesToInstructions([raw]));
+      continue;
+    }
 
     const shape = asString(raw.shape);
     const base = {

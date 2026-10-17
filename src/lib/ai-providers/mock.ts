@@ -10,6 +10,7 @@
  * Модуль не зависит ни от Next.js, ни от DOM.
  */
 
+import { isBoardAnalysisRequest, isDrawRequest } from "../whiteboard-bridge";
 import type {
   AIProvider,
   AIRequest,
@@ -390,6 +391,30 @@ export class MockAIProvider implements AIProvider {
 
     switch (request.action) {
       case "ask": {
+        // Свободная просьба «нарисуй …» — тот же путь, что и действие draw:
+        // возвращаем инструкции, клиент нарисует их на доске через мост.
+        if (isDrawRequest(prompt)) {
+          const template = DRAW_TEMPLATES[topic];
+          return {
+            text: prompt ? `${template.text}\n\n**Условие:** ${escapeMarkdown(prompt)}${title}.` : template.text,
+            drawing: template.drawing,
+          };
+        }
+        // Анализ доски в локальном режиме: снимок дошёл, но «видеть» его умеет
+        // только мультимодальный провайдер — честно предупреждаем учителя.
+        if (request.imageDataUrl && isBoardAnalysisRequest(prompt)) {
+          return {
+            text: [
+              "## Анализ доски (локальный режим)",
+              "",
+              "**Что на доске:** снимок доски получен, однако локальный резерв не умеет распознавать изображения.",
+              "",
+              "**Подробный разбор:** для распознавания рукописного текста, формул и геометрии подключите `GEMINI_API_KEY` — запросы со снимком автоматически уйдут в Gemini Vision, и здесь появится полный разбор содержимого доски.",
+              "",
+              "**Вывод и следующий шаг:** задайте вопрос текстом — локальный помощник ответит по типовым материалам темы.",
+            ].join("\n"),
+          };
+        }
         // Свободный вопрос: локальный резерв подбирает ближайший заготовленный
         // материал — решение, если в вопросе есть вычисления, иначе конспект темы.
         const looksLikeTask = /(=|\d\s*[+\-*/^]\s*\d|реши|найди|вычисли|докажи|упрости)/i.test(prompt);

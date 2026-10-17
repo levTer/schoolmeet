@@ -16,6 +16,7 @@ import { Sparkles } from "lucide-react";
 
 import { AIAssistant } from "@/components/meeting/AIAssistant";
 import type { DrawingInstruction } from "@/lib/ai-provider";
+import { drawCommand, getCanvasSnapshot } from "@/lib/whiteboard-bridge";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/types";
 
@@ -27,9 +28,16 @@ export interface AIWidgetProps {
   /** Открыт ли виджет. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** ИИ вернул инструкции для доски. */
-  onApplyDrawing: (instructions: DrawingInstruction[]) => void;
-  /** Снимок доски (если доска открыта) — для мультимодального запроса. */
+  /**
+   * ИИ вернул инструкции для доски. По умолчанию — `drawCommand()` моста
+   * `whiteboard-bridge`: фигуры рисуются на открытой доске без проводки
+   * через родителя.
+   */
+  onApplyDrawing?: (instructions: DrawingInstruction[]) => void;
+  /**
+   * Снимок доски для мультимодального запроса. По умолчанию —
+   * `getCanvasSnapshot()` моста (PNG base64 текущей страницы доски).
+   */
   captureBoard?: () => string | null;
 }
 
@@ -78,8 +86,8 @@ export function AIWidget({
           <AIAssistant
             role={role}
             meetingTitle={meetingTitle}
-            onApplyDrawing={onApplyDrawing}
-            captureBoard={captureBoard}
+            onApplyDrawing={onApplyDrawing ?? ((instructions) => void drawCommand(instructions))}
+            captureBoard={captureBoard ?? (() => getCanvasSnapshot())}
             onClose={() => onOpenChange(false)}
             floating
           />

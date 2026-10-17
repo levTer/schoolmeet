@@ -29,12 +29,14 @@ import {
   PencilBrush,
   Rect,
   Textbox,
+  Triangle,
   util,
 } from "fabric";
 
 import {
   buildObjectsFromInstructions,
   createArrow,
+  parseDrawingInstructions,
 } from "@/lib/drawing-engine";
 import type { DrawingInstruction } from "@/lib/ai-provider";
 import {
@@ -69,6 +71,7 @@ export type WhiteboardTool =
   | "line"
   | "rect"
   | "circle"
+  | "triangle"
   | "arrow"
   | "text"
   | "sticky"
@@ -138,7 +141,7 @@ type HistoryOp =
   | { kind: "batch"; ops: HistoryOp[] };
 
 interface DraftShape {
-  tool: "line" | "rect" | "circle" | "arrow";
+  tool: "line" | "rect" | "circle" | "triangle" | "arrow";
   start: Point;
   preview: FabricObject;
 }
@@ -241,6 +244,7 @@ const TOOL_CURSORS: Record<WhiteboardTool, string> = {
   line: "crosshair",
   rect: "crosshair",
   circle: "crosshair",
+  triangle: "crosshair",
   arrow: "crosshair",
   text: "text",
   sticky: "text",
@@ -258,7 +262,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
 
   const [isReady, setIsReady] = useState(false);
   const [tool, setToolState] = useState<WhiteboardTool>("select");
-  const [color, setColor] = useState("#111827");
+  const [color, setColor] = useState("#000000");
   const [strokeWidth, setStrokeWidth] = useState(4);
   const [drawPolicy, setDrawPolicyState] = useState<WhiteboardDrawPolicy>("moderators");
   const [canUndo, setCanUndo] = useState(false);
@@ -465,6 +469,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
         case "line":
         case "rect":
         case "circle":
+        case "triangle":
         case "arrow":
           startDraft(activeTool, pointer);
           break;
@@ -595,6 +600,9 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
             originY: "center",
           });
           break;
+        case "triangle":
+          preview = new Triangle({ ...common, left: pointer.x, top: pointer.y, width: 1, height: 1 });
+          break;
         default:
           preview = new Line([pointer.x, pointer.y, pointer.x, pointer.y], {
             ...common,
@@ -613,6 +621,13 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
 
       if (draftTool === "rect") {
         (preview as Rect).set({
+          left: Math.min(start.x, pointer.x),
+          top: Math.min(start.y, pointer.y),
+          width: Math.abs(pointer.x - start.x),
+          height: Math.abs(pointer.y - start.y),
+        });
+      } else if (draftTool === "triangle") {
+        (preview as Triangle).set({
           left: Math.min(start.x, pointer.x),
           top: Math.min(start.y, pointer.y),
           width: Math.abs(pointer.x - start.x),
@@ -669,6 +684,18 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
             objectCaching: false,
           });
           break;
+        case "triangle":
+          object = new Triangle({
+            left: Math.min(start.x, end.x),
+            top: Math.min(start.y, end.y),
+            width: Math.abs(end.x - start.x),
+            height: Math.abs(end.y - start.y),
+            fill: "transparent",
+            stroke: color,
+            strokeWidth: width,
+            objectCaching: false,
+          });
+          break;
         case "arrow":
           object = createArrow([start.x, start.y], [end.x, end.y], color, width);
           break;
@@ -691,6 +718,8 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
           return { x: start.x + 160, y: start.y + 100 };
         case "circle":
           return { x: start.x + 80, y: start.y };
+        case "triangle":
+          return { x: start.x + 160, y: start.y + 140 };
         default:
           return { x: start.x + 180, y: start.y };
       }
@@ -1113,9 +1142,13 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
 
   const applyDrawing = useCallback(
     (instructions: DrawingInstruction[]) => {
-      if (instructions.length === 0) return;
+      // JSON от модели нельзя доверять вслепую: валидируем каждую фигуру
+      // (заодно принимаются компактные команды {"type","x","y","size"}),
+      // иначе одна битая запись роняет всю доску.
+      const safeInstructions = parseDrawingInstructions(instructions);
+      if (safeInstructions.length === 0) return;
       const page = currentPageRef.current;
-      const objects = buildObjectsFromInstructions(instructions, { offset: { x: 120, y: 60 } });
+      const objects = buildObjectsFromInstructions(safeInstructions, { offset: { x: 120, y: 60 } });
       const ops: HistoryOp[] = [];
 
       for (const object of objects) {

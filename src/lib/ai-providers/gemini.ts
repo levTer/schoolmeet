@@ -25,7 +25,9 @@ import {
   buildSystemPrompt,
   buildUserPrompt,
   extractLatex,
+  drawingFromModelJson,
   extractJsonObject,
+  splitDrawCommand,
   isModelUnavailableError,
   normalizeReviewDraft,
   parseDataUrl,
@@ -300,7 +302,7 @@ export class GeminiProvider implements AIProvider {
 
     if (request.action === "draw") {
       const json = extractJsonObject(content);
-      const drawing = Array.isArray(json?.drawing) ? (json.drawing as AIResponse["drawing"]) : undefined;
+      const drawing = drawingFromModelJson(json);
       const text = typeof json?.text === "string" && json.text.trim() ? json.text.trim() : "## Чертёж по условию";
       if (!drawing || drawing.length === 0) {
         throw new AIProviderError("Gemini: модель не вернула валидные инструкции черчения", { retryable: true });
@@ -311,7 +313,11 @@ export class GeminiProvider implements AIProvider {
     if (content.trim().length === 0) {
       throw new AIProviderError("Gemini: модель вернула пустой ответ", { retryable: true });
     }
-    return { ...base, text: content };
+    // Свободный ответ может содержать JSON-команду рисования {"action":"draw",…}
+    // (просьба «нарисуй …» в действии ask) — отделяем её в `drawing`, чтобы клиент
+    // автоматически нарисовал фигуры на доске, а пользователь видел чистый текст.
+    const split = splitDrawCommand(content);
+    return { ...base, text: split.text, ...(split.drawing ? { drawing: split.drawing } : {}) };
   }
 }
 

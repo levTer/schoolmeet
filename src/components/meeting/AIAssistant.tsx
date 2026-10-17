@@ -22,10 +22,11 @@
  * с LaTeX и помечены бейджем фактической модели.
  */
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import {
   Bot,
   Expand,
+  Eye,
   Lightbulb,
   Loader2,
   Mic,
@@ -47,6 +48,15 @@ import {
   type DrawingInstruction,
 } from "@/lib/ai-provider";
 import { cn } from "@/lib/utils";
+import {
+  drawCommand,
+  extractDrawCommand,
+  getCanvasSnapshot,
+  isBoardAnalysisRequest,
+  isDrawRequest,
+  isWhiteboardOpen,
+  subscribeWhiteboardBridge,
+} from "@/lib/whiteboard-bridge";
 import type { Role } from "@/types";
 
 /* -------------------------------------------------------------------------- */
@@ -121,6 +131,10 @@ const ACTION_DEFAULT_PROMPTS: Record<AIAction, string> = {
   formula: "Распознай формулу",
 };
 
+/** Запрос подробного Vision-разбора доски (кнопка «Проанализировать доску»). */
+const ANALYZE_BOARD_PROMPT =
+  "Проанализируй доску: распознай весь написанный текст и математические формулы (перепиши их в LaTeX), опиши геометрические фигуры, графики и схемы, проверь выкладки на ошибки и дай подробный разбор — что на доске, что верно, где ошибки и какой следующий шаг.";
+
 /** Подсказка-заголовок над шаблонами. */
 const QUICK_HINTS_HINT: Partial<Record<AIAction, string>> = {
   summary: "Конспект по теме",
@@ -165,7 +179,32 @@ export function AIAssistant({
   /** Область с кнопкой и списком «Идеи запросов» — для закрытия по клику вне. */
   const ideasRef = useRef<HTMLElement | null>(null);
 
-  const boardSupported = Boolean(captureBoard);
+  /**
+   * Доступность доски определяет реестр моста ИИ↔доска: доска регистрируется
+   * при открытии и снимается при закрытии, поэтому кнопки снимка/анализа
+   * честно отключаются, когда доски на экране нет.
+   */
+  const bridgeReady = useSyncExternalStore(subscribeWhiteboardBridge, isWhiteboardOpen, () => false);
+  const boardSupported = bridgeReady;
+
+  /** Снимок доски: сначала мост (`getCanvasSnapshot`), затем legacy-пропс родителя. */
+  const takeBoardSnapshot = useCallback((): string | null => {
+    return getCanvasSnapshot() ?? captureBoard?.() ?? null;
+  }, [captureBoard]);
+
+  /**
+   * Нарисовать фигуры ИИ на доске через мост (`drawCommand`). Если доска
+   * закрыта, чертёж НЕ теряется: запись чата сохранит инструкции и покажет
+   * кнопку «Нарисовать на доске», когда доску откроют.
+   */
+  const applyDrawingViaBridge = useCallback(
+    (instructions: DrawingInstruction[]): boolean => {
+      const result = drawCommand(instructions);
+      if (!result.applied) onApplyDrawing(instructions);
+      return result.applied;
+    },
+    [onApplyDrawing],
+  );
 
   /* ----------------------------- Голосовой ввод -------------------------- */
 
@@ -220,26 +259,38 @@ export function AIAssistant({
 
   /* ----------------------------- Отправка -------------------------------- */
 
-  const send = useCallback(async () => {
+  const send = useCallback(
+    async (options?: { promptOverride?: string; forceBoard?: boolean }) => {
     if (loading) return;
 
-    const prompt = input.trim();
+    const prompt = (options?.promptOverride ?? input).trim();
     if (!prompt) {
       setError("Введите вопрос, задачу или тему — или выберите подсказку ниже.");
       inputRef.current?.focus();
       return;
     }
 
-    // Свободный текст уходит действием «ask»; подсказка может задать своё действие.
-    const action: AIAction = pendingAction ?? "ask";
+    // Свободный текст уходит действием «ask»; подсказка может задать своё
+    // действие. Свободная просьба «нарисуй …» маршрутизируется в «draw»,
+    // чтобы модель вернула структурированный JSON-чертёж для доски.
+    const action: AIAction =
+      pendingAction ?? (!options?.forceBoard && isDrawRequest(prompt) ? "draw" : "ask");
 
-    // Снимок доски (если включён переключатель «Передать доску»).
+    // Снимок доски для Vision: кнопка «Проанализировать доску», переключатель
+    // «Передать доску» или сам вопрос про доску («что на доске?», «проверь
+    // решение на доске») — снимок берёт мост (`getCanvasSnapshot`).
+    const wantsSnapshot =
+      Boolean(options?.forceBoard) || boardAttached || (boardSupported && isBoardAnalysisRequest(prompt));
     let imageDataUrl: string | undefined;
     let snapshotFailed = false;
-    if (boardAttached && captureBoard) {
-      const snapshot = captureBoard();
+    if (wantsSnapshot) {
+      const snapshot = takeBoardSnapshot();
       if (snapshot) imageDataUrl = snapshot;
       else snapshotFailed = true;
+    }
+    if (options?.forceBoard && !imageDataUrl) {
+      setError("Доска не открыта — откройте доску урока, и я проанализирую её содержимое.");
+      return;
     }
 
     setLoading(true);
@@ -276,10 +327,22 @@ export function AIAssistant({
       }
 
       const data = payload.data;
+
+      // ИИ рисует на доске: инструкции могут прийти структурированно
+      // (`data.drawing`) или JSON-командой {"action":"draw",…} прямо в тексте
+      // свободного ответа — перехватываем оба пути и выполняем через мост.
+      let answerText = data.text;
+      let drawing = data.drawing;
+      if ((!drawing || drawing.length === 0) && answerText) {
+        const extracted = extractDrawCommand(answerText);
+        if (extracted) {
+          drawing = extracted.instructions;
+          answerText = extracted.text || "## Чертёж по условию";
+        }
+      }
       let applied = false;
-      if (data.drawing && data.drawing.length > 0) {
-        onApplyDrawing(data.drawing);
-        applied = true;
+      if (drawing && drawing.length > 0) {
+        applied = applyDrawingViaBridge(drawing);
       }
 
       setEntries((prev) => [
@@ -287,21 +350,54 @@ export function AIAssistant({
         {
           id: `a_${Date.now()}`,
           author: "assistant",
-          text: data.text,
-          drawing: data.drawing,
+          text: answerText,
+          drawing,
           applied,
           providerId: data.providerId,
           model: data.model,
         },
       ]);
-      setInput("");
-      setPendingAction(null);
+      // Анализ доски не стирает набранный учителем текст.
+      if (!options?.promptOverride) {
+        setInput("");
+        setPendingAction(null);
+      }
     } catch {
       setError("Нет соединения с сервером. Проверьте интернет.");
     } finally {
       setLoading(false);
     }
-  }, [boardAttached, captureBoard, input, loading, meetingTitle, onApplyDrawing, pendingAction, voice]);
+    },
+    [
+      applyDrawingViaBridge,
+      boardAttached,
+      boardSupported,
+      input,
+      loading,
+      meetingTitle,
+      pendingAction,
+      takeBoardSnapshot,
+      voice,
+    ],
+  );
+
+  /** Кнопка «Проанализировать доску»: снимок → Gemini Vision → подробный разбор. */
+  const analyzeBoard = useCallback(() => {
+    void send({ promptOverride: ANALYZE_BOARD_PROMPT, forceBoard: true });
+  }, [send]);
+
+  /** Повторить рисование чертежа из записи чата (доску открыли после ответа ИИ). */
+  const applyEntryDrawing = useCallback(
+    (entryId: string) => {
+      setEntries((prev) =>
+        prev.map((entry) => {
+          if (entry.id !== entryId || !entry.drawing || entry.applied) return entry;
+          return { ...entry, applied: applyDrawingViaBridge(entry.drawing) };
+        }),
+      );
+    },
+    [applyDrawingViaBridge],
+  );
 
   /* --------------------------- Идеи запросов ----------------------------- */
 
@@ -424,6 +520,24 @@ export function AIAssistant({
               <Markdown text={entry.text} />
               {entry.applied && entry.drawing ? (
                 <p className="mt-2 text-[11px] text-accent-300">✓ Чертёж автоматически добавлен на доску</p>
+              ) : entry.drawing ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => applyEntryDrawing(entry.id)}
+                    disabled={!boardSupported}
+                    title={
+                      boardSupported ? "Нарисовать фигуры ИИ на открытой доске" : "Откройте доску урока, чтобы нарисовать чертёж"
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-accent-400/40 bg-accent-500/15 px-2.5 py-1 text-[11px] font-medium text-accent-100 transition hover:bg-accent-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    Нарисовать на доске
+                  </button>
+                  {!boardSupported ? (
+                    <span className="text-[10px] text-slate-500">Доска закрыта — чертёж сохранён в этой записи</span>
+                  ) : null}
+                </div>
               ) : null}
               {entry.providerId ? (
                 <p className="mt-2 text-[10px] text-slate-500">
@@ -533,13 +647,32 @@ export function AIAssistant({
 
           <button
             type="button"
+            onClick={analyzeBoard}
+            disabled={!boardSupported || loading}
+            title={
+              boardSupported
+                ? "Снять снимок доски и получить подробный разбор (Gemini Vision): текст, формулы, геометрия, ошибки"
+                : "Откройте доску урока, чтобы проанализировать её содержимое"
+            }
+            className={cn(
+              "inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition",
+              "border-white/10 bg-white/[0.06] text-slate-200 hover:bg-white/10",
+              "disabled:cursor-not-allowed disabled:opacity-40",
+            )}
+          >
+            <Eye className="h-4 w-4" />
+            Проанализировать доску
+          </button>
+
+          <button
+            type="button"
             onClick={() => setBoardAttached((attached) => !attached)}
             disabled={!boardSupported}
             aria-pressed={boardAttached}
             title={
               boardSupported
                 ? "Приложить снимок доски к запросу (разбирает Gemini Vision)"
-                : "Доска недоступна"
+                : "Откройте доску урока, чтобы передать её снимок ИИ"
             }
             className={cn(
               "inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition",
