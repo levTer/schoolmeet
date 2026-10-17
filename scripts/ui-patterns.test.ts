@@ -271,11 +271,29 @@ describe("глобальный минималистичный ИИ-ассист�
   const board = readSource("src/components/meeting/Whiteboard.tsx");
   const room = readSource("src/components/meeting/MeetingRoom.tsx");
 
-  it("окно ИИ ресайзабельное и не меньше 320×400", () => {
+  it("окно ИИ ресайзабельное и не меньше 320×380", () => {
     assert.match(widget, /resize: "both"/, "окно ИИ не ресайзабельное");
     assert.match(widget, /overflow: "hidden"/, "нет overflow: hidden для ресайза");
     assert.match(widget, /minWidth: 320/, "нет min-width: 320px");
-    assert.match(widget, /minHeight: 400/, "нет min-height: 400px");
+    assert.match(widget, /minHeight: 380/, "нет min-height: 380px");
+    assert.match(widget, /maxWidth: "95vw"/, "нет max-width: 95vw");
+    assert.match(widget, /maxHeight: "95vh"/, "нет max-height: 95vh");
+    assert.match(assistant, /flex-1 flex-grow .*overflow-y-auto|flex-grow .*overflow-y-auto/, "диалог не заполняет свободное пространство окна");
+  });
+
+  it("окно ИИ перетаскивается за шапку мышью и касанием", () => {
+    assert.match(assistant, /cursor-grab/, "шапка окна ИИ не ручка перетаскивания");
+    assert.match(assistant, /cursor-grabbing/, "нет курсора grabbing при перетаскивании");
+    assert.match(widget, /onMouseDown/, "нет обработчика мыши для перетаскивания");
+    assert.match(widget, /onTouchStart/, "нет обработчика касания для перетаскивания");
+    assert.match(widget, /clientX/, "перетаскивание не отслеживает указатель");
+    assert.match(widget, /setPosition\(\{/, "перетаскивание не обновляет позицию окна");
+  });
+
+  it("кнопка «Развернуть на весь экран / Восстановить» есть в шапке", () => {
+    assert.match(widget, /inset-4 z-\[1000\] h-auto w-auto md:inset-8/, "нет полноэкранного режима окна ИИ");
+    assert.match(assistant, /Развернуть на весь экран/, "нет кнопки разворачивания окна");
+    assert.match(assistant, /Shrink/, "иконка не меняется на Compress/Shrink");
   });
 
   it("ИИ-виджет доступен с любой страницы урока (плавающая кнопка)", () => {

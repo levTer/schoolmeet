@@ -285,3 +285,24 @@ describe("тулбар доски и проводка моста (исходни
     assert.match(hook, /parseDrawingInstructions\(instructions\)/, "applyDrawing не валидирует JSON модели");
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Чёткость ИИ-чертежей (drawing-engine.ts)                                    */
+/* -------------------------------------------------------------------------- */
+
+describe("чёткость векторных ИИ-чертежей (исходники движка)", () => {
+  const engine = readSource("src/lib/drawing-engine.ts");
+
+  it("линии сглажены и толщиной 3 — lineCap/lineJoin round, lineWidth 3", () => {
+    assert.match(engine, /strokeLineCap: "round"/, "концы линий не сглажены (ctx.lineCap)");
+    assert.match(engine, /strokeLineJoin: "round"/, "стыки линий не сглажены (ctx.lineJoin)");
+    assert.match(engine, /DEFAULT_STROKE = 3/, "толщина линий ИИ-чертежей не равна 3 (ctx.lineWidth)");
+  });
+
+  it("вершины фигур замыкаются ровно (closePath), буквы вершин читаемы", () => {
+    assert.match(engine, /closePath/, "фигуры не замыкаются ровно (ctx.closePath)");
+    assert.match(engine, /VERTEX_LABEL_OFFSET/, "буквы вершин без чёткого отступа от углов");
+    assert.match(engine, /fontWeight: 600/, "подписи вершин без читаемого жирного шрифта");
+    assert.match(engine, /vertexLabelAnchor/, "буквы вершин не выносятся наружу от углов фигуры");
+  });
+});
