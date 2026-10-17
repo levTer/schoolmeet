@@ -22,6 +22,34 @@
   .scrollbar-thin::-webkit-scrollbar-track {
     background-color: transparent;
   }
+
+  /*
+   * Аккуратный скроллбар для длинных прокручиваемых блоков (окно создания ДЗ,
+   * глобальный ИИ-виджет). Тонкий, полупрозрачный — не перетягивает внимание
+   * с содержимого и не «съедает» ширину карточки.
+   */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(148 163 184 / 0.35) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: rgb(148 163 184 / 0.28);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(148 163 184 / 0.5);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background-color: transparent;
+  }
 }
 
 /*

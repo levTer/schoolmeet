@@ -102,6 +102,9 @@ export function useWebRTC({ sendSignal, onSignal }: UseWebRTCParams) {
   const [devices, setDevices] = useState<DeviceAvailability>({ hasMic: false, hasCamera: false });
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [peers, setPeers] = useState<RemotePeer[]>([]);
+  /** Отдельные треки экрана и камеры — нужны локальной записи урока. */
+  const [screenTrack, setScreenTrack] = useState<MediaStreamTrack | null>(null);
+  const [cameraTrack, setCameraTrack] = useState<MediaStreamTrack | null>(null);
 
   const micRef = useRef<MediaStreamTrack | null>(null);
   const cameraRef = useRef<MediaStreamTrack | null>(null);
@@ -123,6 +126,8 @@ export function useWebRTC({ sendSignal, onSignal }: UseWebRTCParams) {
     if (mic) tracks.push(mic);
 
     setLocalStream(tracks.length > 0 ? new MediaStream(tracks) : null);
+    setScreenTrack(screen);
+    setCameraTrack(camera);
     setMedia({
       audio: Boolean(mic && mic.enabled),
       video: Boolean(camera),
@@ -497,6 +502,8 @@ export function useWebRTC({ sendSignal, onSignal }: UseWebRTCParams) {
     devices,
     mediaError,
     peers,
+    screenTrack,
+    cameraTrack,
     requestMedia,
     releaseMedia,
     toggleMic,

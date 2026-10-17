@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Clock3, LogOut, PhoneOff, ShieldAlert, Users, Wifi, WifiOff } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   Chat,
@@ -12,16 +13,19 @@ import {
   type ChatViewMessage,
 } from "@/components/meeting/Chat";
 import { Controls } from "@/components/meeting/Controls";
+import { AIWidget } from "@/components/meeting/AIWidget";
 import { PreJoinScreen } from "@/components/meeting/PreJoinScreen";
 import { VideoGrid, type GridTile } from "@/components/meeting/VideoGrid";
-import { Whiteboard } from "@/components/meeting/Whiteboard";
+import { Whiteboard, type WhiteboardAiBridge } from "@/components/meeting/Whiteboard";
 import { FormAlert } from "@/components/ui/form-alert";
 import { Logo } from "@/components/landing/logo";
 import { useSocket, type SocketStatus } from "@/hooks/useSocket";
 import { useSpeakingIndicator } from "@/hooks/useSpeakingIndicator";
 import { formatDuration, useElapsedSeconds } from "@/hooks/useElapsed";
+import { useLessonRecorder, lessonRecordingFileName } from "@/hooks/useLessonRecorder";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import type { WhiteboardSync } from "@/hooks/useWhiteboard";
+import type { DrawingInstruction } from "@/lib/ai-provider";
 import { decryptMessage, encryptMessage } from "@/lib/crypto";
 import type { JoinRoomResult } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
@@ -63,6 +67,10 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
   const [boardOpen, setBoardOpen] = useState(false);
   const [seenCount, setSeenCount] = useState(0);
   const [chatError, setChatError] = useState<string | null>(null);
+  /** Закреплённый участник — он показывается поверх демонстрации экрана. */
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  /** Глобальный ИИ-виджет (плавающая кнопка в углу экрана). */
+  const [aiOpen, setAiOpen] = useState(false);
   /** Комната закрыта администратором или доступ отозван — показываем экран-заглушку. */
   const [closure, setClosure] = useState<{
     title: string;
@@ -93,6 +101,38 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
   const { requestMedia, hangUp, connectToPeers, dropPeer, dropAllPeers, toggleMic, toggleCamera, toggleScreenShare } =
     rtc;
   const { sendMediaState, setHandRaised, sendChat, sendTyping, leaveRoom, disconnect } = socket;
+
+  /* ---------------------------- Локальная запись ---------------------------- */
+
+  /** Потоки для микса звука: свой микрофон и микрофоны участников комнаты. */
+  const recordingAudioStreams = useMemo(() => {
+    const streams: MediaStream[] = [];
+    if (rtc.localStream) streams.push(rtc.localStream);
+    rtc.peers.forEach((peer) => streams.push(peer.stream));
+    return streams;
+  }, [rtc.localStream, rtc.peers]);
+
+  const recorder = useLessonRecorder({
+    screenTrack: rtc.screenTrack,
+    cameraTrack: rtc.cameraTrack,
+    audioStreams: recordingAudioStreams,
+  });
+
+  const recordingSeconds = useElapsedSeconds(recorder.startedAt);
+  /** Имя файла текущей записи — показываем в подтверждении. */
+  const recordingNameRef = useRef(lessonRecordingFileName());
+
+  /* ------------------------- Глобальный ИИ и доска ------------------------- */
+
+  /** Мост «доска → ИИ»: снимок доски и рисование по инструкции ИИ. */
+  const boardBridgeRef = useRef<WhiteboardAiBridge | null>(null);
+  const handleAiBridge = useCallback((bridge: WhiteboardAiBridge | null) => {
+    boardBridgeRef.current = bridge;
+  }, []);
+  const captureBoard = useCallback(() => boardBridgeRef.current?.captureBoard() ?? null, []);
+  const applyDrawing = useCallback((instructions: DrawingInstruction[]) => {
+    boardBridgeRef.current?.applyDrawing(instructions);
+  }, []);
 
   /** Адаптер доски поверх сокета — передаётся в Whiteboard/useWhiteboard. */
   const boardSync = useMemo<WhiteboardSync>(
@@ -186,6 +226,42 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
     leaveRoom();
     disconnect();
     router.push("/dashboard");
+  };
+
+  /* --------------------------------- Запись --------------------------------- */
+
+  const wasRecording = useRef(false);
+
+  useEffect(() => {
+    if (recorder.isRecording && !wasRecording.current) {
+      toast.success("Запись урока началась", {
+        description: "Файл сохранится на ваш компьютер, когда вы остановите запись.",
+      });
+    }
+    if (!recorder.isRecording && wasRecording.current) {
+      toast.success("Запись остановлена", {
+        description: `Файл ${recordingNameRef.current} сохранён на ваш компьютер.`,
+      });
+    }
+    wasRecording.current = recorder.isRecording;
+  }, [recorder.isRecording]);
+
+  useEffect(() => {
+    if (recorder.error) toast.error(recorder.error);
+  }, [recorder.error]);
+
+  const toggleRecording = () => {
+    if (recorder.isRecording) {
+      recorder.stop();
+      return;
+    }
+    recordingNameRef.current = lessonRecordingFileName();
+    void recorder.start();
+  };
+
+  /** Закрепить/открепить спикера на карточке участника. */
+  const togglePin = (tileId: string) => {
+    setPinnedId((current) => (current === tileId ? null : tileId));
   };
 
   /* --------------------------------- Видео ---------------------------------- */
@@ -422,7 +498,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
                     <FormAlert variant="error">{rtc.mediaError}</FormAlert>
                   </div>
                 )}
-                <VideoGrid tiles={tiles} />
+                <VideoGrid tiles={tiles} pinnedId={pinnedId} onPin={togglePin} />
               </div>
 
               {chatOpen && (
@@ -475,12 +551,16 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
             boardOpen={boardOpen}
             handRaised={handRaised}
             raisedHandsCount={raisedHandsCount}
+            recording={recorder.isRecording}
+            recordingSupported={recorder.isSupported}
+            recordingSeconds={recordingSeconds}
             onToggleMic={() => void toggleMic()}
             onToggleCamera={() => void toggleCamera()}
             onToggleScreen={() => void toggleScreenShare()}
             onToggleChat={() => setChatOpen((open) => !open)}
             onToggleBoard={() => setBoardOpen((open) => !open)}
             onToggleHand={() => setHandRaised(!handRaised)}
+            onToggleRecording={toggleRecording}
             onLeave={leave}
           />
         </footer>
@@ -492,7 +572,22 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
           self={self}
           meetingTitle={title}
           sync={boardSync}
+          aiOpen={aiOpen}
+          onAiOpenChange={setAiOpen}
+          onAiBridge={handleAiBridge}
           onClose={() => setBoardOpen(false)}
+        />
+      )}
+
+      {/* Глобальный ИИ-ассистент: плавающая кнопка + окно поверх любой страницы урока */}
+      {isLive && (
+        <AIWidget
+          role={self.role}
+          meetingTitle={title}
+          open={aiOpen}
+          onOpenChange={setAiOpen}
+          onApplyDrawing={applyDrawing}
+          captureBoard={captureBoard}
         />
       )}
     </div>
