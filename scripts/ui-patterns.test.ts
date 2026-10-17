@@ -185,3 +185,114 @@ describe("модалки домашних заданий используют о
     assert.match(source, /disableClose=\{submitting\}/, "модалку можно закрыть во время отправки формы");
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* UX урока: окно ДЗ, запись, спикер поверх экрана, глобальный ИИ            */
+/* -------------------------------------------------------------------------- */
+
+describe("окно создания ДЗ сбалансировано", () => {
+  const source = readSource("src/components/homework/homework-create-modal.tsx");
+
+  it("карточка ограничена по ширине и высоте и не вылезает за экран", () => {
+    assert.match(source, /w-full max-w-3xl md:max-w-4xl/, "нет гармоничной ширины карточки");
+    assert.match(source, /max-h-\[85vh\] flex flex-col/, "нет ограничения по высоте и flex-колонки");
+  });
+
+  it("форма прокручивается внутри карточки, а не обрезается", () => {
+    assert.match(
+      source,
+      /overflow-y-auto custom-scrollbar p-6 space-y-4/,
+      "нет прокручиваемой области с тонким скроллбаром",
+    );
+  });
+
+  it("поле «Название задания» внутри прокручиваемой области и с отбивкой сверху", () => {
+    const scrollAt = source.indexOf("overflow-y-auto custom-scrollbar p-6 space-y-4");
+    const titleAt = source.indexOf('label="Название задания"');
+
+    assert.ok(scrollAt > -1, "нет прокручиваемой области");
+    assert.ok(titleAt > scrollAt, "поле «Название задания» вне прокручиваемой области");
+    assert.match(
+      source.slice(scrollAt, titleAt),
+      /pt-2/,
+      "у названия задания нет верхней отбивки pt-2 — заголовок липнет к краю",
+    );
+  });
+});
+
+describe("локальная запись урока (WebM)", () => {
+  const recorder = readSource("src/hooks/useLessonRecorder.ts");
+  const controls = readSource("src/components/meeting/Controls.tsx");
+  const room = readSource("src/components/meeting/MeetingRoom.tsx");
+
+  it("формат записи: vp9+opus с откатом на обычный webm", () => {
+    assert.match(recorder, /video\/webm; codecs=vp9,opus/, "нет основного формата записи");
+    assert.match(recorder, /"video\/webm"/, "нет отката на video/webm");
+    assert.match(recorder, /MediaRecorder/, "запись идёт не через MediaRecorder");
+  });
+
+  it("файл сохраняется на компьютер как schoolmeet-lesson-[дата].webm", () => {
+    assert.match(recorder, /schoolmeet-lesson-/, "нет шаблона имени файла");
+    assert.match(recorder, /\.webm/, "нет расширения .webm");
+    assert.match(recorder, /download\s*=/, "файл не скачивается на компьютер");
+  });
+
+  it("в панели управления урока есть кнопка «Запись» с красной точкой", () => {
+    assert.match(controls, /Запись/, "нет кнопки «Запись»");
+    assert.match(controls, /bg-rose-500/, "нет красной индикаторной точки");
+    assert.match(room, /onToggleRecording/, "комната не передаёт переключатель записи");
+    assert.match(room, /useLessonRecorder/, "комната не использует локальную запись");
+  });
+});
+
+describe("спикер поверх демонстрации экрана", () => {
+  const grid = readSource("src/components/meeting/VideoGrid.tsx");
+  const room = readSource("src/components/meeting/MeetingRoom.tsx");
+
+  it("картинка спикера закреплена в правом нижнем углу поверх экрана", () => {
+    assert.match(
+      grid,
+      /absolute bottom-4 right-4 z-20 w-48 md:w-64 rounded-xl shadow-2xl border border-slate-700/,
+      "нет картинки спикера в правом нижнем углу",
+    );
+    assert.match(grid, /screenOn/, "режим демонстрации экрана не учитывается");
+  });
+
+  it("на карточках участников есть кнопка «Закрепить спикера»", () => {
+    assert.match(grid, /Закрепить спикера/, "нет кнопки закрепления спикера");
+    assert.match(grid, /onPin/, "закрепление спикера не пробрасывается наверх");
+    assert.match(room, /pinnedId=\{pinnedId\}/, "комната не хранит закреплённого спикера");
+  });
+});
+
+describe("глобальный минималистичный ИИ-ассистент", () => {
+  const widget = readSource("src/components/meeting/AIWidget.tsx");
+  const assistant = readSource("src/components/meeting/AIAssistant.tsx");
+  const board = readSource("src/components/meeting/Whiteboard.tsx");
+  const room = readSource("src/components/meeting/MeetingRoom.tsx");
+
+  it("окно ИИ ресайзабельное и не меньше 320×400", () => {
+    assert.match(widget, /resize: "both"/, "окно ИИ не ресайзабельное");
+    assert.match(widget, /overflow: "hidden"/, "нет overflow: hidden для ресайза");
+    assert.match(widget, /minWidth: 320/, "нет min-width: 320px");
+    assert.match(widget, /minHeight: 400/, "нет min-height: 400px");
+  });
+
+  it("ИИ-виджет доступен с любой страницы урока (плавающая кнопка)", () => {
+    assert.match(widget, /fixed bottom-24 right-4/, "нет плавающей кнопки в углу экрана");
+    assert.match(room, /<AIWidget/, "виджет не подключён к странице урока");
+  });
+
+  it("громкие чипсы-подсказки спрятаны под одной кнопкой «Идеи запросов»", () => {
+    assert.match(assistant, /Идеи запросов/, "нет кнопки «Идеи запросов»");
+    assert.ok(
+      !assistant.includes("Zap"),
+      "громкий блок «Быстрые подсказки» снова появился в потоке чата",
+    );
+  });
+
+  it("доска не держит собственную ИИ-панель — ассистент глобальный", () => {
+    assert.ok(!board.includes("<AIAssistant"), "доска снова рендерит отдельную ИИ-панель");
+    assert.match(board, /onAiBridge/, "доска не отдаёт мост глобальному ИИ");
+  });
+});

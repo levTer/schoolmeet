@@ -28,13 +28,28 @@ export interface ControlsProps {
   boardOpen: boolean;
   handRaised: boolean;
   raisedHandsCount: number;
+  /** Идёт ли локальная запись урока. */
+  recording: boolean;
+  /** Поддерживает ли браузер запись (MediaRecorder). */
+  recordingSupported: boolean;
+  /** Сколько секунд идёт запись — для таймера на кнопке. */
+  recordingSeconds: number;
   onToggleMic: () => void;
   onToggleCamera: () => void;
   onToggleScreen: () => void;
   onToggleChat: () => void;
   onToggleBoard: () => void;
   onToggleHand: () => void;
+  onToggleRecording: () => void;
   onLeave: () => void;
+}
+
+/** Таймер записи: «12:05» (минуты:секунды). */
+function formatRecordingTime(seconds: number): string {
+  const safe = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safe / 60);
+  const rest = safe % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
 
 /**
@@ -53,12 +68,16 @@ export function Controls(props: ControlsProps) {
     boardOpen,
     handRaised,
     raisedHandsCount,
+    recording,
+    recordingSupported,
+    recordingSeconds,
     onToggleMic,
     onToggleCamera,
     onToggleScreen,
     onToggleChat,
     onToggleBoard,
     onToggleHand,
+    onToggleRecording,
     onLeave,
   } = props;
 
@@ -87,6 +106,36 @@ export function Controls(props: ControlsProps) {
         onClick={onToggleScreen}
         icon={screenOn ? MonitorOff : MonitorUp}
       />
+
+      {/* Локальная запись урока: красная точка + таймер */}
+      <button
+        type="button"
+        onClick={onToggleRecording}
+        disabled={!recordingSupported}
+        aria-pressed={recording}
+        aria-label={recording ? "Остановить запись урока" : "Записать урок на компьютер"}
+        className={cn(
+          "group relative inline-flex h-11 items-center gap-2 rounded-2xl border px-3 transition duration-200",
+          "focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-500/30",
+          "disabled:cursor-not-allowed disabled:opacity-40",
+          recording
+            ? "border-rose-400/50 bg-rose-500/20 text-rose-100"
+            : "border-white/10 bg-white/[0.05] text-slate-200 hover:border-white/20 hover:bg-white/10 hover:text-white",
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn("h-2.5 w-2.5 shrink-0 rounded-full bg-rose-500", recording && "animate-pulse")}
+        />
+        <span className="hidden whitespace-nowrap text-xs font-medium sm:inline">
+          {recording ? `Запись ${formatRecordingTime(recordingSeconds)}` : "Запись"}
+        </span>
+        <Tooltip>
+          {recording
+            ? "Остановить запись — файл скачается на компьютер"
+            : "Записать урок на компьютер (WebM)"}
+        </Tooltip>
+      </button>
 
       <div className="mx-0.5 hidden h-8 w-px bg-white/10 sm:block" />
 

@@ -37,7 +37,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { AIAssistant } from "@/components/meeting/AIAssistant";
 import {
   useWhiteboard,
   type FormulaRegionPayload,
@@ -57,6 +56,18 @@ export interface WhiteboardProps {
   meetingTitle: string;
   sync: WhiteboardSync;
   onClose: () => void;
+  /** Открыт ли глобальный ИИ-виджет (состоянием управляет страница урока). */
+  aiOpen?: boolean;
+  /** Уведомить страницу урока об открытии/закрытии глобального ИИ. */
+  onAiOpenChange?: (open: boolean) => void;
+  /** Мост «доска → глобальный ИИ»: снимок доски и рисование по инструкции. */
+  onAiBridge?: (bridge: WhiteboardAiBridge | null) => void;
+}
+
+/** Что глобальный ИИ-виджет умеет делать с доской. */
+export interface WhiteboardAiBridge {
+  captureBoard: () => string | null;
+  applyDrawing: (instructions: DrawingInstruction[]) => void;
 }
 
 interface ToolButton {
@@ -98,11 +109,29 @@ const PALETTE = [
 /* Компонент                                                                   */
 /* -------------------------------------------------------------------------- */
 
-export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProps) {
+export function Whiteboard({
+  self,
+  meetingTitle,
+  sync,
+  onClose,
+  aiOpen: aiOpenProp,
+  onAiOpenChange,
+  onAiBridge,
+}: WhiteboardProps) {
   const isModerator = self.role === "TEACHER" || self.role === "ADMIN";
-  const [aiOpen, setAiOpen] = useState(isModerator);
+  const [aiOpenLocal, setAiOpenLocal] = useState(false);
   const [formulaBusy, setFormulaBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+
+  /** Глобальный ИИ-виджет: состояние живёт на странице урока. */
+  const aiOpen = aiOpenProp ?? aiOpenLocal;
+  const setAiOpen = useCallback(
+    (open: boolean) => {
+      setAiOpenLocal(open);
+      onAiOpenChange?.(open);
+    },
+    [onAiOpenChange],
+  );
 
   /** Актуальный обработчик формулы (чтобы не зависеть от порядка объявлений). */
   const formulaHandlerRef = useRef<(payload: FormulaRegionPayload) => void>(() => undefined);
@@ -173,12 +202,25 @@ export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProp
     formulaHandlerRef.current = handleFormulaRegion;
   });
 
+  const { applyDrawing } = wb;
+
   const handleApplyDrawing = useCallback(
     (instructions: DrawingInstruction[]) => {
-      wb.applyDrawing(instructions);
+      applyDrawing(instructions);
     },
-    [wb],
+    [applyDrawing],
   );
+
+  /*
+   * Мост к глобальному ИИ-виджету: пока доска открыта, виджет умеет снимать
+   * снимок доски и рисовать по инструкции ИИ. Значение кладём в ref родителя,
+   * поэтому перерисовки доски не вызывают лишних ререндеров урока.
+   */
+  useEffect(() => {
+    if (!onAiBridge) return;
+    onAiBridge({ captureBoard: wb.captureBoard, applyDrawing: handleApplyDrawing });
+    return () => onAiBridge(null);
+  }, [handleApplyDrawing, onAiBridge, wb.captureBoard]);
 
   const visibleTools = useMemo(() => TOOLS.filter((tool) => !tool.moderatorOnly || isModerator), [isModerator]);
 
@@ -361,7 +403,7 @@ export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProp
         {isModerator && (
           <button
             type="button"
-            onClick={() => setAiOpen((open) => !open)}
+            onClick={() => setAiOpen(!aiOpen)}
             aria-pressed={aiOpen}
             className={cn(
               "inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-xl border px-3 text-xs font-medium transition",
@@ -462,19 +504,6 @@ export function Whiteboard({ self, meetingTitle, sync, onClose }: WhiteboardProp
             )}
           </div>
         </div>
-
-        {/* ИИ-панель (только TEACHER / ADMIN) */}
-        {aiOpen && isModerator && (
-          <div className="hidden min-h-0 md:block">
-            <AIAssistant
-              role={self.role}
-              meetingTitle={meetingTitle}
-              onApplyDrawing={handleApplyDrawing}
-              captureBoard={wb.captureBoard}
-              onClose={() => setAiOpen(false)}
-            />
-          </div>
-        )}
       </main>
 
       {/* Статусная строка */}

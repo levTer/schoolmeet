@@ -7,9 +7,11 @@
  * «Отправить» и микрофон 🎤 (Web Speech API). Учитель может спросить
  * ЧТО УГОДНО — тему, уравнение, задачу, правило, план урока — и отправить
  * запрос в ИИ (Groq / Gemini / OpenRouter через серверный `/api/ai`).
- * Шаблоны («Сделай конспект», «Все формулы»…) живут НИЖЕ поля ввода как
- * быстрые подсказки: клик подставляет готовый запрос, который можно
- * отредактировать перед отправкой.
+ *
+ * МИНИМАЛИЗМ: в основном потоке чата нет громких чипсов-подсказок — всё
+ * живёт под одной аккуратной кнопкой «💡 Идеи запросов» (список готовых
+ * запросов и режимов). Клик подставляет готовый запрос, который можно
+ * отредактировать перед отправкой. Места хватает диалогу и полю ввода.
  *
  * Переключатель «Передать доску» добавляет к запросу PNG-снимок текущей
  * страницы доски — его разбирает мультимодальный Gemini Vision
@@ -24,6 +26,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "re
 import {
   Bot,
   Expand,
+  Lightbulb,
   Loader2,
   Mic,
   MicOff,
@@ -32,7 +35,6 @@ import {
   Shrink,
   Sparkles,
   X,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -61,6 +63,11 @@ export interface AIAssistantProps {
   /** Снимок доски (PNG data URL) для переключателя «Передать доску». */
   captureBoard?: () => string | null;
   onClose: () => void;
+  /**
+   * Плавающий вид: панель занимает всё окно контейнера (глобальный виджет ИИ).
+   * В этом режиме окно ресайзабельное, а кнопка «развернуть» не нужна.
+   */
+  floating?: boolean;
 }
 
 interface ChatEntry {
@@ -85,7 +92,7 @@ const PROVIDER_BADGES: Record<string, string> = {
 };
 
 /**
- * Быстрые подсказки под полем ввода: клик подставляет готовый запрос
+ * Режимы ИИ под кнопкой «💡 Идеи запросов»: клик подставляет готовый запрос
  * (и переключает действие ИИ — например, «чертёж» рисует фигуры на доске).
  */
 const QUICK_HINTS: Array<{ action: AIAction; icon: LucideIcon }> = [
@@ -133,6 +140,7 @@ export function AIAssistant({
   onApplyDrawing,
   captureBoard,
   onClose,
+  floating = false,
 }: AIAssistantProps) {
   // Ученикам панель не показывается (сервер тоже вернёт 403).
   const visible = role === "TEACHER" || role === "ADMIN";
@@ -149,9 +157,13 @@ export function AIAssistant({
   const [providerName, setProviderName] = useState("ИИ-движок SchoolMeet");
   const [providerIsLocal, setProviderIsLocal] = useState(true);
   const [interim, setInterim] = useState("");
+  /** Показывать ли свёрнутый блок «Идеи запросов» (вместо громких чипсов). */
+  const [ideasOpen, setIdeasOpen] = useState(false);
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  /** Область с кнопкой и списком «Идеи запросов» — для закрытия по клику вне. */
+  const ideasRef = useRef<HTMLElement | null>(null);
 
   const boardSupported = Boolean(captureBoard);
 
@@ -191,6 +203,20 @@ export function AIAssistant({
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [entries.length, loading]);
+
+  // Блок «Идеи запросов» закрывается по клику вне него.
+  useEffect(() => {
+    if (!ideasOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && ideasRef.current?.contains(target)) return;
+      setIdeasOpen(false);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [ideasOpen]);
 
   /* ----------------------------- Отправка -------------------------------- */
 
@@ -277,12 +303,13 @@ export function AIAssistant({
     }
   }, [boardAttached, captureBoard, input, loading, meetingTitle, onApplyDrawing, pendingAction, voice]);
 
-  /* --------------------------- Быстрые подсказки -------------------------- */
+  /* --------------------------- Идеи запросов ----------------------------- */
 
   const pickHint = useCallback((hint: AIAction) => {
     setPendingAction(hint);
     setInput(ACTION_DEFAULT_PROMPTS[hint]);
     setError(null);
+    setIdeasOpen(false);
     inputRef.current?.focus();
   }, []);
 
@@ -291,6 +318,7 @@ export function AIAssistant({
     setInterim("");
     setInput(prompt);
     setError(null);
+    setIdeasOpen(false);
     inputRef.current?.focus();
   }, []);
 
@@ -321,9 +349,11 @@ export function AIAssistant({
     <aside
       className={cn(
         "glass flex min-h-0 flex-col overflow-hidden rounded-3xl",
-        isMaximized
-          ? "fixed inset-4 md:inset-10 z-50 max-w-none max-h-none shadow-2xl"
-          : "h-full w-full md:w-[420px] md:shrink-0 lg:w-[460px]",
+        floating
+          ? "h-full w-full"
+          : isMaximized
+            ? "fixed inset-4 md:inset-10 z-50 max-w-none max-h-none shadow-2xl"
+            : "h-full w-full md:w-[420px] md:shrink-0 lg:w-[460px]",
       )}
     >
       <header className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
@@ -336,16 +366,18 @@ export function AIAssistant({
             {providerName} · {providerIsLocal ? "локальный режим" : "серверный прокси · работает без VPN"}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setIsMaximized((maximized) => !maximized)}
-          aria-label={isMaximized ? "Свернуть ИИ-панель" : "Развернуть ИИ-панель"}
-          aria-expanded={isMaximized}
-          title={isMaximized ? "Свернуть окно" : "Развернуть на весь экран"}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 text-slate-300 transition hover:bg-white/10"
-        >
-          {isMaximized ? <Shrink className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
-        </button>
+        {!floating && (
+          <button
+            type="button"
+            onClick={() => setIsMaximized((maximized) => !maximized)}
+            aria-label={isMaximized ? "Свернуть ИИ-панель" : "Развернуть ИИ-панель"}
+            aria-expanded={isMaximized}
+            title={isMaximized ? "Свернуть окно" : "Развернуть на весь экран"}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 text-slate-300 transition hover:bg-white/10"
+          >
+            {isMaximized ? <Shrink className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
+          </button>
+        )}
         <button
           type="button"
           onClick={onClose}
@@ -366,20 +398,8 @@ export function AIAssistant({
             <h2 className="text-base font-semibold text-white">Привет! Я ИИ-помощник</h2>
             <p className="mt-2 max-w-xl text-xs leading-relaxed text-slate-400">
               Помогу разобраться в теме, подготовиться к уроку или проверить решение. Напишите вопрос
-              ниже, надиктуйте его или выберите одну из подсказок.
+              ниже, надиктуйте его или откройте «💡 Идеи запросов».
             </p>
-            <div className="mt-5 flex w-full flex-wrap justify-center gap-2">
-              {QUICK_PROMPTS.map((quickPrompt) => (
-                <button
-                  key={quickPrompt.label}
-                  type="button"
-                  onClick={() => pickQuickPrompt(quickPrompt.prompt)}
-                  className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-[11px] font-medium text-slate-200 transition hover:border-brand-400/40 hover:bg-brand-500/10 hover:text-white"
-                >
-                  {quickPrompt.label}
-                </button>
-              ))}
-            </div>
             <p className="mt-4 text-[10px] leading-relaxed text-slate-500">
               Можно приложить снимок доски кнопкой «Передать доску» — я учту его в ответе.
             </p>
@@ -436,7 +456,7 @@ export function AIAssistant({
       </div>
 
       {/* Свободный ввод — главный элемент панели */}
-      <footer className="border-t border-white/10 p-3">
+      <footer ref={ideasRef} className="relative border-t border-white/10 p-3">
         {voice.error && <p className="mb-2 text-[11px] text-amber-300">{voice.error}</p>}
         {!voice.supported && (
           <p className="mb-2 text-[11px] text-slate-500">
@@ -465,7 +485,7 @@ export function AIAssistant({
           value={interim ? `${input}${input ? " " : ""}${interim}` : input}
           onChange={(event) => onInputChange(event.target.value)}
           onKeyDown={onKeyDown}
-          rows={4}
+          rows={3}
           placeholder="Спросите ИИ что угодно: «реши 2x² − 5x + 3 = 0», «объясни теорему Пифагора», «составь план урока на 45 минут»…"
           aria-label="Вопрос ИИ-помощнику"
           className={cn(
@@ -474,8 +494,25 @@ export function AIAssistant({
           )}
         />
 
-        {/* Кнопки: голос, «Передать доску», отправить */}
+        {/* Кнопки: идеи, голос, «Передать доску», отправить */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIdeasOpen((open) => !open)}
+            aria-expanded={ideasOpen}
+            aria-label="Идеи запросов"
+            title="💡 Идеи запросов"
+            className={cn(
+              "inline-flex h-10 w-10 items-center justify-center rounded-xl border transition",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70",
+              ideasOpen
+                ? "border-brand-400/50 bg-brand-500/20 text-brand-100"
+                : "border-white/10 bg-white/[0.06] text-slate-200 hover:bg-white/10",
+            )}
+          >
+            <Lightbulb className="h-4 w-4" />
+          </button>
+
           <button
             type="button"
             onClick={voice.toggle}
@@ -534,36 +571,59 @@ export function AIAssistant({
           </p>
         )}
 
-        {/* Быстрые подсказки — ниже поля ввода */}
-        <div className="mt-3 border-t border-white/5 pt-2.5">
-          <p className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            <Zap className="h-3 w-3" />
-            Быстрые подсказки
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {QUICK_HINTS.map((hint) => (
-              <button
-                key={hint.action}
-                type="button"
-                onClick={() => pickHint(hint.action)}
-                title={QUICK_HINTS_HINT[hint.action] ?? AI_ACTION_LABELS[hint.action]}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition",
-                  pendingAction === hint.action
-                    ? "border-brand-400/50 bg-brand-500/15 text-white"
-                    : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.09]",
-                )}
-              >
-                <hint.icon className="h-3 w-3" />
-                {AI_ACTION_LABELS[hint.action]}
-              </button>
-            ))}
+        {/*
+          Минимализм: громкие чипсы-подсказки спрятаны под одной кнопкой
+          «💡 Идеи запросов» — основной поток чата и поле ввода остаются
+          главным содержимым окна.
+        */}
+        {ideasOpen && (
+          <div className="absolute bottom-full right-3 z-20 mb-2 w-[min(17rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-ink-900/95 p-2 shadow-2xl backdrop-blur-xl">
+            <p className="px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              💡 Идеи запросов
+            </p>
+
+            <div className="flex flex-col gap-0.5">
+              {QUICK_PROMPTS.map((quickPrompt) => (
+                <button
+                  key={quickPrompt.label}
+                  type="button"
+                  onClick={() => pickQuickPrompt(quickPrompt.prompt)}
+                  className="rounded-lg px-2 py-1.5 text-left text-[11px] text-slate-200 transition hover:bg-white/[0.08] hover:text-white"
+                >
+                  {quickPrompt.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-1.5 border-t border-white/5 pt-1.5">
+              <p className="px-1 pb-1 text-[10px] uppercase tracking-wider text-slate-600">Режимы</p>
+              <div className="flex flex-wrap gap-1">
+                {QUICK_HINTS.map((hint) => (
+                  <button
+                    key={hint.action}
+                    type="button"
+                    onClick={() => pickHint(hint.action)}
+                    title={QUICK_HINTS_HINT[hint.action] ?? AI_ACTION_LABELS[hint.action]}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] transition",
+                      pendingAction === hint.action
+                        ? "border-brand-400/50 bg-brand-500/15 text-white"
+                        : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.09]",
+                    )}
+                  >
+                    <hint.icon className="h-3 w-3" />
+                    {AI_ACTION_LABELS[hint.action]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <p className="px-1 pt-1.5 text-[10px] leading-relaxed text-slate-500">
+              Подсказка подставит готовый запрос — его можно отредактировать. Enter — отправить,
+              Shift+Enter — новая строка.
+            </p>
           </div>
-          <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
-            Подсказка подставит готовый запрос — его можно отредактировать перед отправкой. Enter —
-            отправить, Shift+Enter — новая строка.
-          </p>
-        </div>
+        )}
       </footer>
     </aside>
   );

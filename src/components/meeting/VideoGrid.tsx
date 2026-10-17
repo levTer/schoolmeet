@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Hand, MicOff, MonitorUp } from "lucide-react";
+import { Hand, MicOff, MonitorUp, Pin, PinOff } from "lucide-react";
 
 import { cn, getInitials } from "@/lib/utils";
 import type { PeerConnectionState } from "@/hooks/useWebRTC";
@@ -22,6 +22,14 @@ export interface GridTile {
   connection?: PeerConnectionState;
 }
 
+export interface VideoGridProps {
+  tiles: GridTile[];
+  /** Закреплённый участник — он показывается поверх демонстрации экрана. */
+  pinnedId?: string | null;
+  /** Клик по кнопке «Закрепить спикера» на карточке участника. */
+  onPin?: (tileId: string) => void;
+}
+
 /**
  * Адаптивная сетка: 1 участник — во весь экран, 2 — в ряд, 3–4 — 2×2,
  * 5–9 — 3×3, больше — 4 колонки с прокруткой.
@@ -36,8 +44,74 @@ export function gridLayoutClass(count: number): string {
   return "grid-cols-2 lg:grid-cols-4 auto-rows-fr";
 }
 
-export function VideoGrid({ tiles }: { tiles: GridTile[] }) {
+/**
+ * Кто показывается в «картинке в углу» поверх демонстрации экрана:
+ * 1) закреплённый учителем спикер, 2) участник, который сейчас говорит,
+ * 3) учитель/администратор, 4) первый доступный.
+ */
+export function pickSpotlightTile(
+  tiles: GridTile[],
+  pinnedId: string | null | undefined,
+  screenTileId: string,
+): GridTile | null {
+  const candidates = tiles.filter((tile) => tile.id !== screenTileId);
+  if (candidates.length === 0) return null;
+
+  if (pinnedId) {
+    const pinned = candidates.find((tile) => tile.id === pinnedId);
+    if (pinned) return pinned;
+  }
+
+  const speaking = candidates.find((tile) => tile.speaking);
+  if (speaking) return speaking;
+
+  const staff = candidates.find((tile) => tile.role === "TEACHER" || tile.role === "ADMIN");
+  if (staff) return staff;
+
+  return candidates[0];
+}
+
+export function VideoGrid({ tiles, pinnedId, onPin }: VideoGridProps) {
   const count = tiles.length;
+
+  /**
+   * Режим демонстрации экрана: экран занимает всю сцену, а спикер
+   * (учитель или активный говорящий) живёт отдельной картинкой в углу.
+   */
+  const screenTile = tiles.find((tile) => tile.screenOn) ?? null;
+
+  if (screenTile) {
+    const spotlight = pickSpotlightTile(tiles, pinnedId, screenTile.id);
+    const rest = tiles.filter((tile) => tile.id !== screenTile.id && tile.id !== spotlight?.id);
+
+    return (
+      <div className="relative h-full w-full overflow-hidden">
+        {/* Сцена: демонстрация экрана */}
+        <VideoTileView tile={screenTile} stage />
+
+        {/* Спикер поверх экрана — правый нижний угол */}
+        {spotlight && (
+          <div className="absolute bottom-4 right-4 z-20 w-48 md:w-64 rounded-xl shadow-2xl border border-slate-700 overflow-hidden">
+            <VideoTileView tile={spotlight} compact pinned={pinnedId === spotlight.id} onPin={onPin} />
+          </div>
+        )}
+
+        {/* Остальные участники — узкой лентой слева */}
+        {rest.length > 0 && (
+          <div className="absolute left-3 top-3 z-10 flex max-h-[70%] w-24 flex-col gap-2 overflow-y-auto pr-1 md:w-32">
+            {rest.map((tile) => (
+              <div
+                key={tile.id}
+                className="shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-lg"
+              >
+                <VideoTileView tile={tile} compact pinned={pinnedId === tile.id} onPin={onPin} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -48,13 +122,31 @@ export function VideoGrid({ tiles }: { tiles: GridTile[] }) {
       )}
     >
       {tiles.map((tile) => (
-        <VideoTileView key={tile.id} tile={tile} single={count === 1} />
+        <VideoTileView
+          key={tile.id}
+          tile={tile}
+          single={count === 1}
+          pinned={pinnedId === tile.id}
+          onPin={onPin}
+        />
       ))}
     </div>
   );
 }
 
-function VideoTileView({ tile, single }: { tile: GridTile; single: boolean }) {
+interface VideoTileViewProps {
+  tile: GridTile;
+  /** Тайл во всю сцену (демонстрация экрана). */
+  stage?: boolean;
+  /** Маленький тайл (картинка в углу, лента участников). */
+  compact?: boolean;
+  single?: boolean;
+  /** Закреплён ли участник. */
+  pinned?: boolean;
+  onPin?: (tileId: string) => void;
+}
+
+function VideoTileView({ tile, stage, compact, single, pinned, onPin }: VideoTileViewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hasVideo = Boolean(tile.stream && tile.videoOn && tile.stream.getVideoTracks().length > 0);
 
@@ -73,9 +165,10 @@ function VideoTileView({ tile, single }: { tile: GridTile; single: boolean }) {
     <div
       data-speaking={tile.speaking || undefined}
       className={cn(
-        "glass-tile relative min-h-0 overflow-hidden rounded-2xl bg-ink-900/80 transition-[box-shadow,transform] duration-300",
-        single ? "h-full" : "aspect-video w-full",
+        "glass-tile group relative min-h-0 overflow-hidden rounded-2xl bg-ink-900/80 transition-[box-shadow,transform] duration-300",
+        stage ? "h-full w-full" : compact ? "aspect-video w-full" : single ? "h-full" : "aspect-video w-full",
         tile.speaking && "speaking-ring",
+        pinned && "ring-2 ring-brand-400/70",
       )}
     >
       <video
@@ -93,15 +186,50 @@ function VideoTileView({ tile, single }: { tile: GridTile; single: boolean }) {
       {/* Аватар, когда камера (или экран) выключены */}
       {!hasVideo && (
         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-ink-800 to-ink-950">
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-gradient text-2xl font-semibold text-white shadow-glow sm:h-24 sm:w-24">
+          <div
+            className={cn(
+              "flex items-center justify-center rounded-full bg-brand-gradient font-semibold text-white shadow-glow",
+              compact ? "h-9 w-9 text-xs" : "h-20 w-20 text-2xl sm:h-24 sm:w-24",
+            )}
+          >
             {getInitials(tile.name) || "?"}
           </div>
         </div>
       )}
 
+      {/* Закрепить спикера */}
+      {onPin && !stage && (
+        <button
+          type="button"
+          onClick={() => onPin(tile.id)}
+          aria-pressed={pinned}
+          aria-label={pinned ? `Открепить спикера: ${tile.name}` : `Закрепить спикера: ${tile.name}`}
+          title={pinned ? "Открепить спикера" : "Закрепить спикера"}
+          className={cn(
+            "absolute right-2 top-2 z-10 inline-flex items-center justify-center rounded-lg border backdrop-blur transition",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70",
+            compact ? "h-6 w-6" : "h-8 w-8",
+            pinned
+              ? "border-brand-400/60 bg-brand-500/30 text-white"
+              : "border-white/10 bg-black/45 text-slate-200 hover:bg-black/70 hover:text-white",
+          )}
+        >
+          {pinned ? (
+            <PinOff className={compact ? "h-3 w-3" : "h-4 w-4"} />
+          ) : (
+            <Pin className={compact ? "h-3 w-3" : "h-4 w-4"} />
+          )}
+        </button>
+      )}
+
       {/* Подпись и индикаторы */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/75 to-transparent px-3 pb-2.5 pt-8">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-white">
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/75 to-transparent",
+          compact ? "px-2 pb-1.5 pt-6" : "px-3 pb-2.5 pt-8",
+        )}
+      >
+        <span className={cn("min-w-0 flex-1 truncate font-medium text-white", compact ? "text-[11px]" : "text-sm")}>
           {tile.name}
           {tile.isLocal && <span className="ml-1.5 text-xs text-slate-300">(вы)</span>}
         </span>
@@ -113,13 +241,23 @@ function VideoTileView({ tile, single }: { tile: GridTile; single: boolean }) {
           </span>
         )}
         {tile.handRaised && (
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-400/20 text-amber-300">
-            <Hand className="h-3.5 w-3.5" />
+          <span
+            className={cn(
+              "inline-flex items-center justify-center rounded-full bg-amber-400/20 text-amber-300",
+              compact ? "h-4 w-4" : "h-6 w-6",
+            )}
+          >
+            <Hand className={compact ? "h-2.5 w-2.5" : "h-3.5 w-3.5"} />
           </span>
         )}
         {!tile.audioOn && (
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-500/20 text-rose-300">
-            <MicOff className="h-3.5 w-3.5" />
+          <span
+            className={cn(
+              "inline-flex items-center justify-center rounded-full bg-rose-500/20 text-rose-300",
+              compact ? "h-4 w-4" : "h-6 w-6",
+            )}
+          >
+            <MicOff className={compact ? "h-2.5 w-2.5" : "h-3.5 w-3.5"} />
           </span>
         )}
       </div>
@@ -127,7 +265,7 @@ function VideoTileView({ tile, single }: { tile: GridTile; single: boolean }) {
       {isConnecting && (
         <div
           className={cn(
-            "absolute right-3 top-3 rounded-full border bg-black/50 px-2.5 py-1 text-[11px] backdrop-blur",
+            "absolute left-3 top-3 rounded-full border bg-black/50 px-2.5 py-1 text-[11px] backdrop-blur",
             tile.connection === "failed"
               ? "border-rose-400/30 text-rose-200"
               : "border-white/10 text-slate-300",
