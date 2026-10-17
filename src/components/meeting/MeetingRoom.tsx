@@ -27,6 +27,7 @@ import { useWebRTC } from "@/hooks/useWebRTC";
 import type { WhiteboardSync } from "@/hooks/useWhiteboard";
 import type { DrawingInstruction } from "@/lib/ai-provider";
 import { decryptMessage, encryptMessage } from "@/lib/crypto";
+import { drawCommand, getCanvasSnapshot } from "@/lib/whiteboard-bridge";
 import type { JoinRoomResult } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 import { ROLE_LABELS, type Role } from "@/types";
@@ -129,9 +130,14 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
   const handleAiBridge = useCallback((bridge: WhiteboardAiBridge | null) => {
     boardBridgeRef.current = bridge;
   }, []);
-  const captureBoard = useCallback(() => boardBridgeRef.current?.captureBoard() ?? null, []);
+  // Мост ИИ↔доска: снимок и рисование идут через реестр whiteboard-bridge
+  // (доска регистрируется сама при открытии); ref из пропса — запасной путь.
+  const captureBoard = useCallback(
+    () => getCanvasSnapshot() ?? boardBridgeRef.current?.captureBoard() ?? null,
+    [],
+  );
   const applyDrawing = useCallback((instructions: DrawingInstruction[]) => {
-    boardBridgeRef.current?.applyDrawing(instructions);
+    if (!drawCommand(instructions).applied) boardBridgeRef.current?.applyDrawing(instructions);
   }, []);
 
   /** Адаптер доски поверх сокета — передаётся в Whiteboard/useWhiteboard. */

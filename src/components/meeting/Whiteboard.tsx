@@ -30,6 +30,7 @@ import {
   Square,
   StickyNote,
   Trash2,
+  Triangle as TriangleIcon,
   Type,
   Undo2,
   Users,
@@ -45,6 +46,7 @@ import {
 } from "@/hooks/useWhiteboard";
 import { latexToReadableText, type DrawingInstruction } from "@/lib/ai-provider";
 import { cn } from "@/lib/utils";
+import { registerWhiteboardBridge, type WhiteboardBridge } from "@/lib/whiteboard-bridge";
 import type { Role } from "@/types";
 
 /* -------------------------------------------------------------------------- */
@@ -64,11 +66,12 @@ export interface WhiteboardProps {
   onAiBridge?: (bridge: WhiteboardAiBridge | null) => void;
 }
 
-/** Что глобальный ИИ-виджет умеет делать с доской. */
-export interface WhiteboardAiBridge {
-  captureBoard: () => string | null;
-  applyDrawing: (instructions: DrawingInstruction[]) => void;
-}
+/**
+ * Что глобальный ИИ-виджет умеет делать с доской. Единый тип моста живёт в
+ * `src/lib/whiteboard-bridge.ts` (`getCanvasSnapshot` / `drawCommand`);
+ * этот алиас сохранён для совместимости пропса `onAiBridge`.
+ */
+export type WhiteboardAiBridge = WhiteboardBridge;
 
 interface ToolButton {
   tool: WhiteboardTool;
@@ -83,8 +86,9 @@ const TOOLS: ToolButton[] = [
   { tool: "lasso", icon: Lasso, label: "Лассо (L)" },
   { tool: "pencil", icon: Pencil, label: "Карандаш (P)" },
   { tool: "line", icon: Minus, label: "Прямая линия (N)" },
-  { tool: "rect", icon: Square, label: "Прямоугольник (R)" },
+  { tool: "rect", icon: Square, label: "Квадрат / прямоугольник (R)" },
   { tool: "circle", icon: CircleIcon, label: "Круг (C)" },
+  { tool: "triangle", icon: TriangleIcon, label: "Треугольник (G)" },
   { tool: "arrow", icon: MoveUpRight, label: "Стрелка (A)" },
   { tool: "text", icon: Type, label: "Текст (T)" },
   { tool: "sticky", icon: StickyNote, label: "Стикер (S)" },
@@ -92,15 +96,16 @@ const TOOLS: ToolButton[] = [
   { tool: "formula", icon: Sigma, label: "Распознать формулу (∑)", moderatorOnly: true },
 ];
 
+/** Первые пять цветов — обязательный базовый набор кисти: чёрный, белый, красный, синий, зелёный. */
 const PALETTE = [
-  "#111827",
+  "#000000",
   "#ffffff",
   "#ef4444",
+  "#3b82f6",
+  "#22c55e",
   "#f97316",
   "#eab308",
-  "#22c55e",
   "#06b6d4",
-  "#3b82f6",
   "#8b5cf6",
   "#ec4899",
 ];
@@ -212,14 +217,20 @@ export function Whiteboard({
   );
 
   /*
-   * Мост к глобальному ИИ-виджету: пока доска открыта, виджет умеет снимать
-   * снимок доски и рисовать по инструкции ИИ. Значение кладём в ref родителя,
-   * поэтому перерисовки доски не вызывают лишних ререндеров урока.
+   * Двусторонний мост «ИИ ↔ доска» (src/lib/whiteboard-bridge.ts): пока доска
+   * открыта, она зарегистрирована в глобальном реестре — ИИ-виджет в любой
+   * ветке дерева урока может снять снимок (`getCanvasSnapshot()`) и нарисовать
+   * по команде (`drawCommand()`), а также реактивно узнать, что доска открыта.
+   * Пропс `onAiBridge` сохранён для совместимости со страницей урока.
    */
   useEffect(() => {
-    if (!onAiBridge) return;
-    onAiBridge({ captureBoard: wb.captureBoard, applyDrawing: handleApplyDrawing });
-    return () => onAiBridge(null);
+    const bridge: WhiteboardBridge = { captureBoard: wb.captureBoard, applyDrawing: handleApplyDrawing };
+    const unregister = registerWhiteboardBridge(bridge);
+    onAiBridge?.(bridge);
+    return () => {
+      unregister();
+      onAiBridge?.(null);
+    };
   }, [handleApplyDrawing, onAiBridge, wb.captureBoard]);
 
   const visibleTools = useMemo(() => TOOLS.filter((tool) => !tool.moderatorOnly || isModerator), [isModerator]);
@@ -228,8 +239,8 @@ export function Whiteboard({
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-ink-950/97 backdrop-blur-xl">
-      {/* Шапка */}
-      <header className="flex shrink-0 items-center gap-3 border-b border-white/10 px-4 py-3">
+      {/* Шапка — всегда поверх холста (z-30), не сжимается */}
+      <header className="relative z-30 flex shrink-0 items-center gap-3 border-b border-white/10 bg-ink-950/90 px-4 py-3">
         <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-brand-gradient shadow-glow">
           <Sparkles className="h-4.5 w-4.5 text-white" />
         </span>
@@ -284,10 +295,21 @@ export function Whiteboard({
         </button>
       </header>
 
-      {/* Тулбар */}
-      <div className="whiteboard-toolbar flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-white/10 px-3 py-2 sm:gap-2 sm:px-4">
+      {/*
+        Тулбар инструментов: карандаш/маркер, фигуры (треугольник, круг,
+        квадрат), текст, ластик, палитра, размер кисти и очистка доски.
+        `relative z-30` + непрозрачный фон гарантируют, что белый холст никогда
+        не накроет панель (ранее канва 16:9 на широких экранах вылезала за
+        пределы области и «съедала» тулбар), `shrink-0` у групп — что кнопки
+        не сжимаются, а панель прокручивается по горизонтали.
+      */}
+      <div
+        role="toolbar"
+        aria-label="Инструменты доски"
+        className="whiteboard-toolbar relative z-30 flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-white/10 bg-ink-950/95 px-3 py-2 shadow-[0_12px_32px_-16px_rgba(0,0,0,0.85)] sm:gap-2 sm:px-4"
+      >
         {/* Инструменты */}
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {visibleTools.map((item) => (
             <button
               key={item.tool}
@@ -313,7 +335,7 @@ export function Whiteboard({
         <div className="mx-1 h-8 w-px shrink-0 bg-white/10" />
 
         {/* Палитра */}
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {PALETTE.map((swatch) => (
             <button
               key={swatch}
@@ -332,7 +354,7 @@ export function Whiteboard({
         </div>
 
         {/* Толщина */}
-        <label className="flex items-center gap-2 text-[11px] text-slate-300">
+        <label className="flex shrink-0 items-center gap-2 text-[11px] text-slate-300">
           <span className="whitespace-nowrap">Толщина</span>
           <input
             type="range"
@@ -418,11 +440,18 @@ export function Whiteboard({
         )}
       </div>
 
-      {/* Основная область */}
-      <main className="flex min-h-0 flex-1 gap-3 p-3">
-        {/* Канва */}
-        <div className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center">
-          <div className="relative aspect-[16/9] w-full max-w-full overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-white shadow-glow" style={{ touchAction: "none" }}>
+      {/* Основная область — ниже тулбара по z и обрезает всё, что вылезает за края */}
+      <main className="relative z-0 flex min-h-0 flex-1 gap-3 overflow-hidden p-3">
+        {/*
+          Канва вписывается в область по ОБЕИМ осям: ширина контейнера доски —
+          min(100cqw, 177.778cqh), то есть высота 16:9 никогда не превысит
+          доступную высоту между тулбаром и статус-строкой.
+        */}
+        <div className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center [container-type:size]">
+          <div
+            className="relative aspect-[16/9] max-h-full w-full max-w-full overflow-hidden rounded-2xl border border-white/10 bg-white shadow-glow sm:rounded-3xl"
+            style={{ touchAction: "none", width: "min(100cqw, 177.778cqh)" }}
+          >
             <canvas ref={wb.canvasRef} className="block" />
 
             {/* SVG-превью лассо и выделения формулы (координаты канвы 1600x900) */}
@@ -507,7 +536,7 @@ export function Whiteboard({
       </main>
 
       {/* Статусная строка */}
-      <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 px-4 py-2 text-[11px] text-slate-400">
+      <footer className="relative z-30 flex shrink-0 items-center justify-between gap-3 border-t border-white/10 bg-ink-950/90 px-4 py-2 text-[11px] text-slate-400">
         <p className="truncate">
           {status ??
             (isModerator
