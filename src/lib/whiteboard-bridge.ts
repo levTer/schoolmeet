@@ -177,7 +177,8 @@ export interface DrawCommandResult {
 
 const MAX_SHAPES = 40;
 const DEFAULT_COLOR = "#2563eb";
-const DEFAULT_STROKE = 4;
+/** Толщина линий по умолчанию: `ctx.lineWidth = 3` (см. drawing-engine.ts). */
+const DEFAULT_STROKE = 3;
 /** Центр холста инструкции по умолчанию (≈1000×600), если модель не дала координат. */
 const DEFAULT_CENTER: [number, number] = [420, 260];
 

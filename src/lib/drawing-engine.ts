@@ -27,9 +27,13 @@ import type {
 const MAX_INSTRUCTIONS = 40;
 
 const DEFAULT_COLOR = "#2563eb";
-const DEFAULT_STROKE = 4;
-const LABEL_FONT_SIZE = 20;
+/** Толщина линий ИИ-чертежей: эквивалент `ctx.lineWidth = 3`. */
+const DEFAULT_STROKE = 3;
+const LABEL_FONT_SIZE = 22;
+const LABEL_FONT_FAMILY = "Arial, Helvetica, sans-serif";
 const LABEL_COLOR = "#111827";
+/** Чёткий отступ буквы вершины от угла фигуры, px. */
+const VERTEX_LABEL_OFFSET = 24;
 
 /* -------------------------------------------------------------------------- */
 /* Валидация входящего JSON                                                    */
@@ -185,17 +189,91 @@ function shift([x, y]: [number, number], offset: { x: number; y: number }): [num
   return [x + offset.x, y + offset.y];
 }
 
+/**
+ * Сглаживание и чёткость векторных линий — точные эквиваленты настроек
+ * 2D-контекста `ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.lineWidth = 3`.
+ * Применяется ко ВСЕМ фигурам ИИ-чертежа (треугольники, прямоугольники,
+ * окружности, графики, линии и векторы).
+ */
+function sharpStroke(width: number): {
+  strokeWidth: number;
+  strokeLineCap: "round";
+  strokeLineJoin: "round";
+} {
+  return { strokeWidth: width, strokeLineCap: "round", strokeLineJoin: "round" };
+}
+
+/** Убирает LaTeX-обёртку `$…$`: буквы вершин ($A$, $B$, $C$) должны читаться без шума. */
+function cleanLabel(text: string): string {
+  const trimmed = text.trim();
+  const match = /^\$+\s*([^$]+?)\s*\$+$/.exec(trimmed);
+  return (match ? match[1] : trimmed).trim();
+}
+
 function makeLabel(text: string, left: number, top: number): Textbox {
-  return new Textbox(text, {
+  const clean = cleanLabel(text);
+  return new Textbox(clean, {
     left,
     top,
     fontSize: LABEL_FONT_SIZE,
     fill: LABEL_COLOR,
-    fontFamily: "sans-serif",
+    fontFamily: LABEL_FONT_FAMILY,
+    fontWeight: 600,
     editable: false,
     selectable: true,
-    width: Math.max(28, text.length * 14),
+    width: Math.max(28, clean.length * 14),
   });
+}
+
+/** Подпись, отцентрированная вокруг точки — для букв вершин и названий фигур. */
+function makeCenteredLabel(text: string, cx: number, cy: number): Textbox {
+  const clean = cleanLabel(text);
+  const width = Math.max(28, clean.length * 14);
+  return makeLabel(clean, cx - width / 2, cy - LABEL_FONT_SIZE * 0.65);
+}
+
+/** Центры фигур с углами (треугольник, прямоугольник) — от них выносятся буквы вершин. */
+function shapeCentroids(instructions: DrawingInstruction[]): Array<[number, number]> {
+  const centroids: Array<[number, number]> = [];
+  for (const instruction of instructions) {
+    if (instruction.shape === "triangle") {
+      const count = instruction.points.length || 1;
+      centroids.push([
+        instruction.points.reduce((sum, [x]) => sum + x, 0) / count,
+        instruction.points.reduce((sum, [, y]) => sum + y, 0) / count,
+      ]);
+    } else if (instruction.shape === "rect") {
+      centroids.push([
+        instruction.topLeft[0] + instruction.width / 2,
+        instruction.topLeft[1] + instruction.height / 2,
+      ]);
+    }
+  }
+  return centroids;
+}
+
+/**
+ * Позиция буквы вершины: подпись выносится НАРУЖУ от угла фигуры —
+ * вектор «центр фигуры → вершина» продолжается на `VERTEX_LABEL_OFFSET` px,
+ * чтобы буква ($A$, $B$, $C$) не налезала на линии и оставалась читаемой.
+ */
+function vertexLabelAnchor(at: [number, number], centroids: Array<[number, number]>): [number, number] {
+  let nearest: [number, number] | null = null;
+  let best = Infinity;
+  for (const centroid of centroids) {
+    const dist = Math.hypot(at[0] - centroid[0], at[1] - centroid[1]);
+    if (dist > 8 && dist < best) {
+      best = dist;
+      nearest = centroid;
+    }
+  }
+  if (nearest) {
+    const nx = (at[0] - nearest[0]) / best;
+    const ny = (at[1] - nearest[1]) / best;
+    return [at[0] + nx * VERTEX_LABEL_OFFSET, at[1] + ny * VERTEX_LABEL_OFFSET];
+  }
+  // Одиночная точка без фигуры — классический отступ вверх-вправо.
+  return [at[0] + 12, at[1] - 26];
 }
 
 function arrowHead(from: [number, number], to: [number, number], color: string, width: number): Polygon {
@@ -214,8 +292,8 @@ function arrowHead(from: [number, number], to: [number, number], color: string, 
     {
       fill: color,
       stroke: color,
-      strokeWidth: 1,
-      strokeLineJoin: "round",
+      // Polygon рендерится с `ctx.closePath()` — наконечник замыкается ровно.
+      ...sharpStroke(1),
       originX: "left",
       originY: "top",
       objectCaching: false,
@@ -267,8 +345,7 @@ export function createArrow(
 ): FabricObject {
   const line = new Line([from[0], from[1], to[0], to[1]], {
     stroke: color,
-    strokeWidth,
-    strokeLineCap: "round",
+    ...sharpStroke(strokeWidth),
     objectCaching: false,
   });
   const head = arrowHead(from, to, color, strokeWidth);
@@ -285,6 +362,8 @@ export function buildObjectsFromInstructions(
 ): FabricObject[] {
   const offset = options.offset ?? { x: 0, y: 0 };
   const objects: FabricObject[] = [];
+  // Центры угловых фигур — чтобы выносить буквы вершин наружу от углов.
+  const centroids = shapeCentroids(instructions);
 
   for (const instruction of instructions) {
     const stroke = instruction.strokeWidth ?? DEFAULT_STROKE;
@@ -293,13 +372,14 @@ export function buildObjectsFromInstructions(
     switch (instruction.shape) {
       case "triangle": {
         const points = instruction.points.map((point) => shift(point, offset));
+        // `Polygon` в Fabric рендерится через `ctx.closePath()` —
+        // вершины треугольника замыкаются ровно, без щелей в углах.
         const polygon = new Polygon(
           points.map(([x, y]) => ({ x, y })),
           {
             fill: "transparent",
             stroke: color,
-            strokeWidth: stroke,
-            strokeLineJoin: "round",
+            ...sharpStroke(stroke),
             originX: "left",
             originY: "top",
             objectCaching: false,
@@ -308,7 +388,7 @@ export function buildObjectsFromInstructions(
         const cx = points.reduce((sum, p) => sum + p[0], 0) / 3;
         const cy = points.reduce((sum, p) => sum + p[1], 0) / 3;
         const parts: FabricObject[] = [polygon];
-        if (instruction.label) parts.push(makeLabel(instruction.label, cx - 12, cy - 34));
+        if (instruction.label) parts.push(makeCenteredLabel(instruction.label, cx, cy));
         objects.push(groupOf(parts));
         break;
       }
@@ -323,12 +403,12 @@ export function buildObjectsFromInstructions(
           originY: "center",
           fill: "transparent",
           stroke: color,
-          strokeWidth: stroke,
+          ...sharpStroke(stroke),
           objectCaching: false,
         });
         const parts: FabricObject[] = [circle];
         if (instruction.label) {
-          parts.push(makeLabel(instruction.label, cx - 12, cy - instruction.radius - 32));
+          parts.push(makeCenteredLabel(instruction.label, cx, cy - instruction.radius - 22));
         }
         objects.push(groupOf(parts));
         break;
@@ -339,15 +419,14 @@ export function buildObjectsFromInstructions(
         const to = shift(instruction.to, offset);
         const line = new Line([from[0], from[1], to[0], to[1]], {
           stroke: color,
-          strokeWidth: stroke,
-          strokeLineCap: "round",
+          ...sharpStroke(stroke),
           objectCaching: false,
         });
         const parts: FabricObject[] = [line];
         if (instruction.label) {
           const midX = (from[0] + to[0]) / 2;
           const midY = (from[1] + to[1]) / 2;
-          parts.push(makeLabel(instruction.label, midX + 10, midY - 30));
+          parts.push(makeCenteredLabel(instruction.label, midX, midY - 26));
         }
         objects.push(groupOf(parts));
         break;
@@ -355,6 +434,7 @@ export function buildObjectsFromInstructions(
 
       case "rect": {
         const [x, y] = shift(instruction.topLeft, offset);
+        // `Rect` — замкнутый контур (эквивалент `ctx.closePath()` по периметру).
         const rect = new Rect({
           left: x,
           top: y,
@@ -362,11 +442,13 @@ export function buildObjectsFromInstructions(
           height: instruction.height,
           fill: "transparent",
           stroke: color,
-          strokeWidth: stroke,
+          ...sharpStroke(stroke),
           objectCaching: false,
         });
         const parts: FabricObject[] = [rect];
-        if (instruction.label) parts.push(makeLabel(instruction.label, x + 8, y - 32));
+        if (instruction.label) {
+          parts.push(makeCenteredLabel(instruction.label, x + instruction.width / 2, y - 22));
+        }
         objects.push(groupOf(parts));
         break;
       }
@@ -376,14 +458,13 @@ export function buildObjectsFromInstructions(
         const to = shift(instruction.to, offset);
         const line = new Line([from[0], from[1], to[0], to[1]], {
           stroke: color,
-          strokeWidth: stroke,
-          strokeLineCap: "round",
+          ...sharpStroke(stroke),
           objectCaching: false,
         });
         const head = arrowHead(from, to, color, stroke);
         const parts: FabricObject[] = [line, head];
         if (instruction.label) {
-          parts.push(makeLabel(instruction.label, (from[0] + to[0]) / 2 + 12, (from[1] + to[1]) / 2 - 34));
+          parts.push(makeCenteredLabel(instruction.label, (from[0] + to[0]) / 2, (from[1] + to[1]) / 2 - 30));
         }
         objects.push(groupOf(parts));
         break;
@@ -393,15 +474,13 @@ export function buildObjectsFromInstructions(
         const path = new Path(graphPath(instruction, offset), {
           fill: "",
           stroke: color,
-          strokeWidth: stroke,
-          strokeLineCap: "round",
-          strokeLineJoin: "round",
+          ...sharpStroke(stroke),
           objectCaching: false,
         });
         const parts: FabricObject[] = [path];
         if (instruction.label) {
           const [ox, oy] = shift(instruction.origin, offset);
-          parts.push(makeLabel(instruction.label, ox + 24, oy - instruction.scale * 3));
+          parts.push(makeCenteredLabel(instruction.label, ox + 34, oy - instruction.scale * 3));
         }
         objects.push(groupOf(parts));
         break;
@@ -417,11 +496,15 @@ export function buildObjectsFromInstructions(
           originY: "center",
           fill: color,
           stroke: color,
-          strokeWidth: 1,
+          ...sharpStroke(1),
           objectCaching: false,
         });
         const parts: FabricObject[] = [dot];
-        if (instruction.label) parts.push(makeLabel(instruction.label, x + 10, y - 30));
+        if (instruction.label) {
+          // Буквы вершин ($A$, $B$, $C$) — с чётким отступом наружу от угла фигуры.
+          const [ax, ay] = shift(vertexLabelAnchor(instruction.at, centroids), offset);
+          parts.push(makeCenteredLabel(instruction.label, ax, ay));
+        }
         objects.push(groupOf(parts));
         break;
       }
@@ -433,7 +516,7 @@ export function buildObjectsFromInstructions(
           top: y,
           fontSize: instruction.fontSize ?? 22,
           fill: color,
-          fontFamily: "sans-serif",
+          fontFamily: LABEL_FONT_FAMILY,
           width: Math.max(120, instruction.text.length * 12),
         });
         objects.push(text);

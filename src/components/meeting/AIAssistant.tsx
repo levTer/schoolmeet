@@ -22,7 +22,16 @@
  * с LaTeX и помечены бейджем фактической модели.
  */
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type TouchEvent as ReactTouchEvent,
+} from "react";
 import {
   Bot,
   Expand,
@@ -75,9 +84,20 @@ export interface AIAssistantProps {
   onClose: () => void;
   /**
    * Плавающий вид: панель занимает всё окно контейнера (глобальный виджет ИИ).
-   * В этом режиме окно ресайзабельное, а кнопка «развернуть» не нужна.
+   * В этом режиме окно перетаскивается за шапку и ресайзится контейнером,
+   * а кнопка «развернуть» переключает полноэкранный режим.
    */
   floating?: boolean;
+  /** Перетаскивание плавающего окна за шапку (реализация — в `AIWidget`). */
+  onHeaderMouseDown?: (event: ReactMouseEvent<HTMLElement>) => void;
+  /** Перетаскивание плавающего окна касанием за шапку (реализация — в `AIWidget`). */
+  onHeaderTouchStart?: (event: ReactTouchEvent<HTMLElement>) => void;
+  /** Идёт ли перетаскивание окна прямо сейчас (курсор шапки — grabbing). */
+  dragging?: boolean;
+  /** Развёрнуто ли плавающее окно на весь экран (управляется `AIWidget`). */
+  maximized?: boolean;
+  /** Переключить полноэкранный режим плавающего окна (кнопка Expand / Compress). */
+  onToggleMaximized?: () => void;
 }
 
 interface ChatEntry {
@@ -155,6 +175,11 @@ export function AIAssistant({
   captureBoard,
   onClose,
   floating = false,
+  onHeaderMouseDown,
+  onHeaderTouchStart,
+  dragging = false,
+  maximized = false,
+  onToggleMaximized,
 }: AIAssistantProps) {
   // Ученикам панель не показывается (сервер тоже вернёт 403).
   const visible = role === "TEACHER" || role === "ADMIN";
@@ -165,6 +190,15 @@ export function AIAssistant({
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+  /**
+   * Развёрнуто ли окно на весь экран: плавающее окно управляется снаружи
+   * (`AIWidget`, кнопка Expand / Compress), встроенное — локальным стейтом.
+   */
+  const isExpanded = onToggleMaximized ? maximized : isMaximized;
+  const toggleExpanded = useCallback(() => {
+    if (onToggleMaximized) onToggleMaximized();
+    else setIsMaximized((value) => !value);
+  }, [onToggleMaximized]);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [boardAttached, setBoardAttached] = useState(false);
@@ -447,12 +481,22 @@ export function AIAssistant({
         "glass flex min-h-0 flex-col overflow-hidden rounded-3xl",
         floating
           ? "h-full w-full"
-          : isMaximized
-            ? "fixed inset-4 md:inset-10 z-50 max-w-none max-h-none shadow-2xl"
+          : isExpanded
+            ? "fixed inset-4 z-50 max-h-none max-w-none shadow-2xl md:inset-10"
             : "h-full w-full md:w-[420px] md:shrink-0 lg:w-[460px]",
       )}
     >
-      <header className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+      {/* Шапка — ручка перетаскивания плавающего окна (cursor-grab / cursor-grabbing) */}
+      <header
+        className={cn(
+          "flex select-none items-center gap-2 border-b border-white/10 px-4 py-3",
+          onHeaderMouseDown || onHeaderTouchStart
+            ? cn("touch-none", dragging ? "cursor-grabbing" : "cursor-grab")
+            : "",
+        )}
+        onMouseDown={onHeaderMouseDown}
+        onTouchStart={onHeaderTouchStart}
+      >
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-gradient shadow-glow">
           <Sparkles className="h-4 w-4 text-white" />
         </span>
@@ -462,18 +506,17 @@ export function AIAssistant({
             {providerName} · {providerIsLocal ? "локальный режим" : "серверный прокси · работает без VPN"}
           </p>
         </div>
-        {!floating && (
-          <button
-            type="button"
-            onClick={() => setIsMaximized((maximized) => !maximized)}
-            aria-label={isMaximized ? "Свернуть ИИ-панель" : "Развернуть ИИ-панель"}
-            aria-expanded={isMaximized}
-            title={isMaximized ? "Свернуть окно" : "Развернуть на весь экран"}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 text-slate-300 transition hover:bg-white/10"
-          >
-            {isMaximized ? <Shrink className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
-          </button>
-        )}
+        {/* Развернуть на весь экран / Восстановить — рядом с крестиком закрытия */}
+        <button
+          type="button"
+          onClick={toggleExpanded}
+          aria-label={isExpanded ? "Свернуть ИИ-панель" : "Развернуть ИИ-панель"}
+          aria-expanded={isExpanded}
+          title={isExpanded ? "Восстановить размер" : "Развернуть на весь экран"}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 text-slate-300 transition hover:bg-white/10"
+        >
+          {isExpanded ? <Shrink className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
+        </button>
         <button
           type="button"
           onClick={onClose}
@@ -484,8 +527,8 @@ export function AIAssistant({
         </button>
       </header>
 
-      {/* Ответы */}
-      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      {/* Ответы: занимают всё свободное пространство окна при любом размере */}
+      <div ref={listRef} className="min-h-0 flex-1 flex-grow space-y-3 overflow-y-auto px-4 py-3">
         {entries.length === 0 && !loading && (
           <div className="mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center rounded-3xl border border-white/10 bg-gradient-to-br from-brand-500/10 via-white/[0.03] to-indigo-500/10 px-5 py-8 text-center">
             <span className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-brand-400/30 bg-brand-500/15 text-brand-200 shadow-glow">
