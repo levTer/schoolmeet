@@ -7,6 +7,7 @@ import { AdminNav } from "@/components/admin/admin-nav";
 import { AppShell } from "@/components/layout/app-shell";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
 import { withDeadline } from "@/lib/dashboard-fallback";
+import { getLiveAdminViewer } from "@/lib/session-viewer";
 
 export const metadata: Metadata = {
   title: "Админ-панель",
@@ -46,6 +47,17 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }
   if (user.banned) {
     redirect("/banned");
+  }
+
+  /**
+   * Вторая, «живая» проверка роли по БД (исправление H-01): раздел открывается,
+   * только если администратор подтверждён базой прямо сейчас. Устаревший или
+   * подделанный claim в JWT здесь уже не проходит, а при недоступной БД доступ
+   * закрыт (fail-closed).
+   */
+  const admin = await getLiveAdminViewer();
+  if (!admin) {
+    redirect("/dashboard?denied=admin");
   }
 
   return (

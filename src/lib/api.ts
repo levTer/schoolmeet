@@ -26,6 +26,16 @@ export const forbidden = (message = "Недостаточно прав для э
 export const notFound = (message = "Не найдено") => new DomainError(404, "NOT_FOUND", message);
 export const conflict = (message: string, details?: unknown) => new DomainError(409, "CONFLICT", message, undefined, details);
 
+/**
+ * 403: у сессии нет школы, поэтому доступ к данным любого тенанта запрещён.
+ *
+ * Мультиарендность построена на `session.user.schoolId`: маршрут, у которого
+ * школа не определена, обязан отказать, а не «угадать» тенант (иначе объявление
+ * или урок другой школы утекли бы пользователю без школы).
+ */
+export const tenantRequired = (message = "Аккаунт не привязан к школе: доступ к данным школы закрыт") =>
+  new DomainError(403, "SCHOOL_REQUIRED", message);
+
 export function jsonOk<T>(data: T, status = 200): NextResponse {
   return NextResponse.json({ ok: true, data }, { status });
 }

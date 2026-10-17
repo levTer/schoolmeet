@@ -15,7 +15,6 @@ import {
   WHITEBOARD_MAX_PAGES,
   WHITEBOARD_RATE_LIMIT_PER_SECOND,
   buildSchoolRoomId,
-  hasSchoolAccess,
   isValidRoomCode,
   type Ack,
   type ClientToServerEvents,
@@ -34,8 +33,8 @@ import {
 } from "@/lib/realtime";
 import { resolveRecipientId } from "@/lib/chat-rules";
 import { closeAttendance, openAttendance } from "@/lib/attendance";
-import { findMeetingByCode, loadRecentMessages, saveChatMessage } from "@/lib/meetings";
-import { getMeetingSchoolId, ensureUserSchoolMembership } from "@/lib/schools";
+import { checkMeetingAccess, findMeetingByCode, loadRecentMessages, saveChatMessage } from "@/lib/meetings";
+import { ensureUserSchoolMembership } from "@/lib/schools";
 import { prisma } from "@/lib/prisma";
 import { consumeRateLimitForIp, getClientIpFromNodeHeaders } from "@/lib/rate-limit";
 import {
@@ -559,7 +558,8 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
 
         const dbUser = await prisma.user.findUnique({
           where: { id: user.id },
-          select: { name: true, role: true, grade: true, schoolId: true, isBanned: true },
+          // `classId` нужен для проверки «свой ли это класс» при входе в урок.
+          select: { name: true, role: true, grade: true, schoolId: true, classId: true, isBanned: true },
         });
 
         if (!dbUser || !dbUser.schoolId) {
@@ -577,6 +577,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
             name: dbUser.name || user.name,
             role: dbUser.role as Role,
             schoolId: dbUser.schoolId,
+            classId: dbUser.classId ?? null,
             grade: (dbUser.grade as GradeCode | null) ?? null,
           },
           media: { ...DEFAULT_MEDIA_STATE },
@@ -609,15 +610,31 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           return;
         }
 
-        const meetingSchoolId = getMeetingSchoolId(meeting);
-        if (!hasSchoolAccess(socket.data.user.schoolId, meetingSchoolId)) {
-          // Acknowledge first, then drop the socket so it cannot keep probing rooms.
+        /**
+         * Полная проверка доступа ДО входа в комнату (H-02):
+         *   - урок той же школы (чужой школы вообще не должен существовать
+         *     для этого клиента — соединение разрываем, чтобы не «прощупывать»
+         *     чужие комнаты);
+         *   - STUDENT состоит в классе, к которому привязано расписание урока;
+         *     учитель и администратор школы проходят всегда.
+         */
+        const decision = checkMeetingAccess(meeting, {
+          id: socket.data.user.id,
+          role: socket.data.user.role,
+          schoolId: socket.data.user.schoolId,
+          classId: socket.data.user.classId,
+        });
+
+        if (!decision.ok) {
           reply<JoinRoomResult>(ack, {
             ok: false,
-            code: "SCHOOL_MISMATCH",
-            error: "Этот урок принадлежит другой школе",
+            code: decision.code === "CLASS_FORBIDDEN" ? "CLASS_FORBIDDEN" : "SCHOOL_MISMATCH",
+            error: decision.message,
           });
-          setTimeout(() => socket.disconnect(true), 100).unref();
+          // Чужой тенант: разрываем соединение, чтобы сокет не перебирал комнаты.
+          if (decision.code === "SCHOOL_MISMATCH") {
+            setTimeout(() => socket.disconnect(true), 100).unref();
+          }
           return;
         }
 

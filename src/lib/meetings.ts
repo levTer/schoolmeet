@@ -4,6 +4,11 @@ import { randomBytes } from "node:crypto";
 import { canViewChatEnvelope, chatVisibilityWhere } from "@/lib/chat-rules";
 import { prisma } from "@/lib/prisma";
 import { buildLessonCodeCandidate } from "@/lib/lesson-code";
+import {
+  resolveMeetingAccess,
+  type MeetingAccessDecision,
+  type MeetingAccessViewer,
+} from "@/lib/meeting-access";
 import { CHAT_HISTORY_LIMIT, hasSchoolAccess, type ChatEnvelope } from "@/lib/realtime";
 import { ensureUserSchoolMembership, getMeetingSchoolId } from "@/lib/schools";
 import type { Role } from "@/types";
@@ -27,12 +32,18 @@ export interface MeetingWithHost {
   /** Заполняется при завершении урока (в том числе принудительном). */
   endTime: Date | null;
   host: { id: string; name: string; role: Role; schoolId: string | null };
-  schedule: { schoolId: string | null } | null;
+  /**
+   * Слот расписания, к которому привязана комната: `classId` ограничивает вход
+   * учеников других классов (H-02).
+   */
+  schedule: { schoolId: string | null; classId: string | null } | null;
 }
 
 const meetingInclude = {
   host: { select: { id: true, name: true, role: true, schoolId: true } },
-  schedule: { select: { schoolId: true } },
+  // `classId` нужен для проверки доступа: урок, привязанный к классу
+  // расписания, недоступен ученикам других классов (исправление H-02).
+  schedule: { select: { schoolId: true, classId: true } },
 } as const;
 
 export async function findMeetingByCode(meetingCode: string): Promise<MeetingWithHost | null> {
@@ -43,14 +54,25 @@ export async function findMeetingByCode(meetingCode: string): Promise<MeetingWit
   return meeting as MeetingWithHost | null;
 }
 
-/** Return a lesson only if its owning school matches the authenticated tenant. */
-export async function findMeetingByCodeInSchool(
-  meetingCode: string,
-  schoolId: string,
-): Promise<MeetingWithHost | null> {
-  const meeting = await findMeetingByCode(meetingCode);
-  if (!meeting || !hasSchoolAccess(schoolId, getMeetingSchoolId(meeting))) return null;
-  return meeting;
+/**
+ * Полная проверка доступа к уроку: школа И класс расписания (H-02).
+ *
+ * Единая точка для HTTP-роутов и Socket.IO: раньше проверялась только школа,
+ * из-за чего ученик другого класса той же школы мог войти в чужой урок по коду.
+ * Правило живёт в `@/lib/meeting-access` (чистый модуль, покрыт тестами).
+ */
+export function checkMeetingAccess(
+  meeting: MeetingWithHost,
+  viewer: MeetingAccessViewer,
+): MeetingAccessDecision {
+  return resolveMeetingAccess(
+    {
+      schoolId: getMeetingSchoolId(meeting),
+      scheduleClassId: meeting.schedule?.classId ?? null,
+      hostId: meeting.hostId,
+    },
+    viewer,
+  );
 }
 
 /** Случайный ключ комнаты: 256 бит в hex (64 символа) для AES-256. */

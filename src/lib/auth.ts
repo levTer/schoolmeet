@@ -2,6 +2,16 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcryptjs from "bcryptjs";
 
+import {
+  SessionRevokedError,
+  applyDatabaseSnapshot,
+  isSessionAuthoritative,
+  keepSessionOnDatabaseError,
+  sessionRevocationReason,
+  shouldSyncSession,
+  type DatabaseUserSnapshot,
+  type SessionToken,
+} from "@/lib/auth-token";
 import { prisma } from "@/lib/prisma";
 import { GUARANTEED_ADMINS } from "@/lib/school-config";
 import { ensureUserSchoolMembership, provisionConfiguredSchools } from "@/lib/schools";
@@ -9,6 +19,13 @@ import type { Role } from "@/types";
 
 /** Сессия живёт 30 дней и продлевается при активности пользователя. */
 export const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
+
+/**
+ * Как долго уже подтверждённая БД сессия живёт без повторной сверки, если база
+ * недоступна (сутки). Fail-closed: по истечении этого окна токен без свежей
+ * сверки аннулируется, чтобы недоступная БД не консервировала устаревшие права.
+ */
+export const SESSION_SYNC_GRACE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Как часто сверять роль и блокировку с БД.
@@ -65,6 +82,46 @@ async function findUserByEmail(cleanEmail: string) {
     where: { email: { equals: cleanEmail, mode: "insensitive" } },
     include: { school: true },
   });
+}
+
+/**
+ * Авторитетный срез пользователя для сессии (роль, школа, класс, бан, версия).
+ *
+ * Единственная точка, где привилегии токена подтверждаются БД. Старые аккаунты
+ * без школы/класса предварительно мигрируются в школу по умолчанию — иначе
+ * сессия без tenant была бы «дыркой» в изоляции данных.
+ */
+async function loadUserForSession(userId: string): Promise<DatabaseUserSnapshot | null> {
+  const select = {
+    role: true,
+    name: true,
+    avatar: true,
+    isBanned: true,
+    schoolId: true,
+    classId: true,
+    sessionVersion: true,
+    school: { select: { name: true } },
+  } as const;
+
+  let dbUser = await prisma.user.findUnique({ where: { id: userId }, select });
+
+  if (dbUser && (!dbUser.schoolId || (dbUser.role === "STUDENT" && !dbUser.classId))) {
+    await ensureUserSchoolMembership(userId);
+    dbUser = await prisma.user.findUnique({ where: { id: userId }, select });
+  }
+
+  if (!dbUser) return null;
+
+  return {
+    role: dbUser.role as Role,
+    name: dbUser.name,
+    avatar: dbUser.avatar,
+    isBanned: dbUser.isBanned,
+    schoolId: dbUser.schoolId,
+    classId: dbUser.classId,
+    schoolName: dbUser.school?.name ?? null,
+    sessionVersion: dbUser.sessionVersion ?? 0,
+  };
 }
 
 export const authOptions: NextAuthOptions = {
@@ -173,6 +230,7 @@ export const authOptions: NextAuthOptions = {
             schoolName: user.school?.name ?? null,
             school: user.school ? { name: user.school.name } : null,
             image: user.avatar ?? null,
+            sessionVersion: user.sessionVersion ?? 0,
           };
         } catch (error) {
           console.error(`[AUTH_ERROR] Critical DB or Auth error for ${cleanEmail}:`, error);
@@ -186,99 +244,101 @@ export const authOptions: NextAuthOptions = {
     /**
      * Дополняет JWT: при входе кладём `id` и `role`, чтобы middleware и
      * серверные компоненты видели роль без обращения к БД.
+     *
+     * Fail-closed контракт (исправление H-01):
+     *  1. роль, школа, класс и блокировка берутся **только** из БД; payload из
+     *     `useSession().update()` считается недоверенным и не копируется в
+     *     токен (раньше `session.user.role` попадал в JWT до запроса к БД и
+     *     оставался там, если запрос падал);
+     *  2. удалённый или заблокированный пользователь теряет сессию — callback
+     *     выбрасывает `SessionRevokedError`, NextAuth чистит session-cookie, а
+     *     `getServerSession` возвращает `null`;
+     *  3. при ошибке БД `syncedAt` не обновляется (следующий запрос снова
+     *     попытается свериться), а токен без подтверждённых БД привилегий
+     *     аннулируется;
+     *  4. смена пароля или роли поднимает `User.sessionVersion` — старый JWT с
+     *     другой версией больше не принимается (исправление H-06).
      */
-    async jwt({ token, user, trigger, session }) {
-      try {
-        if (!token) return token;
+    async jwt({ token, user, trigger }) {
+      const now = Date.now();
+      const current = token as unknown as SessionToken;
 
-        if (user) {
-          token.id = user.id;
-          token.role = (user.role as Role) || "STUDENT";
-          token.schoolId = user.schoolId ?? null;
-          token.classId = user.classId ?? null;
-          token.schoolName = user.school?.name || user.schoolName || null;
-          token.name = user.name ?? token.name;
-          token.email = user.email ?? token.email;
-          token.picture = user.image ?? null;
-          token.banned = false;
-          token.syncedAt = Date.now();
-        }
+      // Fail-closed: токена нет — сессия аннулируется.
+      if (!current) throw new SessionRevokedError("NO_TOKEN");
 
-        // Если произошёл trigger update
-        const updateSession = session && typeof session === "object" ? (session as { user?: { role?: Role; schoolId?: string | null; schoolName?: string | null } }).user : undefined;
-        if (trigger === "update" && updateSession) {
-          token.role = updateSession.role || token.role;
-          token.schoolId = updateSession.schoolId || token.schoolId;
-          token.schoolName = updateSession.schoolName || token.schoolName;
-        }
-
-        const userId = typeof token.id === "string" && token.id ? token.id : token.sub;
-        const lastSyncedAt = typeof token.syncedAt === "number" ? token.syncedAt : 0;
-        const needsSchoolNameSync =
-          Boolean(token.schoolId && !token.schoolName) &&
-          (Boolean(user) || Date.now() - lastSyncedAt > SESSION_REFRESH_MS);
-        const needsSync =
-          // Явное обновление сессии (например, после повышения до ADMIN по
-          // секретной ссылке) требует свежей роли немедленно, без ожидания 60 с.
-          trigger === "update" ||
-          !token.role ||
-          token.schoolId === undefined ||
-          token.classId === undefined ||
-          needsSchoolNameSync ||
-          Date.now() - lastSyncedAt > SESSION_REFRESH_MS;
-
-        /**
-         * Сверка с БД: смена роли, имени и блокировка применяются к уже вошедшим
-         * пользователям (не чаще одного раза в минуту). Страховка для cookie,
-         * выпущенных до появления поля role, работает на этом же запросе.
-         */
-        if (userId && needsSync) {
-          try {
-            let dbUser = await prisma.user.findUnique({
-              where: { id: userId },
-              select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true, school: { select: { name: true } } },
-            });
-
-            if (dbUser && (!dbUser.schoolId || (dbUser.role === "STUDENT" && !dbUser.classId))) {
-              await ensureUserSchoolMembership(userId);
-              dbUser = await prisma.user.findUnique({
-                where: { id: userId },
-                select: { role: true, name: true, avatar: true, isBanned: true, schoolId: true, classId: true, school: { select: { name: true } } },
-              });
-            }
-
-            if (dbUser) {
-              token.id = userId;
-              token.role = dbUser.role as Role;
-              token.schoolId = dbUser.schoolId;
-              token.classId = dbUser.classId;
-              token.schoolName = dbUser.school?.name ?? null;
-              token.name = dbUser.name;
-              token.picture = dbUser.avatar ?? null;
-              token.banned = dbUser.isBanned;
-            }
-          } catch (error) {
-            // БД недоступна — не ломаем сессию, просто не обновляем данные.
-            console.error("[auth] Не удалось обновить данные сессии:", error);
-          }
-          token.syncedAt = Date.now();
-        }
-
-        return token;
-      } catch (err) {
-        console.error('[NEXTAUTH_JWT_ERROR]', err);
-        return token;
+      /**
+       * Свежий вход: данные получены из БД в `authorize()`, поэтому им доверяем.
+       * Ниже они всё равно будут подтверждены повторным чтением при первом
+       * обращении к сессии.
+       */
+      if (user) {
+        current.id = user.id;
+        current.role = (user.role as Role) || "STUDENT";
+        current.schoolId = user.schoolId ?? null;
+        current.classId = user.classId ?? null;
+        current.schoolName = user.school?.name || user.schoolName || null;
+        current.name = user.name ?? current.name;
+        current.email = user.email ?? current.email;
+        current.picture = user.image ?? null;
+        current.banned = false;
+        current.sessionVersion = user.sessionVersion ?? 0;
+        current.syncedAt = now;
       }
+
+      const userId = typeof current.id === "string" && current.id ? current.id : current.sub;
+      if (!userId) throw new SessionRevokedError("NO_SUBJECT");
+
+      if (!shouldSyncSession(current, { trigger, now, refreshMs: SESSION_REFRESH_MS })) {
+        return current as never;
+      }
+
+      let dbUser: DatabaseUserSnapshot | null = null;
+      try {
+        dbUser = await loadUserForSession(userId);
+      } catch (error) {
+        /**
+         * БД недоступна. Fail-closed: токен, чьи привилегии ещё не подтверждены
+         * БД, аннулируется — иначе при `trigger === "update"` в момент сбоя в
+         * JWT остались бы непроверенные claims (исходная уязвимость H-01).
+         * Подтверждённый токен живёт до `SESSION_SYNC_GRACE_MS`, но `syncedAt`
+         * не сдвигается, поэтому следующая попытка сверки будет сразу.
+         */
+        console.error("[auth] Не удалось сверить сессию с БД:", error);
+        if (!keepSessionOnDatabaseError(current, { now, graceMs: SESSION_SYNC_GRACE_MS })) {
+          throw new SessionRevokedError("SYNC_FAILED");
+        }
+        return current as never;
+      }
+
+      // Пользователь удалён, заблокирован или его пароль/роль менялись:
+      // ранее выпущенный токен больше не действует.
+      if (!dbUser) {
+        console.warn(`[auth] Сессия аннулирована: пользователь ${userId} не найден`);
+        throw new SessionRevokedError("USER_DELETED");
+      }
+
+      const revoked = sessionRevocationReason(dbUser, current);
+      if (revoked) {
+        console.warn(`[auth] Сессия аннулирована (${revoked}) для пользователя ${userId}`);
+        throw new SessionRevokedError(revoked);
+      }
+
+      return applyDatabaseSnapshot(current, dbUser, now, userId) as never;
     },
     /** Отдаёт приложению `session.user.id` и `session.user.role`. */
     async session({ session, token }) {
       try {
         if (session?.user) {
+          // Токен без подтверждённой БД роли (например, выпущенный до появления
+          // полей tenant) не получает привилегий: роль по умолчанию — STUDENT,
+          // школа — null. Повышение возможно только после успешной сверки.
+          const authoritative = isSessionAuthoritative((token ?? {}) as SessionToken);
+
           session.user.id = (token?.id as string | undefined) ?? token?.sub ?? "";
-          session.user.role = (token?.role as Role | undefined) || "STUDENT";
-          session.user.schoolId = (token?.schoolId as string) || null;
-          session.user.classId = typeof token?.classId === "string" ? token.classId : null;
-          session.user.schoolName = token.schoolName as string | null;
+          session.user.role = authoritative ? ((token?.role as Role | undefined) || "STUDENT") : "STUDENT";
+          session.user.schoolId = authoritative ? ((token?.schoolId as string) || null) : null;
+          session.user.classId = authoritative && typeof token?.classId === "string" ? token.classId : null;
+          session.user.schoolName = authoritative ? ((token.schoolName as string | null) ?? null) : null;
           session.user.banned = token?.banned === true;
 
           if (typeof token?.name === "string") session.user.name = token.name;

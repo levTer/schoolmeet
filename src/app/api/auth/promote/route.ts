@@ -4,6 +4,7 @@ import { handleRouteError, jsonError, jsonOk } from "@/lib/api";
 import { getRequestIp, writeAuditLog } from "@/lib/audit";
 import { normalizeInviteToken, resolveInviteRole } from "@/lib/invite-rules";
 import { prisma } from "@/lib/prisma";
+import { getRealtimeControl } from "@/lib/realtime-control";
 import { requireViewer } from "@/lib/session-viewer";
 import { findSchoolByCode, getSchoolInviteSummary } from "@/lib/schools";
 
@@ -81,20 +82,32 @@ export async function POST(request: Request): Promise<NextResponse> {
         role: "ADMIN",
         // Аккаунт без школы закрепляем за школой, выдавшей ссылку.
         ...(user.schoolId ? {} : { schoolId: school.id }),
+        // Смена роли отзывает все ранее выпущенные JWT и сокет-сессии (H-06).
+        sessionVersion: { increment: 1 },
       },
       select: { id: true, name: true, email: true, role: true },
     });
 
+    // Живые сокеты пользователя рвём сразу: новая роль должна подтянуться при
+    // следующем рукопожатии, а не «доехать» по старому соединению.
+    const control = getRealtimeControl();
+    const sessions =
+      control?.disconnectUser(user.id, {
+        reason: "session_revoked",
+        message: "Роль аккаунта изменена. Войдите в аккаунт заново.",
+      }) ?? 0;
+
     await writeAuditLog({
       userId: user.id,
       action: "user.role.change",
-      details: { target: user.email, from: user.role, to: "ADMIN", via: "admin-invite" },
+      details: { target: user.email, from: user.role, to: "ADMIN", via: "admin-invite", sessions },
       ip: getRequestIp(request),
     });
 
     return jsonOk({
       alreadyAdmin: false,
       user: { id: updated.id, name: updated.name, email: updated.email, role: updated.role },
+      sessions,
     });
   } catch (error) {
     return handleRouteError(error, "[api/auth/promote]");

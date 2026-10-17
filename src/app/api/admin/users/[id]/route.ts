@@ -74,7 +74,7 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
       );
     }
 
-    const { user, changes } = await updateUserAsAdmin(target.id, patch);
+    const { user, changes, sessionsRevoked } = await updateUserAsAdmin(target.id, patch);
     invalidateAdminOverview();
 
     const ip = getRequestIp(request);
@@ -104,18 +104,37 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
       void writeAuditLog({ userId: viewer.id, action: "user.password.reset", ip, details: base });
     }
 
-    /* --- Блокировка: мгновенный разрыв сокет-сессий ---------------------- */
+    /* --- Отзыв сессий: сокеты рвём сразу, JWT аннулирует jwt-callback ---- */
     let sessions = 0;
     let controlAvailable = true;
 
+    /**
+     * Раньше живые сокеты рвались только при блокировке: учитель, лишённый
+     * роли во время урока, сохранял права модератора до переподключения, а
+     * смена пароля вообще не отзывала сессии (находка H-06). Теперь любое из
+     * этих действий поднимает `User.sessionVersion` (см. `updateUserAsAdmin`),
+     * аннулирует JWT и разрывает активные сокеты.
+     */
+    if (sessionsRevoked) {
+      const control = getRealtimeControl();
+      controlAvailable = control !== null;
+      sessions =
+        control?.disconnectUser(user.id, {
+          reason: "session_revoked",
+          message: "Данные аккаунта изменены администратором. Войдите в аккаунт заново.",
+        }) ?? 0;
+
+      void writeAuditLog({
+        userId: viewer.id,
+        action: "user.session.revoke",
+        ip,
+        details: { ...base, sessions, controlAvailable },
+      });
+    }
+
+    /* --- Блокировка: мгновенный разрыв сокет-сессий ---------------------- */
     if (patch.isBanned !== undefined && patch.isBanned !== target.isBanned) {
       if (patch.isBanned) {
-        const control = getRealtimeControl();
-        controlAvailable = control !== null;
-        sessions = control?.disconnectUser(user.id, {
-          reason: "account_banned",
-          message: "Аккаунт заблокирован администратором. Обновите страницу.",
-        }) ?? 0;
         await closeAttendanceForUser(user.id);
       }
 
@@ -129,7 +148,7 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
 
     return jsonOk({
       user,
-      disconnect: { sessions, controlAvailable },
+      disconnect: { sessions, controlAvailable, revoked: sessionsRevoked },
       changes,
     });
   } catch (error) {

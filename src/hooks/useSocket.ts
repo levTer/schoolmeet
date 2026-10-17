@@ -128,12 +128,12 @@ export function useSocket(options: UseSocketOptions = {}) {
         socket.emit("join-room", { roomId }, (ack: Ack<JoinRoomResult>) => {
           if (!ack.ok) {
             roomRef.current = null;
+            setError(ack.error);
             if (ack.code === "SCHOOL_MISMATCH") {
               terminatedRef.current = true;
               socket.disconnect();
               setStatus("error");
             }
-            setError(ack.error);
             return;
           }
           applyJoinResult(ack.data);
@@ -275,11 +275,11 @@ export function useSocket(options: UseSocketOptions = {}) {
             applyJoinResult(ack.data);
           } else {
             roomRef.current = null;
+            setError(ack.error);
             if (ack.code === "SCHOOL_MISMATCH") {
               terminatedRef.current = true;
               socket.disconnect();
               setStatus("error");
-              setError(ack.error);
             }
           }
           resolve(ack);

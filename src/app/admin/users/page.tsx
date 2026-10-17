@@ -7,6 +7,7 @@ import { FormAlert } from "@/components/ui/form-alert";
 import { listUsersForAdmin, type ListUsersResult } from "@/lib/admin-users";
 import { authOptions, canAccessAdminArea } from "@/lib/auth";
 import { getRealtimeControl } from "@/lib/realtime-control";
+import { getLiveAdminViewer } from "@/lib/session-viewer";
 
 export const metadata: Metadata = {
   title: "Пользователи",
@@ -26,6 +27,10 @@ export default async function AdminUsersPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login?callbackUrl=/admin/users");
   if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
+
+  // Права подтверждаем «живой» записью из БД, а не только claim из JWT (H-01).
+  const admin = await getLiveAdminViewer();
+  if (!admin) redirect("/dashboard?denied=admin");
 
   let initial: ListUsersResult | null = null;
   try {
@@ -54,5 +59,5 @@ export default async function AdminUsersPage() {
     );
   }
 
-  return <UsersTable initial={initial} actor={{ id: session.user.id, role: session.user.role }} />;
+  return <UsersTable initial={initial} actor={{ id: admin.id, role: admin.role }} />;
 }
