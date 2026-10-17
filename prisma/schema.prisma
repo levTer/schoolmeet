@@ -61,11 +61,12 @@ model School {
   adminInviteToken   String?  @unique
   createdAt DateTime @default(now())
 
-  users     User[]
-  classes   Class[]
-  lessons   Schedule[]
-  homeworks Homework[]
-  meetings  Meeting[]
+  users         User[]
+  classes       Class[]
+  lessons       Schedule[]
+  homeworks     Homework[]
+  meetings      Meeting[]
+  announcements Announcement[]
 
   @@map("schools")
 }
@@ -102,6 +103,10 @@ model User {
   /// Блокировка аккаунта администратором: вход запрещён, живые сокет-сессии
   /// разрываются (см. `src/lib/realtime-control.ts`).
   isBanned  Boolean     @default(false)
+  /// Версия сессии: увеличивается при смене пароля, роли или блокировке.
+  /// JWT хранит версию на момент выпуска, и расхождение с БД аннулирует сессию
+  /// (см. `src/lib/auth-token.ts`), — так смена пароля отзывает все токены.
+  sessionVersion Int    @default(0)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
@@ -357,14 +362,22 @@ model Announcement {
   authorId    String
   /// Черновик/архив (false) не показывается в баннере кабинета.
   isActive    Boolean     @default(true)
+  /// Школа-владелец объявления (мультиарендность): объявление видно только
+  /// внутри своей школы. Nullable — как и другие tenant-колонки, добавленные к
+  /// уже заполненной таблице; значение досыпает приложение
+  /// (`backfillAnnouncementSchools` в `src/lib/schools.ts`), а чтение,
+  /// обновление и удаление всегда фильтруются по школе сессии.
+  schoolId    String?
 
-  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  school School? @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([isActive, createdAt])
   @@index([targetGrade])
+  @@index([schoolId, isActive, createdAt])
   @@map("announcements")
 }
 

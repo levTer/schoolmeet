@@ -222,6 +222,9 @@ export interface SocketUser {
   name: string;
   role: Role;
   schoolId: string;
+  /** Класс ученика (`null` у учителей и администраторов) — нужен для проверки
+   * доступа к уроку, привязанному к классу расписания (H-02). */
+  classId: string | null;
   grade: GradeCode | null;
 }
 

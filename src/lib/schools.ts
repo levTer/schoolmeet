@@ -5,9 +5,9 @@ import { GRADES, type GradeCode } from "@/lib/schedule-rules";
 import { gradeFromClassName, normalizeSchoolCode } from "@/lib/school-rules";
 import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
 import {
-  configuredSchoolInviteData,
   inviteTokensForNewSchool,
   missingInviteTokens,
+  provisioningInviteData,
 } from "@/lib/invite-tokens";
 import {
   CONFIGURED_SCHOOLS,
@@ -15,6 +15,8 @@ import {
   DEFAULT_SCHOOL,
   GUARANTEED_ADMINS,
   LEGACY_DEFAULT_SCHOOL_CODE,
+  demoAdminPasswordResetEnabled,
+  demoAdminSeedDisabled,
 } from "@/lib/school-config";
 
 export { gradeFromClassName, normalizeClassName, normalizeSchoolCode } from "@/lib/school-rules";
@@ -118,34 +120,38 @@ export async function backfillSchoolInviteTokens(db: PrismaClient = prisma): Pro
 }
 
 /**
- * Создаёт или обновляет гарантированного демо-администратора в заданной школе.
+ * Гарантирует существование демо-администратора в заданной школе (C-02).
  *
  * Зачем: роль ADMIN нельзя получить через публичную форму регистрации, поэтому
  * пустая база (свежий деплой без сида) осталась бы без администратора — и в
- * админ-панель никто не смог бы войти. Пароль хешируется синхронным API
- * `bcryptjs.hashSync`, как и требуется для детерминированного startup-seed.
+ * админ-панель никто не смог бы войти.
  *
- * Идемпотентно «создать/обновить»: при каждом запуске аккаунт приводится к
- * демо-конфигу — нормализованный email, новый bcrypt-хеш, имя, роль ADMIN,
- * нужная школа и снятая блокировка. Поэтому быстрый вход работает после
- * каждого старта сервера.
+ * Как теперь безопасно:
+ *  - аккаунт СОЗДАЁТСЯ, только если его нет (пароль сразу хешируется bcrypt,
+ *    в открытом виде никуда не пишется и не логируется);
+ *  - у уже существующего аккаунта пароль НЕ перетирается: иначе смена пароля
+ *    через админ-панель отменялась бы следующим стартом сервера. Обновляются
+ *    только имя, роль, школа и снятие блокировки;
+ *  - принудительный возврат демо-пароля — только по явному флагу оператора
+ *    `SCHOOLMEET_RESET_DEMO_ADMIN_PASSWORDS=true` (разовая процедура);
+ *  - всю инициализацию можно выключить: `SCHOOLMEET_DISABLE_DEMO_ADMIN_SEED=true`.
  */
 async function ensureGuaranteedAdmin(
   db: PrismaClient,
   schoolId: string,
   admin: (typeof GUARANTEED_ADMINS)[number],
 ): Promise<void> {
+  if (demoAdminSeedDisabled()) return;
+
   const email = admin.email.toLowerCase().trim();
-  const data = {
-    email,
-    password: bcryptjs.hashSync(admin.password, 10),
+  const profile = {
     name: admin.name,
     role: admin.role,
     schoolId,
     classId: null,
     grade: null,
     isBanned: false,
-  };
+  } as const;
 
   // Ищем без учёта регистра: аккаунт мог быть создан до нормализации email
   // («Admin@SchoolMeet.ru») — его надо обновить, а не дублировать второй строкой.
@@ -155,20 +161,59 @@ async function ensureGuaranteedAdmin(
   });
 
   try {
-    if (existing) {
-      await db.user.update({ where: { id: existing.id }, data });
-    } else {
-      await db.user.create({ data });
-      console.warn(
-        `[schools] Создан гарантированный администратор ${email} для школы ${admin.schoolCode}.`,
-      );
+    if (!existing) {
+      await db.user.create({
+        data: { email, password: bcryptjs.hashSync(admin.password, 10), ...profile },
+      });
+      console.warn(`[schools] Создан гарантированный администратор ${email} для школы ${admin.schoolCode}.`);
+      return;
     }
+
+    const data = demoAdminPasswordResetEnabled()
+      ? { ...profile, password: bcryptjs.hashSync(admin.password, 10) }
+      : { ...profile };
+
+    await db.user.update({ where: { id: existing.id }, data });
   } catch (error) {
     // Параллельный инстанс успел создать аккаунт первым — уникальный индекс
     // победил, для нас это не ошибка.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return;
     throw error;
   }
+}
+
+/**
+ * Досыпает `schoolId` объявлениям, созданным до появления колонки.
+ *
+ * Модель `Announcement` стала tenant-scoped (исправление H-03), но старые записи
+ * остались с `schoolId = null`. Их привязываем к школе автора, а если автор уже
+ * удалён или без школы — к основной школе: «общих» для всех школ объявлений в
+ * базе не остаётся. Идемпотентно: запись идет через `updateMany` с фильтром
+ * `schoolId: null`, поэтому параллельные инстансы не конфликтуют.
+ */
+export async function backfillAnnouncementSchools(db: PrismaClient = prisma): Promise<number> {
+  const rows = await db.announcement.findMany({
+    where: { schoolId: null },
+    select: { id: true, author: { select: { schoolId: true } } },
+  });
+  if (rows.length === 0) return 0;
+
+  const primary = await db.school.findUnique({
+    where: { code: DEFAULT_SCHOOL_CODE },
+    select: { id: true },
+  });
+
+  let filled = 0;
+  for (const row of rows) {
+    const schoolId = row.author?.schoolId ?? primary?.id ?? null;
+    if (!schoolId) continue;
+    const { count } = await db.announcement.updateMany({
+      where: { id: row.id, schoolId: null },
+      data: { schoolId },
+    });
+    filled += count;
+  }
+  return filled;
 }
 
 let defaultSchoolPromise: Promise<SchoolSummary> | null = null;
@@ -224,7 +269,9 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
     // школ к детерминированному пресету и выпускаем недостающие токены.
     school = await db.school.update({
       where: { id: schoolId },
-      data: { name: definition.name, ...configuredSchoolInviteData({ ...school, code: definition.code }) },
+      // Только досыпание отсутствующих токенов: сохранённый в БД admin-токен
+      // (в том числе ротированный администратором) не перетирается — C-01.
+      data: { name: definition.name, ...provisioningInviteData({ ...school, code: definition.code }) },
       select: SCHOOL_INVITE_SELECT,
     });
 
@@ -255,6 +302,14 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
   // Школы вне CONFIGURED_SCHOOLS (созданные вручную или до того, как колонки
   // токенов стали nullable) тоже получают токены приглашений.
   await backfillSchoolInviteTokens(db);
+
+  // Объявления, созданные до появления `Announcement.schoolId`, привязываем к
+  // школе автора — иначе они остались бы «общими» для всех тенантов (H-03).
+  try {
+    await backfillAnnouncementSchools(db);
+  } catch (error) {
+    console.error("[schools] Не удалось досыпать школу у объявлений:", error);
+  }
 
   return schools;
 }

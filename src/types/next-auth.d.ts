@@ -28,6 +28,11 @@ declare module "next-auth" {
     schoolName?: string | null;
     /** Школа из Prisma (`include: { school: true }`) — чтобы не терять имя. */
     school?: { name?: string | null } | null;
+    /**
+     * Версия сессии: растёт при смене пароля или роли, чтобы ранее выпущенные
+     * JWT переставали приниматься (см. `src/lib/auth.ts`).
+     */
+    sessionVersion?: number;
   }
 }
 
@@ -43,5 +48,11 @@ declare module "next-auth/jwt" {
     banned?: boolean;
     /** Когда роль и блокировка последний раз сверялись с БД. */
     syncedAt?: number;
+    /**
+     * Версия сессии на момент выпуска токена (`User.sessionVersion`).
+     * Расхождение с БД означает, что пароль или роль менялись — токен
+     * аннулируется jwt-callback'ом.
+     */
+    sessionVersion?: number;
   }
 }

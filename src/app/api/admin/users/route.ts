@@ -13,7 +13,7 @@ import {
 } from "@/lib/admin-users";
 import { getRequestIp, writeAuditLog } from "@/lib/audit";
 import { invalidateAdminOverview } from "@/lib/admin-stats";
-import { requireCapability, requireViewer } from "@/lib/session-viewer";
+import { requireCapability, requireSchoolViewer, requireViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +51,9 @@ export async function GET(request: Request): Promise<NextResponse> {
  */
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
+    // Школа нового пользователя — школа оператора (из сессии), а не из тела
+    // запроса и не «основная школа по умолчанию» (исправление M-02).
+    const viewer = await requireSchoolViewer();
     requireCapability(viewer, "users.create");
 
     let payload: unknown;
@@ -66,14 +68,14 @@ export async function POST(request: Request): Promise<NextResponse> {
       return jsonError(422, "VALIDATION_ERROR", validation.error, { fields: validation.fields });
     }
 
-    const user = await createUserAsAdmin(validation.data);
+    const user = await createUserAsAdmin(validation.data, viewer.schoolId);
     invalidateAdminOverview();
 
     void writeAuditLog({
       userId: viewer.id,
       action: "user.create",
       ip: getRequestIp(request),
-      details: { target: user.email, role: user.role, grade: user.grade ?? undefined },
+      details: { target: user.email, role: user.role, grade: user.grade ?? undefined, schoolId: viewer.schoolId },
     });
 
     return jsonOk({ user }, 201);

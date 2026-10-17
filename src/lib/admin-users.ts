@@ -321,8 +321,17 @@ export function validateUserUpdate(input: unknown): AdminUserValidation<AdminUse
 /* Изменения                                                                   */
 /* -------------------------------------------------------------------------- */
 
-/** Создаёт пользователя из админ-панели (в том числе с ролью ADMIN). */
-export async function createUserAsAdmin(input: AdminUserCreateInput): Promise<AdminUserRow> {
+/**
+ * Создаёт пользователя из админ-панели (в том числе с ролью ADMIN).
+ *
+ * `schoolId` приходит ТОЛЬКО от оператора (сессия админа, `viewer.schoolId`):
+ * из тела запроса школа не принимается, поэтому новый аккаунт всегда попадает
+ * в школу администратора, а не «в основную по умолчанию» (исправление M-02).
+ */
+export async function createUserAsAdmin(
+  input: AdminUserCreateInput,
+  schoolId: string,
+): Promise<AdminUserRow> {
   const existing = await prisma.user.findUnique({ where: { email: input.email }, select: { id: true } });
   if (existing) {
     throw conflict("Пользователь с таким email уже существует", { email: "Email занят" });
@@ -335,6 +344,7 @@ export async function createUserAsAdmin(input: AdminUserCreateInput): Promise<Ad
       password: await hashPassword(input.password),
       role: input.role as PrismaRole,
       grade: input.role === "STUDENT" ? ((input.grade ?? null) as ClassGrade | null) : null,
+      schoolId,
     },
     select: {
       id: true,
@@ -365,6 +375,8 @@ export interface UpdateUserResult {
   user: AdminUserRow;
   /** Что именно изменилось — уходит в журнал аудита. */
   changes: Record<string, unknown>;
+  /** Изменение отзывает действующие JWT и сокет-сессии пользователя. */
+  sessionsRevoked: boolean;
 }
 
 /**
@@ -389,6 +401,22 @@ export async function updateUserAsAdmin(targetId: string, patch: AdminUserUpdate
         : ((target.grade as GradeCode | null) ?? null)
       : null;
 
+  const gradeChanged = nextGrade !== (target.grade ?? null);
+
+  /**
+   * Смена пароля, роли, класса или блокировка отзывают ВСЕ сессии пользователя
+   * (H-06): `sessionVersion` растёт, и jwt-callback аннулирует каждый токен,
+   * выпущенный с прежней версией. Без этого украденная сессия жила бы до
+   * истечения срока JWT, несмотря на смену пароля администратором, а переведённый
+   * в другой класс ученик сохранял бы доступ к урокам прежнего класса до
+   * переподключения (сокет помнит класс с момента handshake).
+   */
+  const revokesSessions =
+    patch.password !== undefined ||
+    (patch.role !== undefined && patch.role !== target.role) ||
+    gradeChanged ||
+    (patch.isBanned !== undefined && patch.isBanned !== target.isBanned);
+
   const data: Prisma.UserUpdateInput = {
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.role !== undefined ? { role: patch.role as PrismaRole } : {}),
@@ -397,6 +425,7 @@ export async function updateUserAsAdmin(targetId: string, patch: AdminUserUpdate
       : {}),
     ...(patch.password !== undefined ? { password: await hashPassword(patch.password) } : {}),
     ...(patch.isBanned !== undefined ? { isBanned: patch.isBanned } : {}),
+    ...(revokesSessions ? { sessionVersion: { increment: 1 } } : {}),
   };
 
   const updated = await prisma.user.update({
@@ -409,6 +438,7 @@ export async function updateUserAsAdmin(targetId: string, patch: AdminUserUpdate
       role: true,
       grade: true,
       isBanned: true,
+      sessionVersion: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -418,7 +448,7 @@ export async function updateUserAsAdmin(targetId: string, patch: AdminUserUpdate
   if (patch.role !== undefined && patch.role !== target.role) {
     changes.role = { from: target.role, to: patch.role };
   }
-  if (nextGrade !== (target.grade ?? null)) {
+  if (gradeChanged) {
     changes.grade = {
       from: target.grade ? GRADE_LABELS[target.grade as GradeCode] : "не назначен",
       to: nextGrade ? GRADE_LABELS[nextGrade] : "не назначен",
@@ -429,6 +459,7 @@ export async function updateUserAsAdmin(targetId: string, patch: AdminUserUpdate
   if (patch.isBanned !== undefined && patch.isBanned !== target.isBanned) {
     changes.banned = patch.isBanned;
   }
+  if (revokesSessions) changes.sessionsRevoked = true;
 
   return {
     user: {
@@ -443,5 +474,7 @@ export async function updateUserAsAdmin(targetId: string, patch: AdminUserUpdate
       isOnline: false,
     },
     changes,
+    /** Сессии отозваны — вызывающий маршрут рвёт живые сокеты. */
+    sessionsRevoked: revokesSessions,
   };
 }

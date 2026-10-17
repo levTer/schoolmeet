@@ -158,7 +158,9 @@ async function seedAccounts(passwordHash: string, schoolId: string): Promise<voi
       select: { email: true, role: true, grade: true },
     });
     const gradeText = user.grade ? ` · ${user.grade}` : "";
-    console.log(`✓ ${user.role.padEnd(7)} ${user.email}${gradeText}  (пароль: ${SEED_PASSWORD})`);
+    // Пароль в лог НЕ печатаем: логи deployment'ов читают не только владельцы,
+    // а демо-пароль и так задаётся переменной SEED_PASSWORD (находка C-02).
+    console.log(`✓ ${user.role.padEnd(7)} ${user.email}${gradeText}`);
   }
 }
 
@@ -267,7 +269,7 @@ function createRandom(seed: number): () => number {
 }
 
 /** Демо-объявления: одно для всей школы и два — для отдельных классов. */
-async function seedAnnouncements(adminId: string): Promise<void> {
+async function seedAnnouncements(adminId: string, schoolId: string): Promise<void> {
   if ((await prisma.announcement.count()) > 0) {
     console.log("• Объявления уже есть — пропускаем");
     return;
@@ -295,7 +297,9 @@ async function seedAnnouncements(adminId: string): Promise<void> {
   ];
 
   for (const item of items) {
-    await prisma.announcement.create({ data: { ...item, authorId: adminId } });
+    // `schoolId` объявления = школа сида: объявления изолированы по тенантам
+    // и не попадают в другие школы (исправление H-03).
+    await prisma.announcement.create({ data: { ...item, authorId: adminId, schoolId } });
   }
   console.log("• Демо-объявления созданы (вся школа, 8 и 9 классы)");
 }
@@ -467,11 +471,14 @@ async function main(): Promise<void> {
     select: { id: true },
   });
 
-  await seedAnnouncements(admin?.id ?? teacherIds.get("teacher") ?? "");
+  await seedAnnouncements(admin?.id ?? teacherIds.get("teacher") ?? "", primarySchool.id);
   await seedGradedHomework(primarySchool.id);
   await seedAttendance(primarySchool.id);
 
   console.log("\nДемо-данные готовы. Админ-панель: /admin — только для роли ADMIN.");
+  console.log(
+    `Пароль демо-аккаунтов задан переменной SEED_PASSWORD (в логи он не пишется). Смените его через /admin/users перед продакшеном.`,
+  );
 }
 
 main()

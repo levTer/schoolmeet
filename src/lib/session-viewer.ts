@@ -1,10 +1,13 @@
 import { getServerSession } from "next-auth";
 
-import { DomainError, forbidden } from "@/lib/api";
+import { DomainError, forbidden, tenantRequired } from "@/lib/api";
 import { adminDenyReason, type AdminCapability, type AdminTarget } from "@/lib/admin-permissions";
 import { authOptions } from "@/lib/auth";
 import { getSchoolViewer, type SchoolViewer } from "@/lib/school-viewer";
 import type { Role } from "@/types";
+
+/** Зритель, у которого школа подтверждена сессией (tenant обязателен). */
+export type TenantViewer = SchoolViewer & { schoolId: string };
 
 /**
  * Текущий пользователь для API-роутов. Без сессии — 401.
@@ -24,6 +27,42 @@ export async function requireViewer(): Promise<SchoolViewer> {
     throw new DomainError(403, "ACCOUNT_BANNED", "Аккаунт заблокирован администратором");
   }
   return viewer;
+}
+
+/**
+ * То же, что `requireViewer`, но с гарантированной школой (tenant).
+ *
+ * Любой маршрут, работающий с данными школы (объявления, расписание, уроки,
+ * ДЗ), обязан вызывать именно его. Если у сессии нет `schoolId`, доступ
+ * запрещается (403 `SCHOOL_REQUIRED`) — маршрут не может взять школу из тела
+ * запроса, query или «догадаться» про основную школу.
+ */
+export async function requireSchoolViewer(): Promise<TenantViewer> {
+  const viewer = await requireViewer();
+  if (!viewer.schoolId) throw tenantRequired();
+  return viewer as TenantViewer;
+}
+
+/**
+ * Живая проверка администратора для СЕРВЕРНЫХ СТРАНИЦ (исправление H-01).
+ *
+ * Роль, бан и школа читаются из БД, а не из JWT-cookie: страницы `/admin`
+ * раньше доверяли `session.user.role` и потому принимали claim, попавший в
+ * токен при сбое сверки с БД. Если БД недоступна — доступ закрыт (fail-closed):
+ * админ-данные без подтверждённых прав не выдаются.
+ */
+export async function getLiveAdminViewer(): Promise<SchoolViewer | null> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return null;
+
+  try {
+    const viewer = await getSchoolViewer(session.user.id);
+    if (!viewer || viewer.isBanned) return null;
+    return viewer.role === "ADMIN" ? viewer : null;
+  } catch (error) {
+    console.error("[session-viewer] Не удалось подтвердить права администратора:", error);
+    return null;
+  }
 }
 
 /** Пускает только перечисленные роли, остальным — 403. */

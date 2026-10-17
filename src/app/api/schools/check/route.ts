@@ -5,9 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { DEFAULT_CLASS_NAMES } from "@/lib/school-config";
 import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
 import {
-  configuredSchoolInviteData,
   hasInviteTokenChanges,
   inviteTokensForNewSchool,
+  provisioningInviteData,
 } from "@/lib/invite-tokens";
 import { normalizeSchoolCode } from "@/lib/school-rules";
 import { listClassesForSchool } from "@/lib/schools";
@@ -90,12 +90,16 @@ async function findOrCreateSchool(code: string) {
     }
   }
 
-  // Для разрешённого кода всегда досеиваем стандартный набор 5-А … 11-Б,
-  // возвращаем предустановленный admin-токен к фиксированному значению и
-  // выпускаем токены, которых в строке нет (колонки стали nullable).
+  // Для разрешённого кода всегда досеиваем стандартный набор 5-А … 11-Б и
+  // выпускаем токены, которых в строке нет (колонки nullable).
+  //
+  // C-01: предустановленный admin-токен к фиксированному значению больше НЕ
+  // возвращается — этот endpoint публичный (без сессии), и раньше любой
+  // запрос с кодом школы откатывал ротированный секрет к известному из
+  // репозитория значению. Досыпаются только отсутствующие токены.
   if (school && allowed) {
     const schoolId = school.id;
-    const inviteData = configuredSchoolInviteData({ ...school, code: allowed.code });
+    const inviteData = provisioningInviteData({ ...school, code: allowed.code });
     if (hasInviteTokenChanges(inviteData)) {
       school = await prisma.school.update({
         where: { id: schoolId },
@@ -145,6 +149,8 @@ async function checkSchool(request: Request): Promise<NextResponse> {
   }
 
   const classes = await listClassesForSchool(school.id);
+  // Наружу отдаём ТОЛЬКО публичные поля школы: invite-токены (оба) остаются
+  // на сервере и никогда не попадают в JSON ответа.
   const schoolView = { id: school.id, name: school.name, code: school.code };
   // Уровень секретной ссылки: null — публичная регистрация (только STUDENT).
   const inviteRole: InviteRole | null = resolveInviteRole(school, normalizeInviteToken(rawInvite));

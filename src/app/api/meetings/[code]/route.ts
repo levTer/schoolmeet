@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/auth";
-import { findMeetingByCodeInSchool } from "@/lib/meetings";
+import { checkMeetingAccess, findMeetingByCode } from "@/lib/meetings";
 import { getSchoolViewer } from "@/lib/school-viewer";
 import { isValidRoomCode } from "@/lib/realtime";
 
@@ -10,8 +10,12 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/meetings/[code] — данные урока для входа в комнату.
- * Доступно только авторизованным пользователям. Ключ шифрования чата отдаётся
- * только в этом ответе, и только после проверки сессии.
+ *
+ * Ключ шифрования чата отдаётся ТОЛЬКО после полной проверки доступа:
+ *  1. сессия есть (иначе 401);
+ *  2. урок принадлежит школе зрителя (иначе 404 — чужой урок не подтверждаем);
+ *  3. если урок привязан к классу расписания, STUDENT обязан состоять в этом
+ *     классе; учитель и администратор школы проходят (иначе 403 — H-02).
  */
 export async function GET(
   _request: Request,
@@ -33,14 +37,36 @@ export async function GET(
   }
 
   try {
+    // Роль, школа и класс — только из БД («живой» зритель), не из JWT.
     const viewer = await getSchoolViewer(session.user.id);
-    const meeting = viewer?.schoolId
-      ? await findMeetingByCodeInSchool(params.code, viewer.schoolId)
+    if (!viewer) {
+      return NextResponse.json(
+        { ok: false, error: "Аккаунт не найден", code: "UNAUTHORIZED" },
+        { status: 401 },
+      );
+    }
+
+    const meeting = await findMeetingByCode(params.code);
+    const decision = meeting
+      ? checkMeetingAccess(meeting, {
+          id: viewer.id,
+          role: viewer.role,
+          schoolId: viewer.schoolId,
+          classId: viewer.classId,
+        })
       : null;
-    if (!meeting) {
+
+    if (!meeting || !decision || (!decision.ok && decision.code === "SCHOOL_MISMATCH")) {
       return NextResponse.json(
         { ok: false, error: "Урок с таким кодом не найден", code: "NOT_FOUND" },
         { status: 404 },
+      );
+    }
+
+    if (!decision.ok) {
+      return NextResponse.json(
+        { ok: false, error: decision.message, code: decision.code },
+        { status: decision.status },
       );
     }
 

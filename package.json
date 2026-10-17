@@ -4,19 +4,21 @@
   "private": true,
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "prisma generate && prisma db push --accept-data-loss && next build",
+    "build": "prisma generate && next build",
     "start": "NODE_ENV=production tsx server.ts",
     "lint": "next lint",
     "test:ai": "tsx scripts/smoke-ai.ts",
     "test:rules": "tsx --test scripts/rules.test.ts",
     "test:ui": "tsx --test scripts/ui-patterns.test.ts",
     "test:chat": "tsx --test scripts/chat-rules.test.ts",
+    "test:security": "tsx --test scripts/security-rules.test.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
+    "db:deploy": "prisma db push --skip-generate",
     "db:migrate": "prisma migrate dev --name init",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "test": "npm run test:ai && npm run test:rules && npm run test:ui && npm run test:chat"
+    "test": "npm run test:ai && npm run test:rules && npm run test:ui && npm run test:chat && npm run test:security"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

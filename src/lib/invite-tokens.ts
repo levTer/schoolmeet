@@ -54,6 +54,32 @@ export function inviteTokensForNewSchool(code: string): Required<InviteTokenData
 }
 
 /**
+ * Разрешён ли принудительный возврат admin-токенов к предустановленным значениям.
+ *
+ * По умолчанию ВЫКЛЮЧЕН (исправление C-01): возврат к литералу из репозитория
+ * делал бы бессмысленной ротацию секрета в БД и позволял любому, кто читает
+ * публичный код, вернуть известный admin-токен. Включается оператором на один
+ * запуск через `SCHOOLMEET_RESTORE_CONFIGURED_INVITE_TOKENS=true`.
+ */
+export function configuredInviteTokensRestored(): boolean {
+  return (process.env.SCHOOLMEET_RESTORE_CONFIGURED_INVITE_TOKENS ?? "").trim().toLowerCase() === "true";
+}
+
+/**
+ * Токены для плановой инициализации: startup provisioning и ПУБЛИЧНАЯ проверка
+ * кода школы (`/api/schools/check`).
+ *
+ * Здесь досоздаются только ОТСУТСТВУЮЩИЕ токены: уже сохранённый в БД
+ * admin-токен не перетирается. Ранее публичный endpoint возвращал настроенным
+ * школам известный пресет — это и было критической находкой C-01.
+ */
+export function provisioningInviteData(school: SchoolTokenRow): InviteTokenData {
+  const data = missingInviteTokens(school);
+  if (!configuredInviteTokensRestored()) return data;
+  return { ...data, ...configuredSchoolInviteData(school) };
+}
+
+/**
  * Каких токенов не хватает в существующей строке школы.
  *
  * Пустой объект — оба токена на месте, запись в БД не нужна. Пустая строка
@@ -70,6 +96,10 @@ export function missingInviteTokens(school: SchoolTokenRow): InviteTokenData {
  * Токены для записи в СУЩЕСТВУЮЩУЮ школу: досоздаёт отсутствующие значения и
  * возвращает admin-токен настроенных школ к детерминированному пресету
  * (админ-ссылка школы не должна меняться между деплоями).
+ *
+ * ⚠️ Использовать ТОЛЬКО в осознанной операции оператора (см.
+ * `provisioningInviteData` и `configuredInviteTokensRestored`): автоматические
+ * пути инициализации не должны откатывать ротированный в БД секрет.
  */
 export function configuredSchoolInviteData(school: SchoolTokenRow): InviteTokenData {
   const data = missingInviteTokens(school);

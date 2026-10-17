@@ -179,9 +179,16 @@ HTTP-запросы работают идеально, а постоянные W
 Socket.IO поднимаются на одном порту (`server.ts`):
 
 ```bash
-npm run build
+npm run db:deploy    # ОТДЕЛЬНЫЙ шаг: накатить схему БД (было внутри build — см. ниже)
+npm run build        # prisma generate + next build: схему БД больше НЕ меняет
 npm run start        # PORT=3000 HOST=0.0.0.0 — Next.js + Socket.IO на одном порту
 ```
+
+> ⚠️ **Сборка больше не меняет схему БД.** Раньше `npm run build` выполнял
+> `prisma db push --accept-data-loss`, то есть любой деплой мог разрушительно
+> изменить боевую базу. Теперь schema push вынесен в отдельный шаг
+> `npm run db:deploy` (без `--accept-data-loss`): запускайте его осознанно и
+> только после бэкапа (находка H-05 аудита).
 
 Бесплатные/дешёвые варианты: VPS за ~300 ₽/мес (Timeweb, Beget, Aeza — полный функционал),
 Render/Railway/Fly.io (бесплатные или триальные тарифы). Переменные окружения — те же,
@@ -234,7 +241,7 @@ cp .env.example .env
 #    DATABASE_URL="postgresql://...neon.tech/neondb?sslmode=require"
 
 # 3. Создайте таблицы в облачной базе (без папки миграций — идеально для старта)
-npx prisma db push        # == npm run db:push
+npx prisma db push        # == npm run db:push / npm run db:deploy
 
 # 4. Залейте начальные данные: демо-аккаунты, предметы, расписание, ДЗ
 npx prisma db seed        # == npm run db:seed
@@ -256,13 +263,20 @@ npx prisma db seed        # == npm run db:seed
 
 | Роль | Email | Пароль | Школа |
 |---|---|---|---|
-| Администратор | `admin@schoolmeet.ru` | `Admin123!` | `Sinlycem26` |
-| Администратор | `fullhouse@schoolmeet.ru` | `Fullhouse123!` | `Fulhouseteem26` |
-| Администратор | `anna@schoolmeet.ru` | `Anna123!` | `Anna.Terentieva77` |
+| Администратор | `admin@schoolmeet.ru` | `SCHOOLMEET_DEMO_ADMIN_PASSWORDS` | `Sinlycem26` |
+| Администратор | `fullhouse@schoolmeet.ru` | `SCHOOLMEET_DEMO_ADMIN_PASSWORDS` | `Fulhouseteem26` |
+| Администратор | `anna@schoolmeet.ru` | `SCHOOLMEET_DEMO_ADMIN_PASSWORDS` | `Anna.Terentieva77` |
 
-> 🔐 **Первый шаг после запуска продакшена** — смените пароли демо-аккаунтов и гарантированных
-> администраторов через админ-панель (`/admin/users` → «Сбросить пароль») или удалите их,
-> создав реальных пользователей.
+Пароли задаются переменной окружения `SCHOOLMEET_DEMO_ADMIN_PASSWORDS`
+(JSON вида `{"admin@schoolmeet.ru": "…", "fullhouse@schoolmeet.ru": "…"}`). Без неё
+используется демо-значение из публичного репозитория — в продуктиве так оставлять нельзя.
+
+> 🔐 **Первый шаг после запуска продакшена** — задайте свои пароли через
+> `SCHOOLMEET_DEMO_ADMIN_PASSWORDS` и смените их у демо-аккаунтов через админ-панель
+> (`/admin/users` → «Сбросить пароль») либо удалите демо-пользователей, создав реальных.
+> Приложение создаёт гарантированных администраторов только если их нет, и не перетирает
+> уже изменённый пароль при каждом старте; автосоздание отключается переменной
+> `SCHOOLMEET_DISABLE_DEMO_ADMIN_SEED=true`.
 > Роль `ADMIN` через публичную регистрацию получить нельзя — только через сид, гарантированных
 > администраторов или существующего администратора.
 

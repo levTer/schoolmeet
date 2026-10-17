@@ -8,7 +8,7 @@ import {
 } from "@/lib/announcements";
 import { handleRouteError, jsonError, jsonOk } from "@/lib/api";
 import { getRequestIp, writeAuditLog } from "@/lib/audit";
-import { requireCapability, requireViewer } from "@/lib/session-viewer";
+import { requireCapability, requireSchoolViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -17,15 +17,18 @@ interface RouteContext {
 }
 
 /**
- * PATCH /api/admin/announcements/[id] — изменить объявление или снять его с показа
- * (`isActive: false`). Все правки попадают в журнал действий.
+ * PATCH /api/admin/announcements/[id] — изменить объявление СВОЕЙ школы или
+ * снять его с показа (`isActive: false`). Все правки попадают в журнал действий.
+ *
+ * Чужое объявление (другой `schoolId`) невидимо: `getAnnouncement` и
+ * `updateAnnouncement` фильтруют по школе сессии.
  */
 export async function PATCH(request: Request, { params }: RouteContext): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
+    const viewer = await requireSchoolViewer();
     requireCapability(viewer, "announcements.manage");
 
-    const existing = await getAnnouncement(params.id);
+    const existing = await getAnnouncement(params.id, viewer.schoolId);
     if (!existing) return jsonError(404, "NOT_FOUND", "Объявление не найдено");
 
     let payload: unknown;
@@ -42,7 +45,7 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
 
     // Для частичного обновления берём только переданные поля.
     const raw = payload as Record<string, unknown>;
-    const announcement = await updateAnnouncement(params.id, {
+    const announcement = await updateAnnouncement(params.id, viewer.schoolId, {
       ...(raw.title !== undefined ? { title: validation.data.title } : {}),
       ...(raw.content !== undefined ? { content: validation.data.content } : {}),
       ...(raw.targetGrade !== undefined ? { targetGrade: validation.data.targetGrade } : {}),
@@ -66,16 +69,17 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
   }
 }
 
-/** DELETE /api/admin/announcements/[id] — удалить объявление. */
+/** DELETE /api/admin/announcements/[id] — удалить объявление своей школы. */
 export async function DELETE(request: Request, { params }: RouteContext): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
+    const viewer = await requireSchoolViewer();
     requireCapability(viewer, "announcements.manage");
 
-    const existing = await getAnnouncement(params.id);
+    const existing = await getAnnouncement(params.id, viewer.schoolId);
     if (!existing) return jsonError(404, "NOT_FOUND", "Объявление не найдено");
 
-    await deleteAnnouncement(params.id);
+    const deleted = await deleteAnnouncement(params.id, viewer.schoolId);
+    if (!deleted) return jsonError(404, "NOT_FOUND", "Объявление не найдено");
 
     void writeAuditLog({
       userId: viewer.id,

@@ -81,7 +81,12 @@ export async function loadDashboardData(input: LoadDashboardInput): Promise<Dash
   let announcements: DashboardData["announcements"] = [];
   try {
     const loaded = await withDeadline(
-      listActiveAnnouncementsForViewer({ id: userId, role, grade: activeViewer.grade }),
+      listActiveAnnouncementsForViewer({
+        id: userId,
+        role,
+        schoolId: activeViewer.schoolId,
+        grade: activeViewer.grade,
+      }),
       "listActiveAnnouncementsForViewer",
       timeoutMs,
     );
