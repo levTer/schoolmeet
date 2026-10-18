@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import bcryptjs from "bcryptjs";
+import { generateClassCode } from "@/lib/class-code";
 import { INTERACTIVE_TRANSACTION_OPTIONS, prisma } from "@/lib/prisma";
 import { GRADES, type GradeCode } from "@/lib/schedule-rules";
 import { gradeFromClassName, normalizeSchoolCode } from "@/lib/school-rules";
@@ -255,8 +256,13 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
       // nullable и DB-level default у них нет (см. `@/lib/invite-tokens`).
       school = await db.school.upsert({
         where: { code: definition.code },
-        update: { name: definition.name },
-        create: { name: definition.name, code: definition.code, ...inviteTokensForNewSchool(definition.code) },
+        update: { name: definition.name, strictClassIsolation: definition.strictClassIsolation },
+        create: {
+          name: definition.name,
+          code: definition.code,
+          strictClassIsolation: definition.strictClassIsolation,
+          ...inviteTokensForNewSchool(definition.code),
+        },
         select: SCHOOL_INVITE_SELECT,
       });
     }
@@ -265,13 +271,19 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
 
     const schoolId = school.id;
 
-    // Существующая школа: синхронизируем имя, возвращаем admin-токен настроенных
-    // школ к детерминированному пресету и выпускаем недостающие токены.
+    // Существующая школа: синхронизируем имя и политику изоляции классов
+    // (Лицей Сингулярити — strict, остальные — flexible), возвращаем
+    // admin-токен настроенных школ к детерминированному пресету и выпускаем
+    // недостающие токены.
     school = await db.school.update({
       where: { id: schoolId },
       // Только досыпание отсутствующих токенов: сохранённый в БД admin-токен
       // (в том числе ротированный администратором) не перетирается — C-01.
-      data: { name: definition.name, ...provisioningInviteData({ ...school, code: definition.code }) },
+      data: {
+        name: definition.name,
+        strictClassIsolation: definition.strictClassIsolation,
+        ...provisioningInviteData({ ...school, code: definition.code }),
+      },
       select: SCHOOL_INVITE_SELECT,
     });
 
@@ -311,7 +323,47 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
     console.error("[schools] Не удалось досыпать школу у объявлений:", error);
   }
 
+  // Коды классов для приглашений (строгие школы): у классов, созданных до
+  // появления `Class.code`, значения нет — досыпаем идемпотентно.
+  try {
+    await backfillClassCodes(db);
+  } catch (error) {
+    console.error("[schools] Не удалось досыпать коды классов:", error);
+  }
+
   return schools;
+}
+
+/**
+ * Досыпает `Class.code` (код класса для приглашений) существующим классам.
+ *
+ * Код нужен в строгих школах (`strictClassIsolation = true`): ученик другого
+ * класса получает вход в урок, введя код класса (см. `src/lib/class-code.ts`
+ * и `/api/meetings/[code]/class-access`). Формат — «название без дефиса +
+ * случайные 5 символов», например `5A-K7QZM4`: коротко, читаемо и глобально
+ * уникально (уникальный индекс `classes.code`). Идемпотентно: строки с кодом
+ * не трогаются, параллельные инстансы не конфликтуют (`where: code: null`
+ * неявно — обновляем конкретную строку, при гонке P2002 пробуем новый код).
+ */
+export async function backfillClassCodes(db: PrismaClient = prisma): Promise<number> {
+  const rows = await db.class.findMany({ where: { code: null }, select: { id: true, name: true } });
+
+  let filled = 0;
+  for (const row of rows) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        await db.class.update({ where: { id: row.id }, data: { code: generateClassCode(row.name) } });
+        filled += 1;
+        break;
+      } catch (error) {
+        // Уникальный код занят (практически невозможно — 5 криптослучайных
+        // символов), пробуем сгенерировать заново.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue;
+        throw error;
+      }
+    }
+  }
+  return filled;
 }
 
 /** Move legacy tenant data without losing class links or deleting records. */
@@ -555,6 +607,21 @@ export async function getSchoolSummary(schoolId: string): Promise<SchoolSummary 
     where: { id: schoolId },
     select: { id: true, name: true, code: true },
   });
+}
+
+/**
+ * Политика изоляции классов школы (`strictClassIsolation`).
+ *
+ * `null` — школа не найдена (вызывающий код отказывает в доступе, fail-closed).
+ */
+export async function getSchoolPolicy(
+  schoolId: string,
+): Promise<{ strictClassIsolation: boolean } | null> {
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: { strictClassIsolation: true },
+  });
+  return school ? { strictClassIsolation: school.strictClassIsolation } : null;
 }
 
 /** Resolve the tenant for a legacy meeting as well as for newly tenant-scoped meetings. */

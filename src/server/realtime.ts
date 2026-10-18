@@ -615,15 +615,27 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
          *   - урок той же школы (чужой школы вообще не должен существовать
          *     для этого клиента — соединение разрываем, чтобы не «прощупывать»
          *     чужие комнаты);
-         *   - STUDENT состоит в классе, к которому привязано расписание урока;
-         *     учитель и администратор школы проходят всегда.
+         *   - политика школы: в строгой STUDENT обязан состоять в классе
+         *     расписания или предъявить разовый допуск по коду класса
+         *     (`payload.classCodeGrant`, подпись + привязка проверяет
+         *     `checkMeetingAccess`); в гибкой — любой ученик школы проходит;
+         *   - учитель и администратор школы проходят всегда.
          */
-        const decision = checkMeetingAccess(meeting, {
-          id: socket.data.user.id,
-          role: socket.data.user.role,
-          schoolId: socket.data.user.schoolId,
-          classId: socket.data.user.classId,
-        });
+        const classCodeGrant =
+          typeof payload?.classCodeGrant === "string" && payload.classCodeGrant.length > 0
+            ? payload.classCodeGrant.slice(0, 4096)
+            : null;
+
+        const decision = checkMeetingAccess(
+          meeting,
+          {
+            id: socket.data.user.id,
+            role: socket.data.user.role,
+            schoolId: socket.data.user.schoolId,
+            classId: socket.data.user.classId,
+          },
+          { classCodeGrant },
+        );
 
         if (!decision.ok) {
           reply<JoinRoomResult>(ack, {

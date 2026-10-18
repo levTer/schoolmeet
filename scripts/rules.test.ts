@@ -57,6 +57,13 @@ import {
 } from "../src/lib/invite-tokens";
 import { buildSchoolRoomId, hasSchoolAccess } from "../src/lib/realtime";
 import { buildDashboardFallback, viewerFromClaims, withDeadline } from "../src/lib/dashboard-fallback";
+import {
+  CLASS_CODE_GRANT_TTL_MS,
+  generateClassCode,
+  normalizeClassCode,
+  signClassCodeGrant,
+  verifyClassCodeGrant,
+} from "../src/lib/class-code";
 
 const lesson = (dayOfWeek: number, startTime: string, endTime: string, id = `${dayOfWeek}-${startTime}`) => ({
   id,
@@ -76,10 +83,11 @@ describe("коды школ и названия классов", () => {
   });
 
   it("содержит три точных секрета и стандартные классы 5-А … 11-Б", () => {
+    // Лицей Сингулярити — строгая изоляция классов, остальные школы — гибкие.
     assert.deepEqual(CONFIGURED_SCHOOLS, [
-      { name: "Лицей Сингулярити", code: "Sinlycem26" },
-      { name: "Fullhouse Teem  ", code: "Fulhouseteem26" },
-      { name: "Школа Душа", code: "Anna.Terentieva77" },
+      { name: "Лицей Сингулярити", code: "Sinlycem26", strictClassIsolation: true },
+      { name: "Fullhouse Teem  ", code: "Fulhouseteem26", strictClassIsolation: false },
+      { name: "Школа Душа", code: "Anna.Terentieva77", strictClassIsolation: false },
     ]);
     assert.deepEqual(DEFAULT_CLASS_NAMES, [
       "5-А", "5-Б", "6-А", "6-Б", "7-А", "7-Б", "8-А", "8-Б", "9-А", "9-Б", "10-А", "10-Б", "11-А", "11-Б",
@@ -644,5 +652,76 @@ describe("неубиваемый дашборд: fallback и дедлайны с
     } finally {
       process.off("unhandledRejection", onUnhandled);
     }
+  });
+});
+
+describe("коды классов и разовый допуск (строгие школы)", () => {
+  const SECRET = "test-secret";
+  const payload = {
+    userId: "u-1",
+    classId: "class-8b",
+    schoolId: "school-a",
+    meetingCode: "math-8b-pn-0830",
+    issuedAt: 1_000_000,
+  };
+
+  it("генерирует читаемый код класса из названия (без дефиса + 5 символов)", () => {
+    const code = generateClassCode("8-Б");
+    assert.match(code, /^8B-[A-Z2-9]{5}$/);
+    // Криптослучайный суффикс: два вызова дают разные коды.
+    assert.notEqual(generateClassCode("8-Б"), generateClassCode("8-Б"));
+    // Особый случай: пустое/символьное название не ломает формат.
+    assert.match(generateClassCode(""), /^CLASS-[A-Z2-9]{5}$/);
+  });
+
+  it("нормализует введённый код класса (регистр, пробелы)", () => {
+    assert.equal(normalizeClassCode(" 8b-k7qzm4 "), "8B-K7QZM4");
+    assert.equal(normalizeClassCode(42), "");
+    assert.equal(normalizeClassCode(null), "");
+  });
+
+  it("подписывает допуск и проверяет подпись + привязку (round-trip)", () => {
+    const token = signClassCodeGrant(payload, SECRET);
+    assert.match(token, /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+
+    const now = payload.issuedAt + 1000;
+    assert.equal(
+      verifyClassCodeGrant(token, SECRET, { userId: "u-1", classId: "class-8b", meetingCode: "math-8b-pn-0830" }, { now }),
+      true,
+      "корректный допуск отклонён",
+    );
+  });
+
+  it("отвергает подменённый payload (HMAC не сходится)", () => {
+    const forged = signClassCodeGrant({ ...payload, userId: "u-attacker" }, SECRET);
+    // Переподписывать не дадут: секрет неизвестен атакующему.
+    const tamperedBody = forged.split(".")[1];
+    const tampered = `v1.${tamperedBody}.deadbeef`;
+    assert.equal(
+      verifyClassCodeGrant(tampered, SECRET, { userId: "u-attacker", classId: "class-8b", meetingCode: "math-8b-pn-0830" }, { now: payload.issuedAt }),
+      false,
+    );
+    // Даже верная подпись, но чужой класс — отказ.
+    assert.equal(
+      verifyClassCodeGrant(forged, SECRET, { userId: "u-1", classId: "class-9a", meetingCode: "math-8b-pn-0830" }, { now: payload.issuedAt }),
+      false,
+    );
+  });
+
+  it("отвергает допуск с другим секретом, битую версию и другой meetingCode", () => {
+    const token = signClassCodeGrant(payload, SECRET);
+    assert.equal(verifyClassCodeGrant(token, "other-secret", { userId: "u-1", classId: "class-8b", meetingCode: "math-8b-pn-0830" }, { now: payload.issuedAt }), false);
+    assert.equal(verifyClassCodeGrant(`v9.${token.split(".")[1]}.${token.split(".")[2]}`, SECRET, { userId: "u-1", classId: "class-8b", meetingCode: "math-8b-pn-0830" }, { now: payload.issuedAt }), false);
+    assert.equal(verifyClassCodeGrant(token, SECRET, { userId: "u-1", classId: "class-8b", meetingCode: "other-room" }, { now: payload.issuedAt }), false);
+    assert.equal(verifyClassCodeGrant("not-a-token", SECRET, { userId: "u-1", classId: "class-8b", meetingCode: "math-8b-pn-0830" }, { now: payload.issuedAt }), false);
+  });
+
+  it("отвергает истёкший допуск и «из будущего»", () => {
+    const token = signClassCodeGrant(payload, SECRET);
+    const expected = { userId: "u-1", classId: "class-8b", meetingCode: "math-8b-pn-0830" };
+
+    assert.equal(verifyClassCodeGrant(token, SECRET, expected, { now: payload.issuedAt + CLASS_CODE_GRANT_TTL_MS + 1 }), false, "истёкший допуск принят");
+    assert.equal(verifyClassCodeGrant(token, SECRET, expected, { now: payload.issuedAt - 120_000 }), false, "допуск из будущего принят");
+    assert.equal(verifyClassCodeGrant(token, SECRET, expected, { now: payload.issuedAt + CLASS_CODE_GRANT_TTL_MS - 1000 }), true);
   });
 });

@@ -69,6 +69,8 @@ export function useSocket(options: UseSocketOptions = {}) {
 
   const socketRef = useRef<ClientSocket | null>(null);
   const roomRef = useRef<string | null>(null);
+  /** Разовый допуск по коду класса (строгие школы) — отправляется при каждом входе в комнату. */
+  const classCodeGrantRef = useRef<string | null>(null);
   const hasConnectedRef = useRef(false);
   /** Комната закрыта администратором или доступ отозван — не переподключаемся. */
   const terminatedRef = useRef(false);
@@ -125,7 +127,7 @@ export function useSocket(options: UseSocketOptions = {}) {
 
       const roomId = roomRef.current;
       if (isReconnect && roomId) {
-        socket.emit("join-room", { roomId }, (ack: Ack<JoinRoomResult>) => {
+        socket.emit("join-room", { roomId, classCodeGrant: classCodeGrantRef.current }, (ack: Ack<JoinRoomResult>) => {
           if (!ack.ok) {
             roomRef.current = null;
             setError(ack.error);
@@ -262,14 +264,26 @@ export function useSocket(options: UseSocketOptions = {}) {
     });
   }, [getSocket]);
 
-  /** Входит в комнату урока по коду. Подключается, если сокета ещё нет. */
+  /**
+   * Входит в комнату урока по коду. Подключается, если сокета ещё нет.
+   * `options.classCodeGrant` — разовый допуск по коду класса (строгие
+   * школы): сохраняется и повторно отправляется при переподключении.
+   */
   const joinRoom = useCallback(
-    async (roomId: string): Promise<Ack<JoinRoomResult>> => {
+    async (
+      roomId: string,
+      options: { classCodeGrant?: string | null } = {},
+    ): Promise<Ack<JoinRoomResult>> => {
       await connect();
       const socket = getSocket();
 
+      classCodeGrantRef.current =
+        typeof options.classCodeGrant === "string" && options.classCodeGrant
+          ? options.classCodeGrant
+          : null;
+
       return new Promise((resolve) => {
-        socket.emit("join-room", { roomId }, (ack: Ack<JoinRoomResult>) => {
+        socket.emit("join-room", { roomId, classCodeGrant: classCodeGrantRef.current }, (ack: Ack<JoinRoomResult>) => {
           if (ack.ok) {
             roomRef.current = roomId;
             applyJoinResult(ack.data);

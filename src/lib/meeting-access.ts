@@ -24,6 +24,15 @@ export interface MeetingAccessSubject {
   scheduleClassId?: string | null;
   /** Ведущий урока (учитель, создавший комнату). */
   hostId?: string | null;
+  /**
+   * Политика школы (`School.strictClassIsolation`):
+   *  - `true`  (STRICT)   — STUDENT обязан состоять в классе расписания
+   *    (отдельный допуск по коду класса проверяет вызывающая сторона —
+   *    `checkMeetingAccess` в `@/lib/meetings`);
+   *  - `false`/отсутствует (FLEXIBLE) — STUDENT заходит на любые уроки
+   *    своей школы.
+   */
+  strictClassIsolation?: boolean;
 }
 
 /** Проверяемый участник: роль, школа и класс из БД (не из запроса клиента). */
@@ -58,8 +67,16 @@ export function isSchoolStaff(role: Role): boolean {
  *  1. школа урока и школа зрителя обязаны существовать и совпадать
  *     (иначе `404 SCHOOL_MISMATCH`: чужой урок не должен даже подтверждать
  *     своё существование);
- *  2. если урок привязан к классу расписания, STUDENT обязан состоять в этом
- *     классе (`403 CLASS_FORBIDDEN`); учитель и администратор школы проходят.
+ *  2. урок без класса расписания открыт всей школе;
+ *  3. учитель и администратор школы допущены к любому уроку своей школы
+ *     (всегда, независимо от политики — тестовые `admin@` / `fullhouse@`
+ *     входят во все уроки своей школы);
+ *  4. политика школы:
+ *     - FLEXIBLE (по умолчанию) — любой STUDENT школы заходит;
+ *     - STRICT — STUDENT обязан состоять в классе расписания
+ *       (`403 CLASS_FORBIDDEN`); разовый допуск по коду класса проверяет
+ *       вызывающая сторона (`checkMeetingAccess` в `@/lib/meetings`),
+ *       потому что для этого нужны БД и HMAC, а модуль остаётся чистым.
  */
 export function resolveMeetingAccess(
   meeting: MeetingAccessSubject,
@@ -85,6 +102,10 @@ export function resolveMeetingAccess(
   // Ведущий урока заходит всегда (на случай смены роли на STUDENT).
   if (meeting.hostId && viewer.id && meeting.hostId === viewer.id) return { ok: true };
 
+  // Гибкая школа: любой ученик школы заходит на любые её уроки.
+  if (meeting.strictClassIsolation !== true) return { ok: true };
+
+  // Строгая школа: только ученики класса расписания.
   if (!viewer.classId || viewer.classId !== scheduleClassId) {
     return {
       ok: false,

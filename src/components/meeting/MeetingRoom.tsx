@@ -14,9 +14,10 @@ import {
 } from "@/components/meeting/Chat";
 import { Controls } from "@/components/meeting/Controls";
 import { AIWidget } from "@/components/meeting/AIWidget";
+import { Filmstrip } from "@/components/meeting/Filmstrip";
 import { PreJoinScreen } from "@/components/meeting/PreJoinScreen";
 import { VideoGrid, type GridTile } from "@/components/meeting/VideoGrid";
-import { Whiteboard, type WhiteboardAiBridge } from "@/components/meeting/Whiteboard";
+import { Whiteboard, WHITEBOARD_TOP_RESERVED_PX, type WhiteboardAiBridge } from "@/components/meeting/Whiteboard";
 import { FormAlert } from "@/components/ui/form-alert";
 import { Logo } from "@/components/landing/logo";
 import { useSocket, type SocketStatus } from "@/hooks/useSocket";
@@ -39,6 +40,13 @@ export interface MeetingRoomProps {
   /** Ключ комнаты для AES-256 (отдаётся сервером только авторизованным). */
   encryptionKey: string;
   self: { id: string; name: string; role: Role };
+  /**
+   * Разовый допуск по коду класса (строгие школы, H-02): выдаётся
+   * `ClassCodeGate` после проверки `Class.code`. Отправляется серверу при
+   * каждом `join-room` (включая переподключение) — без него вход в урок
+   * чужого класса строгой школы запрещён.
+   */
+  classCodeGrant?: string | null;
 }
 
 type Phase = "precheck" | "connecting" | "live";
@@ -58,7 +66,7 @@ const SOCKET_STATUS_LABEL: Record<SocketStatus, string> = {
  * Страница урока: предпроверка устройств → вход → видеосетка, чат и панель управления.
  * Сам оркестрирует два хука: `useSocket` (комната, чат, сигналинг) и `useWebRTC` (медиа и пиры).
  */
-export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self }: MeetingRoomProps) {
+export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self, classCodeGrant }: MeetingRoomProps) {
   const router = useRouter();
 
   const [phase, setPhase] = useState<Phase>("precheck");
@@ -204,7 +212,12 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
     setPhase("connecting");
 
     try {
-      const ack = await withTimeout(socket.joinRoom(meetingCode), JOIN_TIMEOUT_MS);
+      // `classCodeGrant` — допуск по коду класса (строгие школы): сервер
+      // проверяет подпись и привязку к этому пользователю и комнате (H-02).
+      const ack = await withTimeout(
+        socket.joinRoom(meetingCode, { classCodeGrant: classCodeGrant ?? null }),
+        JOIN_TIMEOUT_MS,
+      );
       if (!ack.ok) {
         setJoinError(ack.error);
         setPhase("precheck");
@@ -360,6 +373,8 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
 
   const elapsed = useElapsedSeconds(startedAt);
   const isLive = phase === "live";
+  /** Кто-то (вы или участник) делится экраном — включаем режим Filmstrip. */
+  const screenShareActive = useMemo(() => tiles.some((tile) => tile.screenOn), [tiles]);
 
   /* ---------------------------------- Разметка ------------------------------ */
 
@@ -497,6 +512,16 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
           </div>
         ) : (
           <>
+            {/*
+              Filmstrip при демонстрации экрана (доска закрыта): компактная
+              полоска СВЕРХУ — своё видео + участники; сцена с экраном ниже.
+              При открытой доске полоска живёт внутри оверлея доски (topStrip)
+              и эту ветку не дублирует.
+            */}
+            {screenShareActive && !boardOpen && (
+              <Filmstrip tiles={tiles} pinnedId={pinnedId} onPin={togglePin} />
+            )}
+
             <div className="flex min-h-0 flex-1 gap-3 p-3 pb-0">
               <div className="glass relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-3xl">
                 {rtc.mediaError && (
@@ -504,7 +529,13 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
                     <FormAlert variant="error">{rtc.mediaError}</FormAlert>
                   </div>
                 )}
-                <VideoGrid tiles={tiles} pinnedId={pinnedId} onPin={togglePin} />
+                {/*
+                  Когда открыта доска, сетка «молчит» (silent): звук участников
+                  в этот момент играет из Filmstrip внутри оверлея доски. ТРЕКИ
+                  НЕ отключаем — видео и сигналы продолжают идти, вход/выход
+                  участников не пересоздаётся.
+                */}
+                <VideoGrid tiles={tiles} pinnedId={pinnedId} onPin={togglePin} silent={boardOpen} />
               </div>
 
               {chatOpen && (
@@ -581,11 +612,16 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
           aiOpen={aiOpen}
           onAiOpenChange={setAiOpen}
           onAiBridge={handleAiBridge}
+          // Filmstrip СВЕРХУ над тулбаром доски: камеры участников остаются
+          // видимыми, треки не отключаются, тулбар под полоской кликабелен.
+          topStrip={<Filmstrip tiles={tiles} pinnedId={pinnedId} onPin={togglePin} />}
           onClose={() => setBoardOpen(false)}
         />
       )}
 
-      {/* Глобальный ИИ-ассистент: плавающая кнопка + окно поверх любой страницы урока */}
+      {/* Глобальный ИИ-ассистент: плавающая кнопка + окно поверх любой страницы урока.
+          При открытой доске окно не заходит в верхнюю зону (шапка + Filmstrip +
+          тулбар доски) — тулбар остаётся видимым и кликабельным. */}
       {isLive && (
         <AIWidget
           role={self.role}
@@ -594,6 +630,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self 
           onOpenChange={setAiOpen}
           onApplyDrawing={applyDrawing}
           captureBoard={captureBoard}
+          reservedTop={boardOpen ? WHITEBOARD_TOP_RESERVED_PX : undefined}
         />
       )}
     </div>

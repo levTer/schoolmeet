@@ -129,8 +129,16 @@ export interface JoinRoomResult {
 /* -------------------------------------------------------------------------- */
 
 export interface ClientToServerEvents {
-  /** Войти в комнату урока. Доступ — только с действующей JWT-сессией. */
-  "join-room": (payload: { roomId: string }, ack: (result: Ack<JoinRoomResult>) => void) => void;
+  /**
+   * Войти в комнату урока. Доступ — только с действующей JWT-сессией.
+   * `classCodeGrant` — разовый допуск по коду класса (строгие школы),
+   * выданный `/api/meetings/[code]/class-access`; сервер проверяет подпись
+   * и привязку к пользователю, классу урока и комнате (H-02).
+   */
+  "join-room": (
+    payload: { roomId: string; classCodeGrant?: string | null },
+    ack: (result: Ack<JoinRoomResult>) => void,
+  ) => void;
   /** Покинуть комнату (сокет остаётся подключённым). */
   "leave-room": () => void;
   /** Передача SDP offer/answer и ICE-кандидатов конкретному пиру. */

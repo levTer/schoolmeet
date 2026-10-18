@@ -139,67 +139,100 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): VoiceInput {
       return;
     }
 
-    // Пересоздаём распознаватель: после stop() инстанс не всегда перезапускается.
-    recognitionRef.current?.abort();
+    /** Запускает сам распознаватель (после получения доступа к микрофону). */
+    const beginRecognition = () => {
+      // Пересоздаём распознаватель: после stop() инстанс не всегда перезапускается.
+      recognitionRef.current?.abort();
 
-    const recognition = new Ctor();
-    recognition.lang = lang;
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+      const recognition = new Ctor();
+      recognition.lang = lang;
+      // Одна фраза за сессию: по final-результату Chrome завершает сессию,
+      // onend перезапускает её, пока пользователь не нажал «Стоп».
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
 
-    recognition.onstart = () => {
-      setListening(true);
+      recognition.onstart = () => {
+        setListening(true);
+        setError(null);
+      };
+
+      recognition.onresult = (event) => {
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const result = event.results[i];
+          const text = result[0]?.transcript ?? "";
+          if (result.isFinal) {
+            const finalText = text.trim();
+            if (finalText) optionsRef.current.onTranscript?.(finalText, true);
+          } else {
+            interim += text;
+          }
+        }
+        const interimText = interim.trim();
+        if (interimText) optionsRef.current.onTranscript?.(interimText, false);
+      };
+
+      recognition.onerror = (event) => {
+        const message = ERROR_MESSAGES[event.error] ?? `Ошибка распознавания речи: ${event.error}`;
+        if (event.error !== "aborted" && event.error !== "no-speech") {
+          wantListeningRef.current = false;
+          setError(message || null);
+        }
+      };
+
+      recognition.onend = () => {
+        // continuous: false — сессия завершается после фразы (и Chrome
+        // может остановить её по тишине): перезапускаем, пока пользователь
+        // не нажал «Стоп».
+        if (wantListeningRef.current) {
+          try {
+            recognition.start();
+            return;
+          } catch {
+            /* инстанс уже закрыт — продолжаем ниже */
+          }
+        }
+        setListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      wantListeningRef.current = true;
       setError(null);
-    };
 
-    recognition.onresult = (event) => {
-      let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const result = event.results[i];
-        const text = result[0]?.transcript ?? "";
-        if (result.isFinal) {
-          const finalText = text.trim();
-          if (finalText) optionsRef.current.onTranscript?.(finalText, true);
-        } else {
-          interim += text;
-        }
-      }
-      const interimText = interim.trim();
-      if (interimText) optionsRef.current.onTranscript?.(interimText, false);
-    };
-
-    recognition.onerror = (event) => {
-      const message = ERROR_MESSAGES[event.error] ?? `Ошибка распознавания речи: ${event.error}`;
-      if (event.error !== "aborted" && event.error !== "no-speech") {
-        wantListeningRef.current = false;
-        setError(message || null);
+      try {
+        recognition.start();
+      } catch {
+        // start() бросает, если распознавание уже запущено.
+        setListening(true);
       }
     };
 
-    recognition.onend = () => {
-      // Chrome периодически останавливает сессию по тишине — перезапускаем,
-      // пока пользователь не нажал «Стоп».
-      if (wantListeningRef.current) {
-        try {
-          recognition.start();
-          return;
-        } catch {
-          /* инстанс уже закрыт — продолжаем ниже */
-        }
-      }
-      setListening(false);
-    };
-
-    recognitionRef.current = recognition;
-    wantListeningRef.current = true;
-    setError(null);
-
-    try {
-      recognition.start();
-    } catch {
-      // start() бросает, если распознавание уже запущено.
-      setListening(true);
+    // Шаг 1: явный запрос микрофона (браузерный permission prompt).
+    // Если API медиаустройств нет (не-HTTPS контекст) — пробуем Speech API
+    // напрямую: он запросит доступ сам.
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          // Разрешение получено — поток Speech API возьмёт сам, останавливаем.
+          stream.getTracks().forEach((track) => track.stop());
+          beginRecognition();
+        })
+        .catch((error: unknown) => {
+          const name = error instanceof DOMException ? error.name : "";
+          wantListeningRef.current = false;
+          setListening(false);
+          if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+            setError("Микрофон запрещён. Разрешите доступ к микрофону в настройках браузера.");
+          } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+            setError("Микрофон не найден. Проверьте подключение устройства.");
+          } else {
+            setError("Не удалось получить доступ к микрофону. Попробуйте ещё раз.");
+          }
+        });
+    } else {
+      beginRecognition();
     }
   }, [lang]);
 

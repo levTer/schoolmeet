@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 
 import { Markdown } from "@/components/ui/markdown";
+import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import {
   AI_ACTION_LABELS,
@@ -253,6 +254,16 @@ export function AIAssistant({
   }, []);
 
   const voice = useVoiceInput({ lang: "ru-RU", onTranscript: handleTranscript });
+
+  // Ошибка голосового ввода (onerror / отказ в микрофоне) — toast + подпись
+  // в футере. Показываем каждую новую ошибку один раз.
+  const lastVoiceErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (voice.error && voice.error !== lastVoiceErrorRef.current) {
+      toast.error(voice.error);
+    }
+    lastVoiceErrorRef.current = voice.error;
+  }, [voice.error]);
 
   /* ----------------------------- Провайдер ------------------------------- */
 

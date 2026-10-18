@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { Logo } from "@/components/landing/logo";
+import { ClassSwitcher } from "@/components/layout/ClassSwitcher";
 import { AppearanceSettingsMenu } from "@/components/theme/AppearanceSettingsMenu";
 import { ROLE_LABELS, type Role } from "@/types";
 import { cn, getInitials } from "@/lib/utils";
@@ -175,6 +176,9 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
 
           {isAuthenticated && user && role && (
             <div className="flex items-center gap-2">
+              {/* Переключение класса (гибкая школа — Select, строгая — бейдж). */}
+              <ClassSwitcher />
+
               <div ref={profileRef} className="relative">
                 <button
                   type="button"
@@ -292,6 +296,14 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                     </span>
                   </div>
                   <div className="p-1.5">
+                    {role === "STUDENT" && (
+                      <div className="mb-1 px-3 pb-1.5 pt-1">
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                          Мой класс
+                        </p>
+                        <ClassSwitcher />
+                      </div>
+                    )}
                     <Link
                       href="/dashboard#profile"
                       role="menuitem"

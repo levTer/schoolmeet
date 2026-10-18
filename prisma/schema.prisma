@@ -59,6 +59,15 @@ model School {
   /// токеном выдаётся роль ADMIN (регистрация или повышение уже вошедшего аккаунта).
   /// Тоже nullable — по той же причине, что и `teacherInviteToken`.
   adminInviteToken   String?  @unique
+  /// Политика изоляции классов школы (H-02, расширение):
+  ///  - `true`  (STRICT)  — ученик заходит только в уроки СВОЕГО класса
+  ///    (`user.classId === schedule.classId`) либо с правильным кодом класса
+  ///    (`Class.code`, временный разовый допуск — `src/lib/class-code.ts`);
+  ///  - `false` (FLEXIBLE) — ученик может заходить на ЛЮБЫЕ уроки своей школы.
+  /// Лицей Сингулярити по умолчанию строгий, остальные школы — гибкие
+  /// (`CONFIGURED_SCHOOLS` в `src/lib/school-config.ts`, синхронизируется при
+  /// старте в `provisionConfiguredSchools`).
+  strictClassIsolation Boolean  @default(false)
   createdAt DateTime @default(now())
 
   users         User[]
@@ -76,6 +85,12 @@ model Class {
   id        String   @id @default(cuid())
   name      String
   schoolId  String
+  /// Код класса для приглашений в строгих школах (`strictClassIsolation`):
+  /// ученик другого класса получает вход в урок, введя этот код
+  /// (разовый допуск — `src/lib/class-code.ts`). Значение выпускает
+  /// provisioning (`backfillClassCodes` в `src/lib/schools.ts`), поэтому
+  /// nullable: в старом деплое у существующих строк кода нет.
+  code      String?  @unique
   createdAt DateTime @default(now())
 
   school    School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
