@@ -5,23 +5,33 @@
  * окно чата, которое открывается поверх любой страницы урока
  * (сетка видео или интерактивная доска).
  *
- * ОКНО ПОЛНОСТЬЮ ГИБКОЕ:
- *  - перетаскивается за шапку («ИИ-помощник учителя») мышью и касанием —
- *    `onMouseDown`/`onTouchStart` → отслеживание `clientX/clientY` и
- *    обновление `top`/`left` в стейте; окно можно утащить в любой угол
- *    экрана, чтобы оно не перекрывало доску или важные элементы;
- *  - свободно ресайзится (`resize: both; overflow: hidden`) в пределах
- *    `min-width: 320px` … `max-width: 95vw`, `min-height: 380px` …
- *    `max-height: 95vh`; диалог с сообщениями заполняет всё свободное
- *    пространство (`flex-grow overflow-y-auto`);
- *  - кнопка «Развернуть на весь экран / Восстановить» (Expand / Compress)
- *    в шапке переключает окно между плавающим и полноэкранным режимом.
+ * ОКНО ПОЛНОСТЬЮ ГИБКОЕ (Drag & Resize на чистом JavaScript):
+ *  - DRAG: `mousedown`/`touchstart` на ШАПКЕ окна → `mousemove`/`touchmove`
+ *    двигает окно (`left/top` из стейта `frame`), окно НЕ уезжает за края
+ *    viewport (clamp по обеим осям). Когда открыта доска, верхняя граница
+ *    ограничена зоной «шапка + Filmstrip + тулбар» (`reservedTop`) — тулбар
+ *    доски не перекрывается;
+ *  - RESIZE: ручка в правом нижнем углу (`cursor-nwse-resize`) → меняет
+ *    width/height в пределах min 320×380 … max 95vw/95vh;
+ *  - Expand/Compress в шапке — toggle: полноэкранный режим ↔ последний
+ *    размер/позиция (сохраняются в ref до сворачивания);
+ *  - z-index окна `z-[200]`: НИЖЕ модалок (`z-[999]`, см. `ui/modal.tsx`) и
+ *    ВЫШЕ доски урока (`z-50`) — окно плавает над доской, но под любыми
+ *    диалогами.
  *
  * Панель доступна только учителю и администратору (сервер дополнительно
  * отдаёт 403 на `/api/ai`).
  */
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type TouchEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type TouchEvent,
+} from "react";
 import { Sparkles } from "lucide-react";
 
 import { AIAssistant } from "@/components/meeting/AIAssistant";
@@ -49,20 +59,48 @@ export interface AIWidgetProps {
    * `getCanvasSnapshot()` моста (PNG base64 текущей страницы доски).
    */
   captureBoard?: () => string | null;
+  /**
+   * Верхняя зона, которую окно не должно перекрывать (px от верхнего края
+   * viewport): открыта доска — `WHITEBOARD_TOP_RESERVED_PX` (шапка +
+   * Filmstrip + тулбар). `undefined` — clamp только по краям viewport.
+   */
+  reservedTop?: number;
 }
 
-/** Позиция левого верхнего угла плавающего окна (после перетаскивания). */
-interface WindowPosition {
+/** Минимальный размер плавающего окна (px). */
+const MIN_WIDTH = 320;
+const MIN_HEIGHT = 380;
+/** Максимальный размер плавающего окна — доля viewport. */
+const MAX_VIEWPORT_FRACTION = 0.95;
+
+/** Кадр окна: позиция левого верхнего угла + явный размер. */
+interface WindowFrame {
   x: number;
   y: number;
+  w: number;
+  h: number;
 }
 
-/** Стартовые данные текущего перетаскивания указателем. */
-interface DragState {
+/** Стартовые данные текущего перетаскивания/ресайза указателем. */
+interface PointerDragState {
   startX: number;
   startY: number;
-  originX: number;
-  originY: number;
+  origin: WindowFrame;
+}
+
+/** Границы, в которых окно не должно выходить (верх — с учётом `reservedTop`). */
+function frameBounds(w: number, h: number, reservedTop: number | undefined): {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+} {
+  const xMax = Math.max(0, window.innerWidth - w);
+  const yMax = Math.max(0, window.innerHeight - h);
+  // Если viewport низкий даже для minHeight — приоритет у viewport,
+  // иначе окно «спрячется» за верхним тулбаром навсегда.
+  const yMin = Math.min(reservedTop ?? 0, yMax);
+  return { xMin: 0, xMax, yMin, yMax };
 }
 
 export function AIWidget({
@@ -72,79 +110,115 @@ export function AIWidget({
   onOpenChange,
   onApplyDrawing,
   captureBoard,
+  reservedTop,
 }: AIWidgetProps) {
   const isModerator = role === "TEACHER" || role === "ADMIN";
 
   /* --------------------- Перетаскивание и размеры ----------------------- */
 
   const windowRef = useRef<HTMLDivElement | null>(null);
-  /** Параметры текущего перетаскивания (`null` — окно не тянут). */
-  const dragRef = useRef<DragState | null>(null);
-  /** Позиция окна после перетаскивания (`null` — исходное «правый нижний угол»). */
-  const [position, setPosition] = useState<WindowPosition | null>(null);
+  /** Активная операция: drag (шапка) или resize (ручка в углу). */
+  const dragRef = useRef<{ kind: "drag" | "resize"; pointer: PointerDragState } | null>(null);
+  /**
+   * Явный кадр окна. `null` — исходная «якорная» позиция (правый нижний
+   * угол) с CSS-размером по умолчанию; заполняется при первом drag/resize.
+   */
+  const [frame, setFrame] = useState<WindowFrame | null>(null);
   const [dragging, setDragging] = useState(false);
   /** Полноэкранный режим (кнопка Expand / Compress в шапке). */
   const [maximized, setMaximized] = useState(false);
+  /** Последний кадр до Expand — для возврата Compress на «как было». */
+  const lastFrameRef = useRef<WindowFrame | null>(null);
+  /** `reservedTop` — в ref, чтобы слушатели не пересоздавались. */
+  const reservedTopRef = useRef<number | undefined>(reservedTop);
+  reservedTopRef.current = reservedTop;
 
-  /** Начинает перетаскивание: запоминает `clientX/clientY` и угол окна. */
-  const beginDrag = useCallback(
-    (clientX: number, clientY: number, target: EventTarget | null) => {
+  /** Текущий кадр окна: из стейта или из реального rect (первый drag). */
+  const currentFrame = useCallback((): WindowFrame | null => {
+    if (frame) return frame;
+    const el = windowRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: rect.left, y: rect.top, w: rect.width, h: rect.height };
+  }, [frame]);
+
+  /** Начинает перетаскивание (шапка) или ресайз (ручка). */
+  const beginPointerOperation = useCallback(
+    (kind: "drag" | "resize", clientX: number, clientY: number, target: EventTarget | null) => {
       if (maximized) return;
-      // Кнопки шапки (развернуть/закрыть) не перетаскивают окно.
-      if (target instanceof Element && target.closest("button")) return;
-      const el = windowRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      dragRef.current = { startX: clientX, startY: clientY, originX: rect.left, originY: rect.top };
-      // Дальше окно позиционируется по left/top — переключаемся с right/bottom.
-      setPosition({ x: rect.left, y: rect.top });
+      if (kind === "drag" && target instanceof Element && target.closest("button")) return;
+      const origin = currentFrame();
+      if (!origin) return;
+      // Окно переходит на явное позиционирование left/top.
+      setFrame(origin);
+      dragRef.current = { kind, pointer: { startX: clientX, startY: clientY, origin } };
       setDragging(true);
     },
-    [maximized],
+    [currentFrame, maximized],
   );
 
-  /** Перемещает окно вслед за указателем; держит его внутри экрана. */
-  const moveDrag = useCallback((clientX: number, clientY: number) => {
-    const drag = dragRef.current;
-    const el = windowRef.current;
-    if (!drag || !el) return;
-    const maxX = Math.max(0, window.innerWidth - el.offsetWidth);
-    const maxY = Math.max(0, window.innerHeight - el.offsetHeight);
-    setPosition({
-      x: Math.min(maxX, Math.max(0, drag.originX + clientX - drag.startX)),
-      y: Math.min(maxY, Math.max(0, drag.originY + clientY - drag.startY)),
+  /** Перемещает/ресайзит окно, удерживая его в пределах (и под тулбаром доски). */
+  const movePointer = useCallback((clientX: number, clientY: number) => {
+    const operation = dragRef.current;
+    if (!operation) return;
+    const { startX, startY, origin } = operation.pointer;
+    const dx = clientX - startX;
+    const dy = clientY - startY;
+
+    if (operation.kind === "drag") {
+      const bounds = frameBounds(origin.w, origin.h, reservedTopRef.current);
+      setFrame({
+        ...origin,
+        x: Math.min(bounds.xMax, Math.max(bounds.xMin, origin.x + dx)),
+        y: Math.min(bounds.yMax, Math.max(bounds.yMin, origin.y + dy)),
+      });
+      return;
+    }
+
+    // resize: width/height в пределах [min…95vw / min…95vh],
+    // угол прижат к правому нижнему, левый верхний не уходит за экран.
+    const maxW = Math.max(MIN_WIDTH, window.innerWidth * MAX_VIEWPORT_FRACTION);
+    const maxH = Math.max(MIN_HEIGHT, window.innerHeight * MAX_VIEWPORT_FRACTION);
+    const w = Math.min(maxW, Math.max(MIN_WIDTH, origin.w + dx));
+    const h = Math.min(maxH, Math.max(MIN_HEIGHT, origin.h + dy));
+    const bounds = frameBounds(w, h, reservedTopRef.current);
+    setFrame({
+      w,
+      h,
+      x: Math.min(bounds.xMax, Math.max(bounds.xMin, origin.x)),
+      y: Math.min(bounds.yMax, Math.max(bounds.yMin, origin.y)),
     });
   }, []);
 
-  const endDrag = useCallback(() => {
+  const endPointerOperation = useCallback(() => {
     dragRef.current = null;
     setDragging(false);
   }, []);
 
-  // Глобальные слушатели движения указателя — пока окно тянут.
+  // Глобальные слушатели движения указателя — пока окно тянут/ресайзят.
   useEffect(() => {
     if (!dragging) return;
-    const onMouseMove = (event: globalThis.MouseEvent) => moveDrag(event.clientX, event.clientY);
+    const onMouseMove = (event: globalThis.MouseEvent) => movePointer(event.clientX, event.clientY);
     const onTouchMove = (event: globalThis.TouchEvent) => {
       const touch = event.touches[0];
       if (!touch) return;
       // Пока тянем окно — страница под ним не скроллится.
       event.preventDefault();
-      moveDrag(touch.clientX, touch.clientY);
+      movePointer(touch.clientX, touch.clientY);
     };
     window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", endDrag);
+    window.addEventListener("mouseup", endPointerOperation);
     window.addEventListener("touchmove", onTouchMove, { passive: false });
-    window.addEventListener("touchend", endDrag);
-    window.addEventListener("touchcancel", endDrag);
+    window.addEventListener("touchend", endPointerOperation);
+    window.addEventListener("touchcancel", endPointerOperation);
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", endDrag);
+      window.removeEventListener("mouseup", endPointerOperation);
       window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", endDrag);
-      window.removeEventListener("touchcancel", endDrag);
+      window.removeEventListener("touchend", endPointerOperation);
+      window.removeEventListener("touchcancel", endPointerOperation);
     };
-  }, [dragging, moveDrag, endDrag]);
+  }, [dragging, movePointer, endPointerOperation]);
 
   // На время перетаскивания текст не выделяется мышью.
   useEffect(() => {
@@ -160,27 +234,79 @@ export function AIWidget({
     (event: MouseEvent<HTMLElement>) => {
       if (event.button !== 0) return;
       event.preventDefault();
-      beginDrag(event.clientX, event.clientY, event.target);
+      beginPointerOperation("drag", event.clientX, event.clientY, event.target);
     },
-    [beginDrag],
+    [beginPointerOperation],
   );
 
   const onHeaderTouchStart = useCallback(
     (event: TouchEvent<HTMLElement>) => {
       const touch = event.touches[0];
       if (!touch) return;
-      beginDrag(touch.clientX, touch.clientY, event.target);
+      beginPointerOperation("drag", touch.clientX, touch.clientY, event.target);
     },
-    [beginDrag],
+    [beginPointerOperation],
   );
 
+  const onResizeHandleMouseDown = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      beginPointerOperation("resize", event.clientX, event.clientY, event.target);
+    },
+    [beginPointerOperation],
+  );
+
+  const onResizeHandleTouchStart = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const touch = event.touches[0];
+      if (!touch) return;
+      event.stopPropagation();
+      beginPointerOperation("resize", touch.clientX, touch.clientY, event.target);
+    },
+    [beginPointerOperation],
+  );
+
+  /** Expand/Compress: полноэкранный режим ↔ последний размер/позиция. */
   const toggleMaximized = useCallback(() => {
-    setMaximized((value) => !value);
-    // С полноэкранного режима перетаскивание недоступно.
-    endDrag();
-  }, [endDrag]);
+    setMaximized((value) => {
+      if (!value) {
+        // Запоминаем кадр, чтобы Compress вернул «как было».
+        lastFrameRef.current = currentFrame();
+      } else {
+        setFrame(lastFrameRef.current);
+      }
+      return !value;
+    });
+    endPointerOperation();
+  }, [currentFrame, endPointerOperation]);
 
   if (!isModerator) return null;
+
+  const windowStyle: CSSProperties | undefined = maximized
+    ? {
+        // При открытой доске полноэкранный режим тоже начинается под
+        // зоной тулбара (inline top переопределяет inset-4/md:inset-8).
+        ...(reservedTop ? { top: reservedTop } : {}),
+      }
+    : frame
+      ? {
+          left: frame.x,
+          top: frame.y,
+          width: frame.w,
+          height: frame.h,
+          minWidth: MIN_WIDTH,
+          minHeight: MIN_HEIGHT,
+          maxWidth: "95vw",
+          maxHeight: "95vh",
+        }
+      : {
+          minWidth: MIN_WIDTH,
+          minHeight: MIN_HEIGHT,
+          maxWidth: "95vw",
+          maxHeight: "95vh",
+        };
 
   return (
     <>
@@ -202,32 +328,20 @@ export function AIWidget({
         <Sparkles className="h-5 w-5" />
       </button>
 
-      {/* Окно ИИ: перетаскиваемое, ресайзабельное, с полноэкранным режимом */}
+      {/* Окно ИИ: drag за шапку, JS-resize за угол, z-[200] — выше доски, ниже модалок */}
       {open && (
         <div
           ref={windowRef}
           className={cn(
+            "fixed z-[200] overflow-hidden",
             maximized
-              ? "fixed inset-4 z-[1000] h-auto w-auto md:inset-8"
-              : cn(
-                  "fixed z-[60] h-[min(70vh,600px)] w-[min(92vw,420px)]",
-                  position ? "" : "bottom-24 right-4 md:bottom-6 md:right-24",
-                ),
+              ? "inset-4 h-auto w-auto md:inset-8"
+              : frame
+                ? ""
+                : "bottom-24 right-4 h-[min(70vh,600px)] w-[min(92vw,420px)] md:bottom-6 md:right-24",
             dragging && "shadow-2xl",
           )}
-          style={
-            maximized
-              ? { overflow: "hidden", resize: "none", width: "auto", height: "auto" }
-              : {
-                  resize: "both",
-                  overflow: "hidden",
-                  minWidth: 320,
-                  minHeight: 380,
-                  maxWidth: "95vw",
-                  maxHeight: "95vh",
-                  ...(position ? { left: position.x, top: position.y } : {}),
-                }
-          }
+          style={windowStyle}
         >
           <AIAssistant
             role={role}
@@ -242,6 +356,36 @@ export function AIWidget({
             onToggleMaximized={toggleMaximized}
             floating
           />
+
+          {/* Ручка ресайза — правый нижний угол (только в плавающем режиме) */}
+          {!maximized && (
+            <div
+              data-ai-resize-handle
+              role="separator"
+              aria-label="Изменить размер окна ИИ-помощника"
+              onMouseDown={onResizeHandleMouseDown}
+              onTouchStart={onResizeHandleTouchStart}
+              className="absolute bottom-0 right-0 z-10 h-5 w-5 cursor-nwse-resize touch-none select-none"
+            >
+              <svg viewBox="0 0 24 24" className="h-full w-full text-slate-500" aria-hidden="true">
+                <path
+                  d="M19 13v6h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M19 8v3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+          )}
         </div>
       )}
     </>

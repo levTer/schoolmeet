@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 
+import { classCodeGrantSecret, verifyClassCodeGrant } from "@/lib/class-code";
 import { canViewChatEnvelope, chatVisibilityWhere } from "@/lib/chat-rules";
 import { prisma } from "@/lib/prisma";
 import { buildLessonCodeCandidate } from "@/lib/lesson-code";
@@ -37,6 +38,8 @@ export interface MeetingWithHost {
    * учеников других классов (H-02).
    */
   schedule: { schoolId: string | null; classId: string | null } | null;
+  /** Политика изоляции классов школы (`strictClassIsolation`). */
+  school: { id: string; strictClassIsolation: boolean } | null;
 }
 
 const meetingInclude = {
@@ -44,6 +47,8 @@ const meetingInclude = {
   // `classId` нужен для проверки доступа: урок, привязанный к классу
   // расписания, недоступен ученикам других классов (исправление H-02).
   schedule: { select: { schoolId: true, classId: true } },
+  // Политика школы определяет строгую/гибкую модель доступа к урокам (H-02).
+  school: { select: { id: true, strictClassIsolation: true } },
 } as const;
 
 export async function findMeetingByCode(meetingCode: string): Promise<MeetingWithHost | null> {
@@ -55,24 +60,54 @@ export async function findMeetingByCode(meetingCode: string): Promise<MeetingWit
 }
 
 /**
- * Полная проверка доступа к уроку: школа И класс расписания (H-02).
+ * Полная проверка доступа к уроку: школа + политика классов (H-02).
  *
  * Единая точка для HTTP-роутов и Socket.IO: раньше проверялась только школа,
  * из-за чего ученик другого класса той же школы мог войти в чужой урок по коду.
- * Правило живёт в `@/lib/meeting-access` (чистый модуль, покрыт тестами).
+ * Базовое правило живёт в `@/lib/meeting-access` (чистый модуль, покрыт
+ * тестами); здесь добавляется разовый допуск по коду класса для строгих школ:
+ * `options.classCodeGrant` — подписанный токен, выданный
+ * `/api/meetings/[code]/class-access` после проверки `Class.code` (связан с
+ * пользователем, классом урока и комнатой, живёт час — `src/lib/class-code.ts`).
  */
 export function checkMeetingAccess(
   meeting: MeetingWithHost,
   viewer: MeetingAccessViewer,
+  options: { classCodeGrant?: string | null } = {},
 ): MeetingAccessDecision {
-  return resolveMeetingAccess(
+  const strictClassIsolation = meeting.school?.strictClassIsolation ?? false;
+  const decision = resolveMeetingAccess(
     {
       schoolId: getMeetingSchoolId(meeting),
       scheduleClassId: meeting.schedule?.classId ?? null,
       hostId: meeting.hostId,
+      strictClassIsolation,
     },
     viewer,
   );
+
+  if (decision.ok) return decision;
+
+  // Строгая школа + чужой класс: принимаем только подписанный разовый допуск,
+  // привязанный к ЭТОЙ комнате и ЭТОМУ пользователю. SCHOOL_MISMATCH таким
+  // образом пробить нельзя — мы дошли до него, значит школы совпадают.
+  if (decision.code === "CLASS_FORBIDDEN" && strictClassIsolation) {
+    const scheduleClassId = meeting.schedule?.classId ?? null;
+    const grant = options.classCodeGrant;
+    if (scheduleClassId && typeof grant === "string" && grant) {
+      if (
+        verifyClassCodeGrant(grant, classCodeGrantSecret(), {
+          userId: viewer.id ?? "",
+          classId: scheduleClassId,
+          meetingCode: meeting.meetingCode,
+        })
+      ) {
+        return { ok: true };
+      }
+    }
+  }
+
+  return decision;
 }
 
 /** Случайный ключ комнаты: 256 бит в hex (64 символа) для AES-256. */

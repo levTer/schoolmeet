@@ -64,7 +64,21 @@ export interface WhiteboardProps {
   onAiOpenChange?: (open: boolean) => void;
   /** Мост «доска → глобальный ИИ»: снимок доски и рисование по инструкции. */
   onAiBridge?: (bridge: WhiteboardAiBridge | null) => void;
+  /**
+   * Компактная полоска участников (Filmstrip) — рендерится СВЕРХУ, сразу
+   * над тулбаром инструментов. Треки видео при этом не отключаются: полоска
+   * лишь дополнительный слой поверх тех же потоков.
+   */
+  topStrip?: ReactNode;
 }
+
+/**
+ * Высота зоны «шапка + filmstrip + тулбар» доски в px — столько сверху экрана
+ * занято служебными панелями. Глобальный ИИ-виджет (AIWidget) при открытой
+ * доске не должен перекрывать эту зону, поэтому использует константу для
+ * clamp-а позиции (не уезжает за верхний край под тулбар).
+ */
+export const WHITEBOARD_TOP_RESERVED_PX = 224;
 
 /**
  * Что глобальный ИИ-виджет умеет делать с доской. Единый тип моста живёт в
@@ -122,6 +136,7 @@ export function Whiteboard({
   aiOpen: aiOpenProp,
   onAiOpenChange,
   onAiBridge,
+  topStrip,
 }: WhiteboardProps) {
   const isModerator = self.role === "TEACHER" || self.role === "ADMIN";
   const [aiOpenLocal, setAiOpenLocal] = useState(false);
@@ -294,6 +309,15 @@ export function Whiteboard({
           <X className="h-5 w-5" />
         </button>
       </header>
+
+      {/*
+        Компактная полоска участников (Filmstrip) — СВЕРХУ, сразу над
+        тулбаром. Видна и кликабельна на любой ширине; тулбар под ней
+        остаётся видимым (shrink-0 у обоих элементов, холст сжимается).
+      */}
+      {topStrip && (
+        <div className="relative z-30 shrink-0 border-b border-white/10 bg-ink-950/90">{topStrip}</div>
+      )}
 
       {/*
         Тулбар инструментов: карандаш/маркер, фигуры (треугольник, круг,

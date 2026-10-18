@@ -34,6 +34,7 @@ import {
   type MeetingAccessViewer,
 } from "../src/lib/meeting-access";
 import { configuredInviteTokensRestored, provisioningInviteData } from "../src/lib/invite-tokens";
+import { signClassCodeGrant, verifyClassCodeGrant } from "../src/lib/class-code";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -101,35 +102,159 @@ describe("H-02: доступ к уроку ограничен школой и к
     assert.equal(noTenant.ok, false);
   });
 
-  it("ученик НЕ попадает в урок другого класса своей школы (403)", () => {
-    const decision = resolveMeetingAccess({ schoolId: SCHOOL_A, scheduleClassId: CLASS_8B }, student8a);
+  it("СТРОГАЯ школа: ученик НЕ попадает в урок другого класса (403)", () => {
+    const decision = resolveMeetingAccess(
+      { schoolId: SCHOOL_A, scheduleClassId: CLASS_8B, strictClassIsolation: true },
+      student8a,
+    );
     if (decision.ok) assert.fail("ученик чужого класса получил доступ к уроку");
     assert.equal(decision.code, "CLASS_FORBIDDEN");
     assert.equal(decision.status, 403);
   });
 
-  it("ученик без класса не проходит в урок, привязанный к классу", () => {
-    assert.equal(resolveMeetingAccess({ schoolId: SCHOOL_A, scheduleClassId: CLASS_8A }, studentNoClass).ok, false);
+  it("СТРОГАЯ школа: ученик без класса не проходит в урок, привязанный к классу", () => {
+    assert.equal(
+      resolveMeetingAccess({ schoolId: SCHOOL_A, scheduleClassId: CLASS_8A, strictClassIsolation: true }, studentNoClass).ok,
+      false,
+    );
   });
 
-  it("ученик своего класса, учитель и администратор школы проходят", () => {
-    for (const viewer of [student8a, teacher, admin]) {
-      const decision = resolveMeetingAccess({ schoolId: SCHOOL_A, scheduleClassId: CLASS_8A }, viewer);
-      assert.deepEqual(decision, { ok: true }, `не прошёл ${viewer.role}`);
+  it("ГИБКАЯ школа: любой ученик школы заходит на любые уроки школы (по умолчанию и явно)", () => {
+    for (const viewer of [student8a, student8b, studentNoClass]) {
+      // Без флага — гибкий режим (default).
+      assert.equal(resolveMeetingAccess({ schoolId: SCHOOL_A, scheduleClassId: CLASS_8B }, viewer).ok, true, `не прошёл ${viewer.classId ?? "без класса"}`);
+      // Явный false — то же поведение.
+      assert.equal(
+        resolveMeetingAccess({ schoolId: SCHOOL_A, scheduleClassId: CLASS_8B, strictClassIsolation: false }, viewer).ok,
+        true,
+      );
     }
   });
 
-  it("внеплановая встреча школы (без класса) открыта всем сотрудникам школы", () => {
+  it("ученик своего класса, учитель и администратор проходят при ЛЮБОЙ политике", () => {
+    for (const strictClassIsolation of [true, false]) {
+      for (const viewer of [student8a, teacher, admin]) {
+        const decision = resolveMeetingAccess(
+          { schoolId: SCHOOL_A, scheduleClassId: CLASS_8A, strictClassIsolation },
+          viewer,
+        );
+        assert.deepEqual(decision, { ok: true }, `не прошёл ${viewer.role} (strict=${strictClassIsolation})`);
+      }
+    }
+  });
+
+  it("внеплановая встреча школы (без класса) открыта всем школе", () => {
     for (const viewer of [student8a, student8b, studentNoClass, teacher, admin]) {
       assert.equal(resolveMeetingAccess({ schoolId: SCHOOL_A, scheduleClassId: null }, viewer).ok, true);
     }
   });
 
   it("ведущий урока заходит, даже если у него больше нет роли учителя", () => {
-    const meeting = { schoolId: SCHOOL_A, scheduleClassId: CLASS_8B, hostId: student8b.id };
+    const meeting = { schoolId: SCHOOL_A, scheduleClassId: CLASS_8B, hostId: student8b.id, strictClassIsolation: true };
     assert.equal(resolveMeetingAccess(meeting, student8b).ok, true);
-    // Но другой ученик того же класса по-прежнему не допущен к чужому уроку.
+    // В строгой школе другой ученик к чужому уроку не допущен…
     assert.equal(resolveMeetingAccess(meeting, studentNoClass).ok, false);
+    // …в гибкой — допущен (политика школы мягче).
+    assert.equal(resolveMeetingAccess({ ...meeting, strictClassIsolation: false }, studentNoClass).ok, true);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* H-02 (расширение): строгие/гибкие школы и допуск по коду класса             */
+/* -------------------------------------------------------------------------- */
+
+describe("политика классов: схема, provisioning, допуск по коду", () => {
+  const schema = readSource("prisma/schema.prisma");
+
+  it("у School есть strictClassIsolation (default false), у Class — code @unique", () => {
+    const schoolModel = schema.slice(schema.indexOf("model School {"), schema.indexOf("model Class {"));
+    assert.match(schoolModel, /strictClassIsolation\s+Boolean\s+@default\(false\)/, "нет strictClassIsolation у School");
+    const classModel = schema.slice(schema.indexOf("model Class {"), schema.indexOf("model User {"));
+    assert.match(classModel, /code\s+String\?\s+@unique/, "нет code String? @unique у Class");
+  });
+
+  it("provisioning: СИНГУЛЯРИТИ — strict, Fullhouse/Школа Душа — flexible", () => {
+    const config = readSource("src/lib/school-config.ts");
+    assert.match(config, /code: "Sinlycem26", strictClassIsolation: true/, "Сингулярити не строгий в конфиге");
+    assert.match(config, /code: "Fulhouseteem26", strictClassIsolation: false/);
+    assert.match(config, /code: "Anna\.Terentieva77", strictClassIsolation: false/);
+
+    const schools = readSource("src/lib/schools.ts");
+    assert.match(schools, /strictClassIsolation: definition\.strictClassIsolation/, "provisioning не пишет политику в БД");
+    assert.match(schools, /async function backfillClassCodes/, "нет досыпания кодов классов");
+    assert.match(schools, /await backfillClassCodes\(db\)/, "досыпание не вызывается при старте");
+  });
+
+  it("маршрут кода класса: сверка с Class.code → подписанный разовый допуск", () => {
+    const route = readSource("src/app/api/meetings/[code]/class-access/route.ts");
+    assert.match(route, /checkMeetingAccess\(/, "не используется единое правило доступа");
+    assert.match(route, /signClassCodeGrant\(/, "не выдаётся подписанный допуск");
+    assert.match(route, /normalizeClassCode\(/, "код класса не нормализуется при вводе");
+    assert.match(route, /NOT_FOUND/, "чужая школа должна получать 404 (без подтверждения урока)");
+    assert.match(route, /CLASS_CODE_INVALID/, "нет кода отказа для неверного кода класса");
+  });
+
+  it("socket join-room и API урока принимают допуск, checkMeetingAccess его верифицирует", () => {
+    const realtime = readSource("src/server/realtime.ts");
+    const joinIndex = realtime.indexOf('socket.on("join-room"');
+    const joinBody = realtime.slice(joinIndex, realtime.indexOf('socket.on("leave-room"'));
+    assert.match(joinBody, /classCodeGrant/, "join-room не читает допуск из payload");
+    assert.match(joinBody, /\{ classCodeGrant \}/, "допуск не передаётся в checkMeetingAccess");
+
+    const apiRoute = readSource("src/app/api/meetings/[code]/route.ts");
+    assert.match(apiRoute, /searchParams\.get\("grant"\)/, "API не читает ?grant=");
+    assert.match(apiRoute, /\{ classCodeGrant \}/, "допуск не передаётся в checkMeetingAccess");
+
+    const meetings = readSource("src/lib/meetings.ts");
+    assert.match(meetings, /verifyClassCodeGrant\(/, "допуск не верифицируется");
+    assert.match(meetings, /classCodeGrantSecret\(\)/, "нет секрета подписи допуска");
+    assert.match(meetings, /meeting\.school\?\.strictClassIsolation \?\? false/, "политика школы не передаётся в правило доступа");
+  });
+
+  it("допуск привязан к пользователю, классу и комнате (не переносится)", () => {
+    const now = Date.now();
+    const token = signClassCodeGrant(
+      { userId: "u-1", classId: CLASS_8B, schoolId: SCHOOL_A, meetingCode: "room-1", issuedAt: now },
+      "secret",
+    );
+    assert.equal(verifyClassCodeGrant(token, "secret", { userId: "u-1", classId: CLASS_8B, meetingCode: "room-1" }), true);
+    assert.equal(verifyClassCodeGrant(token, "secret", { userId: "u-1", classId: CLASS_8B, meetingCode: "room-2" }), false, "допуск перенёсся в другую комнату");
+    assert.equal(verifyClassCodeGrant(token, "secret", { userId: "u-2", classId: CLASS_8B, meetingCode: "room-1" }), false, "допуск перенёсся на другого пользователя");
+    assert.equal(verifyClassCodeGrant(token, "secret", { userId: "u-1", classId: CLASS_8A, meetingCode: "room-1" }), false, "допуск перенёсся в другой класс");
+  });
+
+  it("смена класса: только STUDENT гибкой школы, tenant из сессии, без bump версии сессии", () => {
+    const route = readSource("src/app/api/classes/membership/route.ts");
+    assert.match(route, /viewer\.role !== "STUDENT"/, "не-ученикам разрешена смена класса");
+    assert.match(route, /policy\.strictClassIsolation/, "не проверяется политика школы");
+    assert.ok(
+      !/sessionVersion:\s*\{\s*increment/.test(route),
+      "смена класса бьёт версию сессии — токен будет аннулирован",
+    );
+    assert.match(route, /schoolId: viewer\.schoolId/, "тенант не взят из сессии");
+
+    const classesRoute = readSource("src/app/api/classes/route.ts");
+    assert.match(classesRoute, /strictClassIsolation/, "не отдаётся политика школы");
+    assert.match(classesRoute, /currentClassId: viewer\.classId/, "не отдаётся текущий класс");
+  });
+
+  it("UI: Select класса для гибких школ, модалка кода для строгих", () => {
+    const navbar = readSource("src/components/layout/Navbar.tsx");
+    assert.match(navbar, /<ClassSwitcher/, "в Navbar нет переключателя класса");
+
+    const switcher = readSource("src/components/layout/ClassSwitcher.tsx");
+    assert.match(switcher, /<select/, "гибкая школа: нет Select для переключения класса");
+    assert.match(switcher, /api\/classes\/membership/, "смена класса не идёт через API");
+    assert.match(switcher, /strictClassIsolation/, "компонент не знает о политике школы");
+
+    const page = readSource("src/app/meeting/[id]/page.tsx");
+    assert.match(page, /meeting\.school\?\.strictClassIsolation/, "страница урока не знает о политике школы");
+    assert.match(page, /<ClassCodeGate/, "нет модалки ввода кода класса для строгих школ");
+
+    const gate = readSource("src/components/meeting/ClassCodeGate.tsx");
+    assert.match(gate, /class-access/, "модалка не запрашивает допуск по коду");
+    assert.match(gate, /sessionStorage/, "допуск не переживает перезагрузку страницы");
+    assert.match(gate, /classCodeGrant={grant}/, "допуск не передаётся в комнату/сокет");
   });
 });
 

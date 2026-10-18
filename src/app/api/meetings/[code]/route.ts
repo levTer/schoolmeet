@@ -14,11 +14,13 @@ export const dynamic = "force-dynamic";
  * Ключ шифрования чата отдаётся ТОЛЬКО после полной проверки доступа:
  *  1. сессия есть (иначе 401);
  *  2. урок принадлежит школе зрителя (иначе 404 — чужой урок не подтверждаем);
- *  3. если урок привязан к классу расписания, STUDENT обязан состоять в этом
- *     классе; учитель и администратор школы проходят (иначе 403 — H-02).
+ *  3. политика школы: в строгой (`strictClassIsolation`) STUDENT обязан
+ *     состоять в классе расписания или предъявить разовый допуск по коду
+ *     класса (`?grant=…`, выдан `/api/meetings/[code]/class-access`);
+ *     учитель и администратор школы проходят всегда (H-02).
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { code: string } },
 ): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
@@ -46,14 +48,24 @@ export async function GET(
       );
     }
 
+    // Разовый допуск по коду класса (строгие школы): выдаётся
+    // `/api/meetings/[code]/class-access` после проверки `Class.code`.
+    // Пустая строка / битый токен = «без допуска» — проверка ниже просто
+    // не пропустит (fail-closed).
+    const classCodeGrant = new URL(request.url).searchParams.get("grant");
+
     const meeting = await findMeetingByCode(params.code);
     const decision = meeting
-      ? checkMeetingAccess(meeting, {
-          id: viewer.id,
-          role: viewer.role,
-          schoolId: viewer.schoolId,
-          classId: viewer.classId,
-        })
+      ? checkMeetingAccess(
+          meeting,
+          {
+            id: viewer.id,
+            role: viewer.role,
+            schoolId: viewer.schoolId,
+            classId: viewer.classId,
+          },
+          { classCodeGrant },
+        )
       : null;
 
     if (!meeting || !decision || (!decision.ok && decision.code === "SCHOOL_MISMATCH")) {

@@ -28,6 +28,13 @@ export interface VideoGridProps {
   pinnedId?: string | null;
   /** Клик по кнопке «Закрепить спикера» на карточке участника. */
   onPin?: (tileId: string) => void;
+  /**
+   * «Молчаливый» режим: аудио из этой сетки не проигрывается (видео-элементы
+   * muted), но ТРЕКИ НЕ отключаются — звук в этот момент играет из Filmstrip
+   * (когда открыта доска, полоска живёт внутри оверлея доски). Без этого
+   * одного и того же участника было бы слышно дважды.
+   */
+  silent?: boolean;
 }
 
 /**
@@ -71,44 +78,22 @@ export function pickSpotlightTile(
   return candidates[0];
 }
 
-export function VideoGrid({ tiles, pinnedId, onPin }: VideoGridProps) {
+export function VideoGrid({ tiles, pinnedId, onPin, silent = false }: VideoGridProps) {
   const count = tiles.length;
 
   /**
-   * Режим демонстрации экрана: экран занимает всю сцену, а спикер
-   * (учитель или активный говорящий) живёт отдельной картинкой в углу.
+   * Режим демонстрации экрана: экран занимает всю сцену, а камеры участников
+   * (в том числе своя) — компактной полоской Filmstrip СВЕРХУ (рендерит
+   * страница урока). Сцена при этом muted: тот же поток (звук экрана)
+   * проигрывается плиткой владельца в Filmstrip — без этого было бы дважды.
    */
   const screenTile = tiles.find((tile) => tile.screenOn) ?? null;
 
   if (screenTile) {
-    const spotlight = pickSpotlightTile(tiles, pinnedId, screenTile.id);
-    const rest = tiles.filter((tile) => tile.id !== screenTile.id && tile.id !== spotlight?.id);
-
     return (
       <div className="relative h-full w-full overflow-hidden">
-        {/* Сцена: демонстрация экрана */}
-        <VideoTileView tile={screenTile} stage />
-
-        {/* Спикер поверх экрана — правый нижний угол */}
-        {spotlight && (
-          <div className="absolute bottom-4 right-4 z-20 w-48 md:w-64 rounded-xl shadow-2xl border border-slate-700 overflow-hidden">
-            <VideoTileView tile={spotlight} compact pinned={pinnedId === spotlight.id} onPin={onPin} />
-          </div>
-        )}
-
-        {/* Остальные участники — узкой лентой слева */}
-        {rest.length > 0 && (
-          <div className="absolute left-3 top-3 z-10 flex max-h-[70%] w-24 flex-col gap-2 overflow-y-auto pr-1 md:w-32">
-            {rest.map((tile) => (
-              <div
-                key={tile.id}
-                className="shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-lg"
-              >
-                <VideoTileView tile={tile} compact pinned={pinnedId === tile.id} onPin={onPin} />
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Сцена: демонстрация экрана (audio — в Filmstrip, поэтому muted) */}
+        <VideoTileView tile={screenTile} stage muted={true} />
       </div>
     );
   }
@@ -128,6 +113,7 @@ export function VideoGrid({ tiles, pinnedId, onPin }: VideoGridProps) {
           single={count === 1}
           pinned={pinnedId === tile.id}
           onPin={onPin}
+          muted={silent ? true : undefined}
         />
       ))}
     </div>
@@ -144,9 +130,15 @@ interface VideoTileViewProps {
   /** Закреплён ли участник. */
   pinned?: boolean;
   onPin?: (tileId: string) => void;
+  /**
+   * Явное override аудио: `undefined` — по умолчанию (свой muted, чужой
+   * играет), `true` — заглушить (аудио играет в другом месте: Filmstrip).
+   * Трек при этом НЕ отключается (`track.enabled` не трогаем).
+   */
+  muted?: boolean;
 }
 
-function VideoTileView({ tile, stage, compact, single, pinned, onPin }: VideoTileViewProps) {
+function VideoTileView({ tile, stage, compact, single, pinned, onPin, muted }: VideoTileViewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hasVideo = Boolean(tile.stream && tile.videoOn && tile.stream.getVideoTracks().length > 0);
 
@@ -175,7 +167,7 @@ function VideoTileView({ tile, stage, compact, single, pinned, onPin }: VideoTil
         ref={videoRef}
         autoPlay
         playsInline
-        muted={tile.isLocal}
+        muted={muted ?? tile.isLocal}
         className={cn(
           "h-full w-full bg-black object-cover transition-opacity duration-300",
           !hasVideo && "invisible",

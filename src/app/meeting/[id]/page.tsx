@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { ArrowLeft, SearchX, ShieldAlert } from "lucide-react";
 
+import { ClassCodeGate } from "@/components/meeting/ClassCodeGate";
 import { MeetingRoom } from "@/components/meeting/MeetingRoom";
 import { authOptions } from "@/lib/auth";
 import { checkMeetingAccess, findMeetingByCode } from "@/lib/meetings";
@@ -57,7 +58,26 @@ export default async function MeetingRoomPage({ params }: MeetingRoomPageProps) 
     return <MeetingNotFound code={params.id} />;
   }
 
-  // Урок другого класса: ученик не допускается, даже если код комнаты известен.
+  // Урок другого класса (строгая школа): ученик может войти по КОДУ КЛАССА —
+  // показываем модалку ввода кода, она сама запрашивает данные комнаты с
+  // разовым допуском и монтирует комнату.
+  if (decision.ok === false && meeting.school?.strictClassIsolation) {
+    return (
+      <ClassCodeGate
+        meetingCode={meeting.meetingCode}
+        title={meeting.title}
+        hostName={meeting.host.name}
+        self={{
+          id: viewer.id,
+          name: session.user.name ?? "Участник",
+          role: viewer.role,
+        }}
+      />
+    );
+  }
+
+  // Урок другого класса в гибкой школе или иной отказ: ученик не допускается,
+  // даже если код комнаты известен.
   if (decision.ok === false) {
     return <MeetingForbidden code={params.id} message={decision.message} />;
   }

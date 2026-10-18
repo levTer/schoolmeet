@@ -245,17 +245,17 @@ describe("локальная запись урока (WebM)", () => {
   });
 });
 
-describe("спикер поверх демонстрации экрана", () => {
+describe("спикер поверх демонстрации экрана (Filmstrip)", () => {
   const grid = readSource("src/components/meeting/VideoGrid.tsx");
   const room = readSource("src/components/meeting/MeetingRoom.tsx");
+  const strip = readSource("src/components/meeting/Filmstrip.tsx");
 
-  it("картинка спикера закреплена в правом нижнем углу поверх экрана", () => {
-    assert.match(
-      grid,
-      /absolute bottom-4 right-4 z-20 w-48 md:w-64 rounded-xl shadow-2xl border border-slate-700/,
-      "нет картинки спикера в правом нижнем углу",
-    );
-    assert.match(grid, /screenOn/, "режим демонстрации экрана не учитывается");
+  it("при демонстрации экрана сцена занимает место, участники — верхней полосой", () => {
+    assert.match(grid, /screenTile/, "режим демонстрации экрана не учитывается");
+    assert.match(grid, /<VideoTileView tile=\{screenTile\} stage muted=\{true\}/, "нет сцены демонстрации экрана");
+    assert.match(room, /screenShareActive && !boardOpen && \(/, "нет верхней Filmstrip при экране");
+    assert.match(strip, /h-20 .*md:h-24/, "полоска не в диапазоне 96–112px");
+    assert.match(strip, /aria-pressed=\{pinned\}/, "плитка полосы не показывает состояние pin");
   });
 
   it("на карточках участников есть кнопка «Закрепить спикера»", () => {
@@ -272,10 +272,13 @@ describe("глобальный минималистичный ИИ-ассист�
   const room = readSource("src/components/meeting/MeetingRoom.tsx");
 
   it("окно ИИ ресайзабельное и не меньше 320×380", () => {
-    assert.match(widget, /resize: "both"/, "окно ИИ не ресайзабельное");
-    assert.match(widget, /overflow: "hidden"/, "нет overflow: hidden для ресайза");
-    assert.match(widget, /minWidth: 320/, "нет min-width: 320px");
-    assert.match(widget, /minHeight: 380/, "нет min-height: 380px");
+    assert.match(widget, /const MIN_WIDTH = 320/, "нет min-width: 320px");
+    assert.match(widget, /const MIN_HEIGHT = 380/, "нет min-height: 380px");
+    assert.match(widget, /MAX_VIEWPORT_FRACTION = 0\.95/, "нет max 95vw/95vh");
+    assert.match(widget, /data-ai-resize-handle/, "нет ручки ресайза в правом нижнем углу");
+    assert.match(widget, /cursor-nwse-resize/, "ручка ресайза без cursor-nwse-resize");
+    assert.match(widget, /onResizeHandleMouseDown/, "ручка не отслеживает mousedown");
+    assert.match(widget, /onResizeHandleTouchStart/, "ручка не отслеживает touchstart");
     assert.match(widget, /maxWidth: "95vw"/, "нет max-width: 95vw");
     assert.match(widget, /maxHeight: "95vh"/, "нет max-height: 95vh");
     assert.match(assistant, /flex-1 flex-grow .*overflow-y-auto|flex-grow .*overflow-y-auto/, "диалог не заполняет свободное пространство окна");
@@ -284,16 +287,33 @@ describe("глобальный минималистичный ИИ-ассист�
   it("окно ИИ перетаскивается за шапку мышью и касанием", () => {
     assert.match(assistant, /cursor-grab/, "шапка окна ИИ не ручка перетаскивания");
     assert.match(assistant, /cursor-grabbing/, "нет курсора grabbing при перетаскивании");
-    assert.match(widget, /onMouseDown/, "нет обработчика мыши для перетаскивания");
-    assert.match(widget, /onTouchStart/, "нет обработчика касания для перетаскивания");
+    assert.match(widget, /onHeaderMouseDown/, "нет обработчика мыши для перетаскивания");
+    assert.match(widget, /onHeaderTouchStart/, "нет обработчика касания для перетаскивания");
     assert.match(widget, /clientX/, "перетаскивание не отслеживает указатель");
-    assert.match(widget, /setPosition\(\{/, "перетаскивание не обновляет позицию окна");
+    assert.match(widget, /setFrame\(\{/, "перетаскивание не обновляет позицию окна");
   });
 
-  it("кнопка «Развернуть на весь экран / Восстановить» есть в шапке", () => {
-    assert.match(widget, /inset-4 z-\[1000\] h-auto w-auto md:inset-8/, "нет полноэкранного режима окна ИИ");
+  it("окно не уезжает за края viewport и не накрывает тулбар доски", () => {
+    assert.match(widget, /function frameBounds/, "нет clamp-функции по границам viewport");
+    assert.match(widget, /window\.innerWidth - w/, "нет clamp по ширине viewport");
+    assert.match(widget, /window\.innerHeight - h/, "нет clamp по высоте viewport");
+    assert.match(widget, /reservedTop/, "нет учёта верхней зоны (тулбар доски)");
+    assert.match(room, /reservedTop=\{boardOpen \? WHITEBOARD_TOP_RESERVED_PX : undefined\}/, "комната не передаёт резерв верхней зоны при открытой доске");
+    assert.match(board, /export const WHITEBOARD_TOP_RESERVED_PX/, "доска не экспортирует высоту служебной зоны");
+  });
+
+  it("кнопка «Развернуть на весь экран / Восстановить» — toggle с возвратом на последний кадр", () => {
+    assert.match(widget, /inset-4 h-auto w-auto md:inset-8/, "нет полноэкранного режима окна ИИ");
+    assert.match(widget, /lastFrameRef/, "Expand не запоминает последний размер/позицию");
+    assert.match(widget, /toggleMaximized/, "нет переключателя Expand/Compress");
     assert.match(assistant, /Развернуть на весь экран/, "нет кнопки разворачивания окна");
     assert.match(assistant, /Shrink/, "иконка не меняется на Compress/Shrink");
+  });
+
+  it("z-index окна z-[200]: выше доски (z-50), НИЖЕ модалок (z-[999])", () => {
+    assert.match(widget, /fixed z-\[200\]/, "окно ИИ не имеет z-[200]");
+    assert.ok(!widget.includes("z-[1000]"), "полноэкранный режим снова выше модалок (z-[1000])");
+    assert.match(board, /fixed inset-0 z-50/, "доска больше не на z-50");
   });
 
   it("ИИ-виджет доступен с любой страницы урока (плавающая кнопка)", () => {
@@ -312,5 +332,72 @@ describe("глобальный минималистичный ИИ-ассист�
   it("доска не держит собственную ИИ-панель — ассистент глобальный", () => {
     assert.ok(!board.includes("<AIAssistant"), "доска снова рендерит отдельную ИИ-панель");
     assert.match(board, /onAiBridge/, "доска не отдаёт мост глобальному ИИ");
+  });
+});
+
+describe("голосовой ввод ИИ (Web Speech API)", () => {
+  const hook = readSource("src/hooks/useVoiceInput.ts");
+  const assistant = readSource("src/components/meeting/AIAssistant.tsx");
+
+  it("настройки распознавания: ru-RU, continuous: false, interimResults: true", () => {
+    assert.match(hook, /recognition\.lang = lang/, "язык распознавания не выставляется");
+    assert.match(hook, /recognition\.continuous = false/, "continuous не выключен");
+    assert.match(hook, /recognition\.interimResults = true/, "interimResults не включены");
+    assert.match(assistant, /useVoiceInput\(\{ lang: "ru-RU"/, "AI-панель не использует ru-RU");
+  });
+
+  it("при старте запрашивается микрофон, на onerror — понятная ошибка", () => {
+    assert.match(hook, /getUserMedia\(\{ audio: true \}\)/, "нет явного запроса микрофона при старте");
+    assert.match(hook, /NotAllowedError/, "отказ в доступе к микрофону не обрабатывается");
+    assert.match(hook, /onerror/, "нет обработчика onerror");
+  });
+
+  it("fallback: без Web Speech API — disabled-кнопка и пояснение", () => {
+    assert.match(hook, /webkitSpeechRecognition/, "нет fallback на webkitSpeechRecognition");
+    assert.match(hook, /supported/, "хук не сообщает о поддержке API");
+    assert.match(assistant, /disabled=\{!voice\.supported\}/, "кнопка микрофона не отключается без поддержки");
+    assert.match(assistant, /!voice\.supported/, "нет пояснения, почему голосовой ввод недоступен");
+  });
+
+  it("ошибка распознавания показывается toast'ом, индикатор — пульсирующая точка", () => {
+    assert.match(assistant, /toast\.error\(voice\.error\)/, "ошибка голосового ввода не показывается toast'ом");
+    assert.match(assistant, /voice\.listening &&/, "нет блока «слушаю»");
+    assert.match(assistant, /animate-pulse rounded-full bg-rose-500/, "нет пульсирующей красной точки");
+  });
+});
+
+describe("Filmstrip: камеры участников при доске и демонстрации экрана", () => {
+  const strip = readSource("src/components/meeting/Filmstrip.tsx");
+  const grid = readSource("src/components/meeting/VideoGrid.tsx");
+  const board = readSource("src/components/meeting/Whiteboard.tsx");
+  const room = readSource("src/components/meeting/MeetingRoom.tsx");
+
+  it("доска получает Filmstrip сверху, плитки кликабельны (Pin/Mute-индикаторы)", () => {
+    assert.match(room, /topStrip=\{<Filmstrip/, "доска не получает Filmstrip");
+    assert.match(strip, /MicOff/, "нет индикатора выключенного микрофона");
+    assert.match(strip, /MonitorUp/, "нет индикатора демонстрации экрана");
+    assert.match(strip, /onPin/, "плитки полосы не кликабельны (pin)");
+  });
+
+  it("тулбар доски остаётся под полосой видимым (shrink-0, полоса СВЕРХУ тулбара)", () => {
+    assert.match(board, /topStrip && \(/, "доска не рендерит верхнюю полосу");
+    const stripAt = board.indexOf("{topStrip && (");
+    const toolbarAt = board.indexOf('role="toolbar"');
+    assert.ok(stripAt > -1 && toolbarAt > -1, "не найдены полоса/тулбар в разметке доски");
+    assert.ok(stripAt < toolbarAt, "полоса должна быть СВЕРХУ тулбара");
+    assert.match(board.slice(stripAt, stripAt + 220), /shrink-0/, "полоса может сжаться и задвинуть тулбар");
+  });
+
+  it("треки не отключаются при переключении на доску", () => {
+    for (const [name, source] of [["Filmstrip", strip], ["VideoGrid", grid], ["MeetingRoom", room]] as const) {
+      assert.ok(!/\.enabled\s*=\s*false/.test(source), `${name}: трек выключается (enabled = false)`);
+    }
+    assert.match(grid, /muted=\{muted \?\? tile\.isLocal\}/, "сетка потеряла управление аудио");
+  });
+
+  it("двойного звука нет: при доске сетка silent, сцены экрана muted, полоса — источник аудио", () => {
+    assert.match(grid, /silent = false/, "нет silent-режима сетки");
+    assert.match(room, /silent=\{boardOpen\}/, "при доске сетка не переводится в silent");
+    assert.match(strip, /muted=\{tile\.isLocal\}/, "полоса не стала источником аудио (muted только свой)");
   });
 });

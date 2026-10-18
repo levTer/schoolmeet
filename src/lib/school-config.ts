@@ -55,11 +55,23 @@ export function demoAdminPasswordResetEnabled(): boolean {
   return (process.env.SCHOOLMEET_RESET_DEMO_ADMIN_PASSWORDS ?? "").trim().toLowerCase() === "true";
 }
 
-/** Schools provisioned by the application/Prisma seed. Codes are stored exactly as written. */
+/**
+ * Schools provisioned by the application/Prisma seed. Codes are stored exactly
+ * as written.
+ *
+ * `strictClassIsolation` — политика изоляции классов школы:
+ *  - `true`  (STRICT)   — ученик заходит только в уроки своего класса либо с
+ *    правильным кодом класса (`Class.code`);
+ *  - `false` (FLEXIBLE) — ученик может заходить на любые уроки своей школы.
+ *
+ * Значение синхронизируется в БД при старте (`provisionConfiguredSchools`),
+ * поэтому в проде оно может быть переопределено администратором школы
+ * (админ-панель), а provisioning вернёт «настроенное» значение.
+ */
 export const CONFIGURED_SCHOOLS = [
-  { name: "Лицей Сингулярити", code: "Sinlycem26" },
-  { name: "Fullhouse Teem  ", code: "Fulhouseteem26" },
-  { name: "Школа Душа", code: "Anna.Terentieva77" },
+  { name: "Лицей Сингулярити", code: "Sinlycem26", strictClassIsolation: true },
+  { name: "Fullhouse Teem  ", code: "Fulhouseteem26", strictClassIsolation: false },
+  { name: "Школа Душа", code: "Anna.Terentieva77", strictClassIsolation: false },
 ] as const;
 
 export const DEFAULT_SCHOOL = CONFIGURED_SCHOOLS[0];
