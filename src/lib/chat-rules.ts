@@ -5,12 +5,15 @@
  * или приватным (адресовано одному участнику). Модуль отвечает на два вопроса:
  *  1. кого считать получателем при отправке (`resolveRecipientId`);
  *  2. какие сообщения показывать конкретному зрителю (`canViewChatMessage`,
- *     `chatVisibilityWhere`).
+ *     `chatVisibilityWhere`);
+ *  3. кому можно закреплять сообщение в плашке чата (`canPinChatMessage`).
  *
  * Правила импортируют и сервер (сокеты, выборка истории), и клиент (лента чата),
  * чтобы приватное сообщение не «протекло» третьему участнику из-за расхождения
  * логики между слоями.
  */
+
+import type { Role } from "@/types";
 
 /** Значение селекта «Всем» — публичное сообщение без адресата. */
 export const CHAT_RECIPIENT_EVERYONE = "";
@@ -105,6 +108,18 @@ export function chatVisibilityWhere(
    */
   if (!viewerUserId) return [{ recipientId: NOTHING_MATCHES_RECIPIENT_ID }];
   return [{ recipientId: null }, { recipientId: viewerUserId }, { userId: viewerUserId }];
+}
+
+/**
+ * Кому можно закреплять (и откреплять) сообщение урока.
+ *
+ * Плашка закреплённого сообщения видна всей комнате, поэтому управляет ею
+ * только учитель или администратор: иначе любой участник мог бы «рассказать»
+ * комнате чужое приватное сообщение. Сервер проверяет то же правило
+ * (`src/server/realtime.ts`), клиент — чтобы не показывать лишние кнопки.
+ */
+export function canPinChatMessage(role: Role): boolean {
+  return role === "TEACHER" || role === "ADMIN";
 }
 
 /** Подпись приватного сообщения в ленте: «Приватно для …» / «Приватно от …». */

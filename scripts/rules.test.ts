@@ -136,6 +136,27 @@ describe("регистрация со школой и классом", () => {
     if (!missingClass.ok) assert.ok(missingClass.fields.classId);
   });
 
+  it("гибкая школа: класс ученику необязателен (classId = null)", () => {
+    // Строгая школа (по умолчанию) — по-прежнему требует класс.
+    const strict = validateRegisterInput({ ...valid, classId: "" });
+    assert.equal(strict.ok, false, "без опции класс обязан быть");
+
+    // Гибкая школа (strictClassIsolation === false) — класс не нужен.
+    const flexible = validateRegisterInput({ ...valid, classId: "" }, { classIdOptional: true });
+    assert.equal(flexible.ok, true, "в гибкой школе класс должен быть необязателен");
+    if (flexible.ok) assert.equal(flexible.data.classId, null, "пустой класс должен становиться null");
+
+    // Класс, если указан, сохраняется.
+    const withClass = validateRegisterInput(valid, { classIdOptional: true });
+    assert.equal(withClass.ok, true);
+    if (withClass.ok) assert.equal(withClass.data.classId, "class-5a");
+
+    // Учителю класс не нужен независимо от политики школы.
+    const teacher = validateRegisterInput({ ...valid, role: "TEACHER", classId: null }, { classIdOptional: true });
+    assert.equal(teacher.ok, true);
+    if (teacher.ok) assert.equal(teacher.data.classId, null);
+  });
+
   it("требует код школы и не принимает класс учителю", () => {
     const missingCode = validateRegisterInput({ ...valid, schoolCode: "" });
     assert.equal(missingCode.ok, false);

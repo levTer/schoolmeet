@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Lock, Send, ShieldAlert, UserRound, X } from "lucide-react";
+import { Lock, Pin, Send, ShieldAlert, UserRound, X } from "lucide-react";
 
 import { CHAT_RECIPIENT_EVERYONE, describePrivateMessage } from "@/lib/chat-rules";
 import { cn, getInitials } from "@/lib/utils";
@@ -34,13 +34,36 @@ interface ChatProps {
   onTyping?: () => void;
   typingNames?: string[];
   onClose: () => void;
+  /**
+   * Закреплённое сообщение урока (`null` — плашки нет). Текст приходит уже
+   * расшифрованным: сервер хранит и пересылает только шифротекст.
+   */
+  pinnedMessage?: ChatViewMessage | null;
+  /** Может ли текущий пользователь закреплять/откреплять (учитель, админ). */
+  canPinMessages?: boolean;
+  /** Закрепить сообщение (клик по кнопке на пузыре). */
+  onPinMessage?: (messageId: string) => void;
+  /** Открепить сообщение — крестик в плашке закреплённого сообщения. */
+  onUnpinMessage?: () => void;
 }
 
 /**
  * Боковая панель чата урока. Сообщение шифруется AES-256 до отправки и
  * расшифровывается здесь же; сервер хранит и пересылает только шифротекст.
  */
-export function Chat({ messages, selfUserId, recipients, onSend, onTyping, typingNames = [], onClose }: ChatProps) {
+export function Chat({
+  messages,
+  selfUserId,
+  recipients,
+  onSend,
+  onTyping,
+  typingNames = [],
+  onClose,
+  pinnedMessage = null,
+  canPinMessages = false,
+  onPinMessage,
+  onUnpinMessage,
+}: ChatProps) {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +133,33 @@ export function Chat({ messages, selfUserId, recipients, onSend, onTyping, typin
         </button>
       </header>
 
+      {/* Плашка закреплённого сообщения: крестик сбрасывает закрепление у всей комнаты */}
+      {pinnedMessage && (
+        <div className="mx-4 mt-3 flex items-start gap-2 rounded-2xl border border-brand-400/30 bg-brand-500/10 px-3 py-2">
+          <Pin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-200" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-brand-200/80">Закреплённое сообщение</p>
+            <p className="mt-0.5 line-clamp-2 break-words text-xs leading-relaxed text-white">
+              {pinnedMessage.text ?? "Не удалось расшифровать сообщение"}
+            </p>
+            <p className="mt-0.5 truncate text-[10px] text-slate-400">
+              {pinnedMessage.author.name} · {ROLE_LABELS[pinnedMessage.author.role]}
+            </p>
+          </div>
+          {canPinMessages && (
+            <button
+              type="button"
+              onClick={onUnpinMessage}
+              aria-label="Открепить сообщение"
+              title="Открепить сообщение"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/30 text-slate-300 transition hover:bg-black/60 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
           <p className="mt-10 text-center text-xs leading-relaxed text-slate-500">
@@ -118,7 +168,13 @@ export function Chat({ messages, selfUserId, recipients, onSend, onTyping, typin
         )}
 
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} mine={message.author.userId === selfUserId} />
+          <MessageBubble
+            key={message.id}
+            message={message}
+            mine={message.author.userId === selfUserId}
+            canPin={canPinMessages}
+            onPin={onPinMessage ? () => onPinMessage(message.id) : undefined}
+          />
         ))}
         {typingNames.length > 0 && (
           <p className="text-[11px] text-slate-500" aria-live="polite">
@@ -201,7 +257,17 @@ export function Chat({ messages, selfUserId, recipients, onSend, onTyping, typin
   );
 }
 
-function MessageBubble({ message, mine }: { message: ChatViewMessage; mine: boolean }) {
+function MessageBubble({
+  message,
+  mine,
+  canPin = false,
+  onPin,
+}: {
+  message: ChatViewMessage;
+  mine: boolean;
+  canPin?: boolean;
+  onPin?: () => void;
+}) {
   const time = new Date(message.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
   const recipient = message.recipient;
   const isPrivate = recipient !== null;
@@ -214,7 +280,7 @@ function MessageBubble({ message, mine }: { message: ChatViewMessage; mine: bool
     : null;
 
   return (
-    <div className={cn("flex gap-2.5", mine && "flex-row-reverse")}>
+    <div className={cn("group flex gap-2.5", mine && "flex-row-reverse")}>
       {!mine && (
         <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-semibold text-white">
           {getInitials(message.author.name) || "?"}
@@ -228,16 +294,27 @@ function MessageBubble({ message, mine }: { message: ChatViewMessage; mine: bool
           <span>{time}</span>
         </p>
 
-        {isPrivate && (
-          <p
-            className={cn(
-              "mb-1 flex items-center gap-1 text-[10px] font-medium text-indigo-300",
-              mine && "justify-end",
+        {(isPrivate || (canPin && onPin)) && (
+          <div className={cn("mb-1 flex items-center gap-1.5", mine && "justify-end")}>
+            {isPrivate && (
+              <p className="flex items-center gap-1 text-[10px] font-medium text-indigo-300">
+                <span aria-hidden>🔒</span>
+                {privateCaption}
+              </p>
             )}
-          >
-            <span aria-hidden>🔒</span>
-            {privateCaption}
-          </p>
+
+            {canPin && onPin && (
+              <button
+                type="button"
+                onClick={onPin}
+                aria-label={`Закрепить сообщение от ${message.author.name}`}
+                title="Закрепить сообщение"
+                className="inline-flex h-5 w-5 items-center justify-center rounded-md text-slate-500 opacity-0 transition hover:bg-white/10 hover:text-white focus:opacity-100 group-hover:opacity-100"
+              >
+                <Pin className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         )}
 
         {message.text === null ? (

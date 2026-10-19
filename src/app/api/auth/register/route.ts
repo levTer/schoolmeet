@@ -4,7 +4,13 @@ import { NextResponse } from "next/server";
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { normalizeInviteToken, resolveInviteRole, rolesForInvite, type InviteRole } from "@/lib/invite-rules";
-import { gradeFromClassName, findSchoolByCode, getSchoolInviteSummary, normalizeSchoolCode } from "@/lib/schools";
+import {
+  gradeFromClassName,
+  findSchoolByCode,
+  getSchoolInviteSummary,
+  getSchoolPolicy,
+  normalizeSchoolCode,
+} from "@/lib/schools";
 import { validateRegisterInput, type RegisterResponse } from "@/lib/validation";
 import type { Role } from "@/types";
 
@@ -89,8 +95,17 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
     : "STUDENT";
   raw.role = effectiveRole;
 
-  /* 4. Валидация --------------------------------------------------------- */
-  const validation = validateRegisterInput(raw, { allowedRoles });
+  /* 4. Политика школы и валидация ----------------------------------------- */
+  /*
+    Гибкая школа (`strictClassIsolation === false`) — ученик вправе
+    зарегистрироваться БЕЗ класса: `users.classId` в схеме опциональна, а
+    доступ к урокам такой школы не привязан к классу (`resolveMeetingAccess`).
+    Строгая школа по-прежнему требует класс.
+  */
+  const policy = await getSchoolPolicy(school.id);
+  const strictClassIsolation = policy?.strictClassIsolation ?? false;
+
+  const validation = validateRegisterInput(raw, { allowedRoles, classIdOptional: !strictClassIsolation });
   if (!validation.ok) {
     return NextResponse.json(
       { ok: false, error: validation.error, code: "VALIDATION_ERROR", fields: validation.fields },
@@ -117,7 +132,20 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
           select: { id: true, name: true },
         })
       : null;
-    if (role === "STUDENT" && !schoolClass) {
+    // Указанный класс обязан принадлежать выбранной школе.
+    if (role === "STUDENT" && classId && !schoolClass) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Выберите класс из выбранной школы",
+          code: "INVALID_CLASS",
+          fields: { classId: "Класс не относится к этой школе" },
+        },
+        { status: 422 },
+      );
+    }
+    // Без класса можно учиться только в гибкой школе (fail closed).
+    if (role === "STUDENT" && !schoolClass && strictClassIsolation) {
       return NextResponse.json(
         {
           ok: false,
@@ -130,7 +158,7 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
     }
 
     const grade = schoolClass ? gradeFromClassName(schoolClass.name) : null;
-    if (role === "STUDENT" && !grade) {
+    if (role === "STUDENT" && schoolClass && !grade) {
       return NextResponse.json(
         {
           ok: false,

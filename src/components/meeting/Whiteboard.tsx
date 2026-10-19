@@ -38,6 +38,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { useIsDesktopLayout } from "@/hooks/useMediaQuery";
 import {
   useWhiteboard,
   type FormulaRegionPayload,
@@ -250,10 +251,19 @@ export function Whiteboard({
 
   const visibleTools = useMemo(() => TOOLS.filter((tool) => !tool.moderatorOnly || isModerator), [isModerator]);
 
+  /**
+   * Десктоп (md+) — доска занимает левую колонку, камеры участников живут в
+   * правой колонке «плитка шоколада» (~240–300px) с вертикальной прокруткой.
+   * Мобильные — горизонтальная лента в обычном потоке над тулбаром.
+   */
+  const desktopLayout = useIsDesktopLayout();
+
   /* ----------------------------- Разметка -------------------------------- */
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-ink-950/97 backdrop-blur-xl">
+    <div className="fixed inset-0 z-50 flex flex-col bg-ink-950/97 backdrop-blur-xl md:flex-row">
+      {/* Левая колонка: шапка, тулбар и сама доска (на мобильных — вся ширина) */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* Шапка — всегда поверх холста (z-30), не сжимается */}
       <header className="relative z-30 flex shrink-0 items-center gap-3 border-b border-white/10 bg-ink-950/90 px-4 py-3">
         <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-brand-gradient shadow-glow">
@@ -311,12 +321,13 @@ export function Whiteboard({
       </header>
 
       {/*
-        Компактная полоска участников (Filmstrip) — СВЕРХУ, сразу над
-        тулбаром. Видна и кликабельна на любой ширине; тулбар под ней
-        остаётся видимым (shrink-0 у обоих элементов, холст сжимается).
+        Мобильные (< md): компактная полоска участников (Filmstrip) идёт в
+        ОБЫЧНОМ потоке документа сразу над тулбаром — не absolute и не поверх
+        сцены. Она не перекрывает тулбар доски (shrink-0 у обоих элементов,
+        холст сжимается), а на десктопе уступает место правой колонке.
       */}
-      {topStrip && (
-        <div className="relative z-30 shrink-0 border-b border-white/10 bg-ink-950/90">{topStrip}</div>
+      {topStrip && !desktopLayout && (
+        <div className="relative z-30 shrink-0 border-b border-white/10 bg-ink-950/90 md:hidden">{topStrip}</div>
       )}
 
       {/*
@@ -573,6 +584,22 @@ export function Whiteboard({
           {TOOLS.find((item) => item.tool === wb.tool)?.label ?? ""} · {wb.strokeWidth}px
         </p>
       </footer>
+      </div>
+
+      {/*
+        Десктоп (md+): правая колонка «плитка шоколада» — камеры участников
+        столбиком с вертикальной прокруткой (~240–300px), пока сцена занята
+        доской. Полоса живёт в обычном потоке (не поверх тулбара), треки при
+        этом не отключаются.
+      */}
+      {topStrip && desktopLayout && (
+        <aside
+          className="relative z-30 hidden min-h-0 w-60 shrink-0 flex-col overflow-hidden border-l border-white/10 bg-ink-950/90 md:flex lg:w-72"
+          aria-label="Камеры участников"
+        >
+          {topStrip}
+        </aside>
+      )}
     </div>
   );
 }

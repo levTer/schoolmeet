@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Hand, MicOff, MonitorUp, Pin, PinOff } from "lucide-react";
 
 import { cn, getInitials } from "@/lib/utils";
@@ -24,8 +24,11 @@ export interface GridTile {
 
 export interface VideoGridProps {
   tiles: GridTile[];
-  /** Закреплённый участник — он показывается поверх демонстрации экрана. */
-  pinnedId?: string | null;
+  /**
+   * Закреплённые участники (мульти-закрепление): их плитки рендерятся
+   * ПЕРВЫМИ и получают визуальную рамку. Пустой массив — ничего не закреплено.
+   */
+  pinnedIds?: readonly string[];
   /** Клик по кнопке «Закрепить спикера» на карточке участника. */
   onPin?: (tileId: string) => void;
   /**
@@ -52,19 +55,51 @@ export function gridLayoutClass(count: number): string {
 }
 
 /**
+ * Показывать ли видео в плитке участника.
+ *
+ * Свой поток при демонстрации экрана подменяется на поток КАМЕРЫ (см.
+ * `localCameraStream` в `MeetingRoom`), поэтому рекурсии «экран в
+ * собственном окошке» не бывает. Чужой участник при демонстрации экрана
+ * отправляет в видео-слот именно экран — в полоске/сетке камер это дубль
+ * сцены, поэтому показываем аватар, а не копию экрана.
+ */
+export function tileHasVideo(tile: GridTile): boolean {
+  if (!tile.stream || tile.stream.getVideoTracks().length === 0) return false;
+  if (!tile.videoOn) return false;
+  if (tile.isLocal) return true;
+  return !tile.screenOn;
+}
+
+/**
+ * Закреплённые участники идут первыми (в порядке закрепления), остальные —
+ * после них с сохранением исходного порядка.
+ */
+export function orderTilesByPinned(tiles: GridTile[], pinnedIds: readonly string[] = []): GridTile[] {
+  if (pinnedIds.length === 0) return tiles;
+
+  const pinnedOrder = new Map(pinnedIds.map((id, index) => [id, index]));
+  const pinned = tiles.filter((tile) => pinnedOrder.has(tile.id));
+  if (pinned.length === 0) return tiles;
+
+  pinned.sort((left, right) => (pinnedOrder.get(left.id) ?? 0) - (pinnedOrder.get(right.id) ?? 0));
+  const rest = tiles.filter((tile) => !pinnedOrder.has(tile.id));
+  return [...pinned, ...rest];
+}
+
+/**
  * Кто показывается в «картинке в углу» поверх демонстрации экрана:
- * 1) закреплённый учителем спикер, 2) участник, который сейчас говорит,
- * 3) учитель/администратор, 4) первый доступный.
+ * 1) закреплённые учителем спикеры (в порядке закрепления), 2) участник,
+ * который сейчас говорит, 3) учитель/администратор, 4) первый доступный.
  */
 export function pickSpotlightTile(
   tiles: GridTile[],
-  pinnedId: string | null | undefined,
-  screenTileId: string,
+  pinnedIds: readonly string[] = [],
+  screenTileId: string | null = null,
 ): GridTile | null {
   const candidates = tiles.filter((tile) => tile.id !== screenTileId);
   if (candidates.length === 0) return null;
 
-  if (pinnedId) {
+  for (const pinnedId of pinnedIds) {
     const pinned = candidates.find((tile) => tile.id === pinnedId);
     if (pinned) return pinned;
   }
@@ -78,14 +113,16 @@ export function pickSpotlightTile(
   return candidates[0];
 }
 
-export function VideoGrid({ tiles, pinnedId, onPin, silent = false }: VideoGridProps) {
+export function VideoGrid({ tiles, pinnedIds = [], onPin, silent = false }: VideoGridProps) {
   const count = tiles.length;
+  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
 
   /**
    * Режим демонстрации экрана: экран занимает всю сцену, а камеры участников
-   * (в том числе своя) — компактной полоской Filmstrip СВЕРХУ (рендерит
-   * страница урока). Сцена при этом muted: тот же поток (звук экрана)
-   * проигрывается плиткой владельца в Filmstrip — без этого было бы дважды.
+   * (в том числе своя) — компактной полоской Filmstrip СВЕРХУ на мобильных
+   * или в правой колонке «плитка шоколада» на десктопе (рендерит страница
+   * урока). Сцена при этом muted: тот же поток (звук экрана) проигрывается
+   * плиткой владельца в Filmstrip — без этого было бы дважды.
    */
   const screenTile = tiles.find((tile) => tile.screenOn) ?? null;
 
@@ -98,6 +135,8 @@ export function VideoGrid({ tiles, pinnedId, onPin, silent = false }: VideoGridP
     );
   }
 
+  const orderedTiles = orderTilesByPinned(tiles, pinnedIds);
+
   return (
     <div
       className={cn(
@@ -106,12 +145,12 @@ export function VideoGrid({ tiles, pinnedId, onPin, silent = false }: VideoGridP
         count > 9 && "content-start",
       )}
     >
-      {tiles.map((tile) => (
+      {orderedTiles.map((tile) => (
         <VideoTileView
           key={tile.id}
           tile={tile}
           single={count === 1}
-          pinned={pinnedId === tile.id}
+          pinned={pinnedSet.has(tile.id)}
           onPin={onPin}
           muted={silent ? true : undefined}
         />
@@ -140,7 +179,7 @@ interface VideoTileViewProps {
 
 function VideoTileView({ tile, stage, compact, single, pinned, onPin, muted }: VideoTileViewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const hasVideo = Boolean(tile.stream && tile.videoOn && tile.stream.getVideoTracks().length > 0);
+  const hasVideo = tileHasVideo(tile);
 
   // Элемент <video> рендерим всегда: именно он проигрывает аудио участника,
   // даже когда его камера выключена (тогда картинку прячем, а звук остаётся).
@@ -169,7 +208,10 @@ function VideoTileView({ tile, stage, compact, single, pinned, onPin, muted }: V
         playsInline
         muted={muted ?? tile.isLocal}
         className={cn(
-          "h-full w-full bg-black object-cover transition-opacity duration-300",
+          // Демонстрация экрана вписывается целиком (object-contain w-full
+          // h-full bg-black): края презентации не обрезаются, даже если
+          // соотношение сторон экрана другое. Камеры заполняют плитку.
+          stage ? "object-contain w-full h-full bg-black" : "object-cover h-full w-full",
           !hasVideo && "invisible",
           tile.isLocal && !tile.screenOn && "scale-x-[-1]",
         )}
@@ -225,6 +267,13 @@ function VideoTileView({ tile, stage, compact, single, pinned, onPin, muted }: V
           {tile.name}
           {tile.isLocal && <span className="ml-1.5 text-xs text-slate-300">(вы)</span>}
         </span>
+
+        {pinned && !stage && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/25 px-2 py-0.5 text-[11px] font-medium text-brand-100">
+            <Pin className="h-3 w-3" />
+            Закреплён
+          </span>
+        )}
 
         {tile.screenOn && (
           <span className="inline-flex items-center gap-1 rounded-full bg-accent-500/20 px-2 py-0.5 text-[11px] font-medium text-accent-300">

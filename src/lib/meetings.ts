@@ -233,6 +233,31 @@ export async function loadRecentMessages(
     .filter((envelope) => canViewChatEnvelope(envelope, viewerUserId));
 }
 
+/**
+ * Конверт сообщения по id — только в рамках урока.
+ *
+ * Нужен закреплению сообщений: сервер отдаёт плашке чата ровно то сообщение,
+ * которое уже было доставлено участникам, и только если закрепивший имеет
+ * право его видеть (приватное сообщение не «утекает» в плашку комнаты).
+ */
+export async function loadChatEnvelopeById(
+  meetingId: string,
+  messageId: string,
+): Promise<ChatEnvelope | null> {
+  const message = await prisma.chatMessage.findFirst({
+    where: { id: messageId, meetingId },
+    select: {
+      id: true,
+      content: true,
+      createdAt: true,
+      recipientId: true,
+      user: { select: { id: true, name: true, role: true } },
+      recipient: { select: { id: true, name: true } },
+    },
+  });
+  return message ? toEnvelope(message) : null;
+}
+
 interface ChatMessageRow {
   id: string;
   content: string;

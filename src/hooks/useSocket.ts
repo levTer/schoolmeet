@@ -65,6 +65,7 @@ export function useSocket(options: UseSocketOptions = {}) {
   const [selfId, setSelfId] = useState<string | null>(null);
   const [participants, setParticipants] = useState<RoomParticipant[]>([]);
   const [messages, setMessages] = useState<ChatEnvelope[]>([]);
+  const [pinnedMessage, setPinnedMessage] = useState<ChatEnvelope | null>(null);
   const [typingUsers, setTypingUsers] = useState<Array<{ socketId: string; name: string }>>([]);
 
   const socketRef = useRef<ClientSocket | null>(null);
@@ -98,6 +99,7 @@ export function useSocket(options: UseSocketOptions = {}) {
     setSelfId(result.self.socketId);
     setParticipants(result.participants);
     setMessages(result.history.slice(-MAX_CHAT_HISTORY));
+    setPinnedMessage(result.pinned ?? null);
     setTypingUsers([]);
     typingTimersRef.current.forEach(clearTimeout);
     typingTimersRef.current.clear();
@@ -161,6 +163,7 @@ export function useSocket(options: UseSocketOptions = {}) {
       roomRef.current = null;
       setParticipants([]);
       setMessages([]);
+      setPinnedMessage(null);
       setStatus("disconnected");
       optionsRef.current.onRoomClosed?.(payload);
     });
@@ -171,6 +174,7 @@ export function useSocket(options: UseSocketOptions = {}) {
       roomRef.current = null;
       setParticipants([]);
       setMessages([]);
+      setPinnedMessage(null);
       setStatus("error");
       setError(payload.message);
       optionsRef.current.onSessionRevoked?.(payload);
@@ -209,6 +213,12 @@ export function useSocket(options: UseSocketOptions = {}) {
 
     socket.on("chat-message", (message) => {
       setMessages((prev) => [...prev, message].slice(-MAX_CHAT_HISTORY));
+    });
+
+    // Учитель закрепил сообщение или нажал крестик (unpin) — плашка чата
+    // обновляется у всей комнаты, `pinned === null` означает открепление.
+    socket.on("pinned-message", ({ pinned }) => {
+      setPinnedMessage(pinned);
     });
 
     socket.on("typing", ({ socketId, name }) => {
@@ -307,6 +317,7 @@ export function useSocket(options: UseSocketOptions = {}) {
     roomRef.current = null;
     setParticipants([]);
     setMessages([]);
+    setPinnedMessage(null);
     setTypingUsers([]);
     typingTimersRef.current.forEach(clearTimeout);
     typingTimersRef.current.clear();
@@ -360,6 +371,26 @@ export function useSocket(options: UseSocketOptions = {}) {
       }
       return new Promise((resolve) => {
         socket.emit("chat-message", { ciphertext, recipientId }, (ack) => resolve(ack));
+      });
+    },
+    [],
+  );
+
+  /**
+   * Закрепить сообщение урока или открепить его (`messageId = null`).
+   *
+   * Закреплять может только учитель/администратор — правило проверяет и
+   * сервер (`canPinChatMessage`), поэтому ответом приходит либо новое
+   * состояние плашки, либо отказ.
+   */
+  const pinMessage = useCallback(
+    (messageId: string | null): Promise<Ack<{ pinned: ChatEnvelope | null }>> => {
+      const socket = socketRef.current;
+      if (!socket?.connected) {
+        return Promise.resolve({ ok: false, code: "OFFLINE", error: "Нет соединения с сервером" });
+      }
+      return new Promise((resolve) => {
+        socket.emit("pin-message", { messageId }, (ack) => resolve(ack));
       });
     },
     [],
@@ -470,6 +501,8 @@ export function useSocket(options: UseSocketOptions = {}) {
     sendMediaState,
     sendTyping,
     sendChat,
+    pinMessage,
+    pinnedMessage,
     sendWhiteboardAdd,
     sendWhiteboardModify,
     sendWhiteboardDelete,

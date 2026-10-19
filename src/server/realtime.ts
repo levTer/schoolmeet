@@ -17,6 +17,7 @@ import {
   buildSchoolRoomId,
   isValidRoomCode,
   type Ack,
+  type ChatEnvelope,
   type ClientToServerEvents,
   type JoinRoomResult,
   type MediaState,
@@ -31,9 +32,15 @@ import {
   type WhiteboardObjectPayload,
   type WhiteboardState,
 } from "@/lib/realtime";
-import { resolveRecipientId } from "@/lib/chat-rules";
+import { canPinChatMessage, canViewChatEnvelope, resolveRecipientId } from "@/lib/chat-rules";
 import { closeAttendance, openAttendance } from "@/lib/attendance";
-import { checkMeetingAccess, findMeetingByCode, loadRecentMessages, saveChatMessage } from "@/lib/meetings";
+import {
+  checkMeetingAccess,
+  findMeetingByCode,
+  loadChatEnvelopeById,
+  loadRecentMessages,
+  saveChatMessage,
+} from "@/lib/meetings";
 import { ensureUserSchoolMembership } from "@/lib/schools";
 import { prisma } from "@/lib/prisma";
 import { consumeRateLimitForIp, getClientIpFromNodeHeaders } from "@/lib/rate-limit";
@@ -257,6 +264,19 @@ interface WhiteboardRoomState {
 }
 
 const whiteboardRooms = new Map<string, WhiteboardRoomState>();
+
+/**
+ * Закреплённое сообщение урока: конверт (шифротекст + автор) или `null`,
+ * если сообщение открепили. Живёт в памяти процесса, как и состояние доски:
+ * плашка закреплённого сообщения нужна всем участникам комнаты, а запоздавшим
+ * она приходит в `join-room`.
+ */
+const pinnedMessages = new Map<string, ChatEnvelope | null>();
+
+/** Закреплённое сообщение комнаты (`null` — ничего не закреплено). */
+function getPinnedMessage(roomId: string): ChatEnvelope | null {
+  return pinnedMessages.get(roomId) ?? null;
+}
 
 function getWhiteboardState(roomId: string): WhiteboardRoomState {
   let state = whiteboardRooms.get(roomId);
@@ -507,6 +527,7 @@ function removeRoomMember(roomId: string): void {
   if (next <= 0) {
     roomMemberCounts.delete(roomId);
     whiteboardRooms.delete(roomId);
+    pinnedMessages.delete(roomId);
   } else {
     roomMemberCounts.set(roomId, next);
   }
@@ -694,7 +715,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
 
         reply<JoinRoomResult>(ack, {
           ok: true,
-          data: { self: toParticipant(socket), participants, history },
+          data: { self: toParticipant(socket), participants, history, pinned: getPinnedMessage(roomId) },
         });
       } catch (error) {
         console.error("[realtime] join-room:", error);
@@ -801,6 +822,56 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           return;
         }
         reply(ack, { ok: false, code: "SAVE_FAILED", error: "Не удалось отправить сообщение" });
+      }
+    });
+
+    /*
+      Закрепление сообщения в плашке чата.
+      Плашку видит вся комната, поэтому управляет ею только учитель или
+      администратор (`canPinChatMessage`), а сообщение обязательно должно
+      быть видимым закрепившему (`canViewChatEnvelope`) — иначе приватная
+      переписка двух учеников оказалась бы в общей плашке.
+      `messageId = null` — открепить: состояние сбрасывается у всех.
+    */
+    socket.on("pin-message", async (payload, ack) => {
+      const { roomId, meetingId } = socket.data;
+      if (!roomId || !meetingId) {
+        reply(ack, { ok: false, code: "NOT_IN_ROOM", error: "Сначала войдите в урок" });
+        return;
+      }
+      if (!canPinChatMessage(socket.data.user.role)) {
+        reply(ack, { ok: false, code: "FORBIDDEN", error: "Закреплять сообщения может только учитель" });
+        return;
+      }
+
+      const messageId = payload?.messageId ?? null;
+
+      // Открепление: сбрасываем плашку у всей комнаты.
+      if (messageId === null) {
+        pinnedMessages.set(roomId, null);
+        io.in(roomId).emit("pinned-message", { pinned: null });
+        reply(ack, { ok: true, data: { pinned: null } });
+        return;
+      }
+
+      if (typeof messageId !== "string" || messageId.length === 0 || messageId.length > 64) {
+        reply(ack, { ok: false, code: "BAD_MESSAGE", error: "Некорректное сообщение" });
+        return;
+      }
+
+      try {
+        const envelope = await loadChatEnvelopeById(meetingId, messageId);
+        if (!envelope || !canViewChatEnvelope(envelope, socket.data.user.id)) {
+          reply(ack, { ok: false, code: "NOT_FOUND", error: "Сообщение не найдено" });
+          return;
+        }
+
+        pinnedMessages.set(roomId, envelope);
+        io.in(roomId).emit("pinned-message", { pinned: envelope });
+        reply(ack, { ok: true, data: { pinned: envelope } });
+      } catch (error) {
+        console.error("[realtime] pin-message:", error);
+        reply(ack, { ok: false, code: "SAVE_FAILED", error: "Не удалось закрепить сообщение" });
       }
     });
 

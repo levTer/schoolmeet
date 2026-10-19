@@ -16,7 +16,7 @@ import { Controls } from "@/components/meeting/Controls";
 import { AIWidget } from "@/components/meeting/AIWidget";
 import { Filmstrip } from "@/components/meeting/Filmstrip";
 import { PreJoinScreen } from "@/components/meeting/PreJoinScreen";
-import { VideoGrid, type GridTile } from "@/components/meeting/VideoGrid";
+import { VideoGrid, pickSpotlightTile, type GridTile } from "@/components/meeting/VideoGrid";
 import { Whiteboard, WHITEBOARD_TOP_RESERVED_PX, type WhiteboardAiBridge } from "@/components/meeting/Whiteboard";
 import { FormAlert } from "@/components/ui/form-alert";
 import { Logo } from "@/components/landing/logo";
@@ -24,9 +24,11 @@ import { useSocket, type SocketStatus } from "@/hooks/useSocket";
 import { useSpeakingIndicator } from "@/hooks/useSpeakingIndicator";
 import { formatDuration, useElapsedSeconds } from "@/hooks/useElapsed";
 import { useLessonRecorder, lessonRecordingFileName } from "@/hooks/useLessonRecorder";
+import { useIsDesktopLayout } from "@/hooks/useMediaQuery";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import type { WhiteboardSync } from "@/hooks/useWhiteboard";
 import type { DrawingInstruction } from "@/lib/ai-provider";
+import { canPinChatMessage } from "@/lib/chat-rules";
 import { decryptMessage, encryptMessage } from "@/lib/crypto";
 import { drawCommand, getCanvasSnapshot } from "@/lib/whiteboard-bridge";
 import type { JoinRoomResult } from "@/lib/realtime";
@@ -76,8 +78,11 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
   const [boardOpen, setBoardOpen] = useState(false);
   const [seenCount, setSeenCount] = useState(0);
   const [chatError, setChatError] = useState<string | null>(null);
-  /** Закреплённый участник — он показывается поверх демонстрации экрана. */
-  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  /**
+   * Закреплённые участники (мульти-закрепление): можно закрепить 2, 3 и более
+   * человек сразу — их плитки идут первыми в сетке и в полоске участников.
+   */
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   /** Глобальный ИИ-виджет (плавающая кнопка в углу экрана). */
   const [aiOpen, setAiOpen] = useState(false);
   /** Комната закрыта администратором или доступ отозван — показываем экран-заглушку. */
@@ -86,6 +91,12 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
     message: string;
     tone: "danger" | "info";
   } | null>(null);
+  /**
+   * Десктопная раскладка (`md` и выше): сцена + правая колонка «плитка
+   * шоколада» с камерами. Ниже `md` лента участников становится
+   * горизонтальной полоской в обычном потоке документа.
+   */
+  const desktopLayout = useIsDesktopLayout();
 
   // WebRTC-слой создаётся после сокета, поэтому колбэки сокета читают его через ref.
   const dropPeerRef = useRef<(socketId: string) => void>(() => undefined);
@@ -121,15 +132,20 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
     return streams;
   }, [rtc.localStream, rtc.peers]);
 
-  const recorder = useLessonRecorder({
-    screenTrack: rtc.screenTrack,
-    cameraTrack: rtc.cameraTrack,
-    audioStreams: recordingAudioStreams,
-  });
-
-  const recordingSeconds = useElapsedSeconds(recorder.startedAt);
-  /** Имя файла текущей записи — показываем в подтверждении. */
-  const recordingNameRef = useRef(lessonRecordingFileName());
+  /**
+   * Поток СВОЕЙ камеры (лицо), отдельно от демонстрации экрана.
+   *
+   * Раньше окошко «вы» и полоска участников показывали `localStream`, а он при
+   * демонстрации экрана содержит ЭКРАН — получалась рекурсия: свой же экран
+   * в мини-плитке. Теперь в плитке участников и в «картинке в углу» записи
+   * строго камера (плюс дорожка микрофона для индикатора речи).
+   */
+  const localCameraStream = useMemo(() => {
+    const audio = rtc.localStream?.getAudioTracks()[0] ?? null;
+    const video = rtc.cameraTrack;
+    const tracks = [video, audio].filter((track): track is MediaStreamTrack => Boolean(track));
+    return tracks.length > 0 ? new MediaStream(tracks) : null;
+  }, [rtc.localStream, rtc.cameraTrack]);
 
   /* ------------------------- Глобальный ИИ и доска ------------------------- */
 
@@ -247,6 +263,101 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
     router.push("/dashboard");
   };
 
+  /**
+   * Закрепить/открепить участника. Закрепленных может быть несколько:
+   * повторный клик по закрепленной плитке убирает её из списка.
+   */
+  const togglePin = (tileId: string) => {
+    setPinnedIds((current) =>
+      current.includes(tileId) ? current.filter((id) => id !== tileId) : [...current, tileId],
+    );
+  };
+
+  /* --------------------------------- Видео ---------------------------------- */
+
+  const speakingStreams = useMemo(
+    () => ({
+      local: rtc.localStream,
+      ...Object.fromEntries(rtc.peers.map((peer) => [peer.socketId, peer.stream])),
+    }),
+    [rtc.localStream, rtc.peers],
+  );
+  const speaking = useSpeakingIndicator(speakingStreams);
+
+  const tiles: GridTile[] = useMemo(() => {
+    const local: GridTile = {
+      id: "local",
+      name: self.name,
+      role: self.role,
+      // При демонстрации экрана в своей плитке показываем КАМЕРУ (лицо), а не
+      // дубль экрана: `localStream` в этот момент содержит экран.
+      stream: rtc.media.screen ? localCameraStream : rtc.localStream,
+      isLocal: true,
+      videoOn: rtc.media.video,
+      audioOn: rtc.media.audio,
+      screenOn: rtc.media.screen,
+      handRaised,
+      speaking: speaking.has("local"),
+    };
+
+    const remote: GridTile[] = socket.participants
+      .filter((participant) => participant.socketId !== socket.selfId)
+      .map((participant) => {
+        const peer = rtc.peers.find((item) => item.socketId === participant.socketId);
+        return {
+          id: participant.socketId,
+          name: participant.name,
+          role: participant.role,
+          stream: peer?.stream ?? null,
+          videoOn: participant.media.video || participant.media.screen,
+          audioOn: participant.media.audio,
+          screenOn: participant.media.screen,
+          handRaised: participant.handRaised,
+          speaking: speaking.has(participant.socketId),
+          connection: peer?.state ?? "connecting",
+        };
+      });
+
+    return [local, ...remote];
+  }, [
+    self,
+    rtc.localStream,
+    rtc.media,
+    rtc.peers,
+    localCameraStream,
+    handRaised,
+    speaking,
+    socket.participants,
+    socket.selfId,
+  ]);
+
+  /**
+   * Камера текущего спикера для записи: закреплённый участник → говорящий →
+   * учитель → первый доступный. Свой экран в запись не попадает дважды.
+   */
+  const recordingSpeakerTrack = useMemo(() => {
+    const screenTileId = tiles.find((tile) => tile.screenOn)?.id ?? null;
+    const spotlight = pickSpotlightTile(tiles, pinnedIds, screenTileId);
+    if (!spotlight) return null;
+    // Свой поток: строго камера, даже при демонстрации экрана.
+    if (spotlight.isLocal) return rtc.cameraTrack;
+    // Чужой участник, который сам делится экраном, отправляет в видео-слот
+    // экран — это дубль сцены, а не «картинка в углу». Берём следующего.
+    if (spotlight.screenOn) return null;
+    return spotlight.stream?.getVideoTracks()[0] ?? null;
+  }, [tiles, pinnedIds, rtc.cameraTrack]);
+
+  const recorder = useLessonRecorder({
+    screenTrack: rtc.screenTrack,
+    cameraTrack: rtc.cameraTrack,
+    speakerCameraTrack: recordingSpeakerTrack,
+    audioStreams: recordingAudioStreams,
+  });
+
+  const recordingSeconds = useElapsedSeconds(recorder.startedAt);
+  /** Имя файла текущей записи — показываем в подтверждении. */
+  const recordingNameRef = useRef(lessonRecordingFileName());
+
   /* --------------------------------- Запись --------------------------------- */
 
   const wasRecording = useRef(false);
@@ -277,57 +388,6 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
     recordingNameRef.current = lessonRecordingFileName();
     void recorder.start();
   };
-
-  /** Закрепить/открепить спикера на карточке участника. */
-  const togglePin = (tileId: string) => {
-    setPinnedId((current) => (current === tileId ? null : tileId));
-  };
-
-  /* --------------------------------- Видео ---------------------------------- */
-
-  const speakingStreams = useMemo(
-    () => ({
-      local: rtc.localStream,
-      ...Object.fromEntries(rtc.peers.map((peer) => [peer.socketId, peer.stream])),
-    }),
-    [rtc.localStream, rtc.peers],
-  );
-  const speaking = useSpeakingIndicator(speakingStreams);
-
-  const tiles: GridTile[] = useMemo(() => {
-    const local: GridTile = {
-      id: "local",
-      name: self.name,
-      role: self.role,
-      stream: rtc.localStream,
-      isLocal: true,
-      videoOn: rtc.media.video || rtc.media.screen,
-      audioOn: rtc.media.audio,
-      screenOn: rtc.media.screen,
-      handRaised,
-      speaking: speaking.has("local"),
-    };
-
-    const remote: GridTile[] = socket.participants
-      .filter((participant) => participant.socketId !== socket.selfId)
-      .map((participant) => {
-        const peer = rtc.peers.find((item) => item.socketId === participant.socketId);
-        return {
-          id: participant.socketId,
-          name: participant.name,
-          role: participant.role,
-          stream: peer?.stream ?? null,
-          videoOn: participant.media.video || participant.media.screen,
-          audioOn: participant.media.audio,
-          screenOn: participant.media.screen,
-          handRaised: participant.handRaised,
-          speaking: speaking.has(participant.socketId),
-          connection: peer?.state ?? "connecting",
-        };
-      });
-
-    return [local, ...remote];
-  }, [self, rtc.localStream, rtc.media, rtc.peers, handRaised, speaking, socket.participants, socket.selfId]);
 
   /* ---------------------------------- Чат ----------------------------------- */
 
@@ -360,6 +420,35 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
   }, [chatOpen, messages.length]);
 
   const unreadCount = chatOpen ? 0 : Math.max(0, messages.length - seenCount);
+
+  /**
+   * Закреплённое сообщение урока: сервер присылает конверт, текст
+   * расшифровываем здесь же (AES-256). `null` — плашки нет.
+   */
+  const pinnedMessage: ChatViewMessage | null = useMemo(() => {
+    const pinned = socket.pinnedMessage;
+    if (!pinned) return null;
+    return {
+      id: pinned.id,
+      createdAt: pinned.createdAt,
+      author: pinned.author,
+      recipient: pinned.recipient ? { userId: pinned.recipient.userId, name: pinned.recipient.name } : null,
+      text: tryDecrypt(pinned.ciphertext, encryptionKey),
+    };
+  }, [socket.pinnedMessage, encryptionKey]);
+
+  /** Закреплять и откреплять сообщения может только учитель/администратор. */
+  const canPinMessages = canPinChatMessage(self.role);
+
+  /** Закрепить сообщение (кнопка на пузыре) — сервер проверяет право. */
+  const handlePinMessage = (messageId: string) => {
+    void socket.pinMessage(messageId);
+  };
+
+  /** Открепить: крестик в плашке сбрасывает закрепление у всей комнаты. */
+  const handleUnpinMessage = () => {
+    void socket.pinMessage(null);
+  };
 
   /** `recipientId = null` — сообщение всей комнате, иначе приватное адресату. */
   const sendMessage = async (text: string, recipientId: string | null): Promise<boolean> => {
@@ -513,44 +602,68 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
         ) : (
           <>
             {/*
-              Filmstrip при демонстрации экрана (доска закрыта): компактная
-              полоска СВЕРХУ — своё видео + участники; сцена с экраном ниже.
-              При открытой доске полоска живёт внутри оверлея доски (topStrip)
-              и эту ветку не дублирует.
+              Мобильные (< md): при демонстрации экрана лента участников идёт
+              горизонтальной полоской в ОБЫЧНОМ потоке документа — не absolute
+              и не поверх сцены. Поэтому она не перекрывает ни тулбар доски,
+              ни нижнюю панель управления, и на смартфоне не наслаиваются 3+
+              камер друг на друга.
             */}
-            {screenShareActive && !boardOpen && (
-              <Filmstrip tiles={tiles} pinnedId={pinnedId} onPin={togglePin} />
+            {screenShareActive && !boardOpen && !desktopLayout && (
+              <div className="shrink-0 px-3 pt-3">
+                <Filmstrip tiles={tiles} pinnedIds={pinnedIds} onPin={togglePin} />
+              </div>
             )}
 
-            <div className="flex min-h-0 flex-1 gap-3 p-3 pb-0">
-              <div className="glass relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-3xl">
-                {rtc.mediaError && (
-                  <div className="absolute inset-x-4 top-4 z-10">
-                    <FormAlert variant="error">{rtc.mediaError}</FormAlert>
+            <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 pb-0">
+              <div className="flex min-h-0 flex-1 gap-3">
+                <div className="glass relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-3xl">
+                  {rtc.mediaError && (
+                    <div className="absolute inset-x-4 top-4 z-10">
+                      <FormAlert variant="error">{rtc.mediaError}</FormAlert>
+                    </div>
+                  )}
+                  {/*
+                    Когда открыта доска, сетка «молчит» (silent): звук участников
+                    в этот момент играет из Filmstrip внутри оверлея доски. ТРЕКИ
+                    НЕ отключаем — видео и сигналы продолжают идти, вход/выход
+                    участников не пересоздаётся.
+                  */}
+                  <VideoGrid tiles={tiles} pinnedIds={pinnedIds} onPin={togglePin} silent={boardOpen} />
+                </div>
+
+                {/*
+                  Десктоп (md+): правая колонка «плитка шоколада» — камеры
+                  участников столбиком с вертикальной прокруткой, когда сцена
+                  занята демонстрацией экрана. При открытой доске эту колонку
+                  рендерит сам оверлей доски, поэтому здесь только экран.
+                */}
+                {screenShareActive && !boardOpen && desktopLayout && (
+                  <aside
+                    className="hidden min-h-0 w-60 shrink-0 flex-col overflow-hidden rounded-3xl border border-white/10 bg-ink-950/60 md:flex lg:w-72"
+                    aria-label="Камеры участников"
+                  >
+                    <Filmstrip tiles={tiles} pinnedIds={pinnedIds} onPin={togglePin} layout="vertical" />
+                  </aside>
+                )}
+
+                {chatOpen && (
+                  <div className="animate-fade-in hidden min-h-0 md:flex">
+                    <Chat
+                      messages={messages}
+                      selfUserId={self.id}
+                      recipients={chatRecipients}
+                      onSend={sendMessage}
+                      onTyping={sendTyping}
+                      typingNames={socket.typingUsers.map((user) => user.name)}
+                      onClose={() => setChatOpen(false)}
+                      pinnedMessage={pinnedMessage}
+                      canPinMessages={canPinMessages}
+                      onPinMessage={handlePinMessage}
+                      onUnpinMessage={handleUnpinMessage}
+                    />
                   </div>
                 )}
-                {/*
-                  Когда открыта доска, сетка «молчит» (silent): звук участников
-                  в этот момент играет из Filmstrip внутри оверлея доски. ТРЕКИ
-                  НЕ отключаем — видео и сигналы продолжают идти, вход/выход
-                  участников не пересоздаётся.
-                */}
-                <VideoGrid tiles={tiles} pinnedId={pinnedId} onPin={togglePin} silent={boardOpen} />
               </div>
-
-              {chatOpen && (
-                <div className="animate-fade-in hidden min-h-0 md:flex">
-                  <Chat
-                    messages={messages}
-                    selfUserId={self.id}
-                    recipients={chatRecipients}
-                    onSend={sendMessage}
-                    onTyping={sendTyping}
-                    typingNames={socket.typingUsers.map((user) => user.name)}
-                    onClose={() => setChatOpen(false)}
-                  />
-                </div>
-              )}
             </div>
 
             {/* Мобильный чат — поверх сетки */}
@@ -563,6 +676,10 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
                   onSend={sendMessage}
                   onTyping={sendTyping}
                   onClose={() => setChatOpen(false)}
+                  pinnedMessage={pinnedMessage}
+                  canPinMessages={canPinMessages}
+                  onPinMessage={handlePinMessage}
+                  onUnpinMessage={handleUnpinMessage}
                 />
               </div>
             )}
@@ -614,7 +731,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
           onAiBridge={handleAiBridge}
           // Filmstrip СВЕРХУ над тулбаром доски: камеры участников остаются
           // видимыми, треки не отключаются, тулбар под полоской кликабелен.
-          topStrip={<Filmstrip tiles={tiles} pinnedId={pinnedId} onPin={togglePin} />}
+          topStrip={<Filmstrip tiles={tiles} pinnedIds={pinnedIds} onPin={togglePin} />}
           onClose={() => setBoardOpen(false)}
         />
       )}

@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_CLASS_NAMES } from "@/lib/school-config";
+import { DEFAULT_CLASS_NAMES, configuredStrictClassIsolation } from "@/lib/school-config";
 import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
 import {
   hasInviteTokenChanges,
@@ -27,7 +27,14 @@ const ALLOWED_SCHOOLS = [
 
 type AllowedSchool = (typeof ALLOWED_SCHOOLS)[number];
 
-const SCHOOL_SELECT = { id: true, name: true, code: true, teacherInviteToken: true, adminInviteToken: true } as const;
+const SCHOOL_SELECT = {
+  id: true,
+  name: true,
+  code: true,
+  strictClassIsolation: true,
+  teacherInviteToken: true,
+  adminInviteToken: true,
+} as const;
 
 function serverError(): NextResponse {
   return NextResponse.json({ valid: false, error: "Server Error" }, { status: 500 });
@@ -76,7 +83,12 @@ async function findOrCreateSchool(code: string) {
       school = await prisma.school.create({
         // Токены приглашений выпускает приложение: колонки nullable и
         // DB-level default у них нет (см. `@/lib/invite-tokens`).
-        data: { name: allowed.name, code: allowed.code, ...inviteTokensForNewSchool(allowed.code) },
+        data: {
+          name: allowed.name,
+          code: allowed.code,
+          strictClassIsolation: configuredStrictClassIsolation(allowed.code),
+          ...inviteTokensForNewSchool(allowed.code),
+        },
         select: SCHOOL_SELECT,
       });
     } catch (error) {
@@ -150,8 +162,15 @@ async function checkSchool(request: Request): Promise<NextResponse> {
 
   const classes = await listClassesForSchool(school.id);
   // Наружу отдаём ТОЛЬКО публичные поля школы: invite-токены (оба) остаются
-  // на сервере и никогда не попадают в JSON ответа.
-  const schoolView = { id: school.id, name: school.name, code: school.code };
+  // на сервере и никогда не попадают в JSON ответа. `strictClassIsolation` —
+  // публичная политика школы: в гибкой школе поле класса при регистрации
+  // необязательно, в строгой — обязательно.
+  const schoolView = {
+    id: school.id,
+    name: school.name,
+    code: school.code,
+    strictClassIsolation: school.strictClassIsolation,
+  };
   // Уровень секретной ссылки: null — публичная регистрация (только STUDENT).
   const inviteRole: InviteRole | null = resolveInviteRole(school, normalizeInviteToken(rawInvite));
 

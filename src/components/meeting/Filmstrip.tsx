@@ -1,17 +1,22 @@
 "use client";
 
 /**
- * Компактная верхняя полоска участников (Filmstrip) для режима доски и
+ * Компактная полоска участников (Filmstrip) для режима доски и
  * демонстрации экрана.
  *
  * Когда открыта интерактивная доска ИЛИ кто-то делится экраном, основная
- * сцена занята холстом/экраном, и сетка видео становится вторичной. Вместо
- * полной сетки показываем узкую горизонтальную полосу (≈96–120px) сверху:
- * ваше видео + участники, каждая плитка кликабельна (закрепить спикера) и
- * показывает состояние микрофона/камеры/экрana.
+ * сцена занята холстом/экраном, и сетка видео становится вторичной:
+ *  - десктоп (`md` и выше) — правая колонка ~240–300px с вертикальной
+ *    прокруткой («плитка шоколада»): камеры участников столбиком;
+ *  - мобильные — горизонтальная лента в ОБЫЧНОМ потоке документа
+ *    (`flex-row overflow-x-auto`), а не `absolute` поверх сцены: она не
+ *    перекрывает ни тулбар доски, ни нижнюю панель управления.
+ *
+ * Каждая плитка кликабельна (закрепить/открепить участника — можно несколько
+ * сразу) и показывает состояние микрофона/камеры/экрана.
  *
  * ВАЖНО: полоска НЕ отключает треки — она лишь дополнительный слой поверх
- * тех же потоков (мuted-видео, чтобы не было двойного звука; основной звук
+ * тех же потоков (muted-видео, чтобы не было двойного звука; основной звук
  * идёт из полной сетки, которая остаётся смонтированной).
  */
 
@@ -19,39 +24,58 @@ import { useEffect, useRef } from "react";
 import { Hand, MicOff, MonitorUp, Pin, PinOff } from "lucide-react";
 
 import { cn, getInitials } from "@/lib/utils";
-import type { GridTile } from "@/components/meeting/VideoGrid";
+import { orderTilesByPinned, tileHasVideo, type GridTile } from "@/components/meeting/VideoGrid";
 
 export interface FilmstripProps {
   tiles: GridTile[];
-  /** Закреплённый участник — его плитка подсвечена и расширена. */
-  pinnedId?: string | null;
-  /** Клик по плитке / кнопке — закрепить (открепить) спикера. */
+  /** Закреплённые участники — их плитки подсвечены, расширены и идут первыми. */
+  pinnedIds?: readonly string[];
+  /** Клик по плитке / кнопке — закрепить (открепить) участника. */
   onPin?: (tileId: string) => void;
   /** Высота полосы. По умолчанию 96px (md: 112px). */
   className?: string;
+  /**
+   * Раскладка полосы:
+   *  - `horizontal` — лента слева-направо с горизонтальной прокруткой (мобильные);
+   *  - `vertical`   — «плитка шоколада» столбиком с вертикальной прокруткой
+   *                   (правая колонка на десктопе).
+   */
+  layout?: "horizontal" | "vertical";
 }
 
+/** Плитка горизонтальной ленты: фиксированная высота, ширина 128px (md: 160px). */
+const TILE_HORIZONTAL_SIZE =
+  "h-20 w-32 shrink-0 overflow-hidden rounded-xl border bg-ink-900/80 text-left transition-[width,box-shadow] duration-200 md:h-24 md:w-40";
+/** Плитка вертикальной колонки: тянется по ширине, соотношение 16:9. */
+const TILE_VERTICAL_SIZE =
+  "w-full shrink-0 overflow-hidden rounded-xl border bg-ink-900/80 text-left transition-[box-shadow] duration-200";
+
 /**
- * Полоска участников: горизонтальный скролл, плитки фиксированной высоты,
- * закреплённый спикер чуть крупнее. Клик по плитке = pin.
+ * Полоска участников: горизонтальный скролл на мобильных, вертикальная
+ * «плитка шоколада» в правой колонке на десктопе. Клик по плитке = pin.
  */
-export function Filmstrip({ tiles, pinnedId, onPin, className }: FilmstripProps) {
+export function Filmstrip({ tiles, pinnedIds = [], onPin, className, layout = "horizontal" }: FilmstripProps) {
   if (tiles.length === 0) return null;
+
+  const orderedTiles = orderTilesByPinned(tiles, pinnedIds);
 
   return (
     <div
       className={cn(
-        "flex shrink-0 items-stretch gap-2 overflow-x-auto overflow-y-hidden border-b border-white/10 bg-ink-950/85 px-2 py-1.5 backdrop-blur-xl",
+        layout === "vertical"
+          ? "flex min-h-0 w-full flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden p-2"
+          : "flex shrink-0 items-stretch gap-2 overflow-x-auto overflow-y-hidden border-b border-white/10 bg-ink-950/85 px-2 py-1.5 backdrop-blur-xl",
         className,
       )}
       role="region"
       aria-label="Участники урока (компактная полоска)"
     >
-      {tiles.map((tile) => (
+      {orderedTiles.map((tile) => (
         <FilmstripTile
           key={tile.id}
           tile={tile}
-          pinned={pinnedId === tile.id}
+          layout={layout}
+          pinned={pinnedIds.includes(tile.id)}
           onPin={onPin ? () => onPin(tile.id) : undefined}
         />
       ))}
@@ -61,16 +85,17 @@ export function Filmstrip({ tiles, pinnedId, onPin, className }: FilmstripProps)
 
 interface FilmstripTileProps {
   tile: GridTile;
+  layout: "horizontal" | "vertical";
   pinned: boolean;
   onPin?: () => void;
 }
 
-function FilmstripTile({ tile, pinned, onPin }: FilmstripTileProps) {
+function FilmstripTile({ tile, layout, pinned, onPin }: FilmstripTileProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  const hasVideo = Boolean(
-    tile.stream && tile.videoOn && tile.stream.getVideoTracks().length > 0,
-  );
+  // Общее правило с сеткой камер: чужой экран в полосе — дубль сцены, поэтому
+  // показываем аватар; свой поток подменён на камеру в MeetingRoom.
+  const hasVideo = tileHasVideo(tile);
 
   // Привязываем поток, если он поменялся (как в основной сетке).
   useEffect(() => {
@@ -81,6 +106,7 @@ function FilmstripTile({ tile, pinned, onPin }: FilmstripTileProps) {
   }, [tile.stream, hasVideo]);
 
   const showPin = Boolean(onPin);
+  const vertical = layout === "vertical";
 
   return (
     <button
@@ -95,10 +121,14 @@ function FilmstripTile({ tile, pinned, onPin }: FilmstripTileProps) {
       }
       title={pinned ? "Открепить спикера" : "Закрепить спикера"}
       className={cn(
-        "group relative h-20 w-32 shrink-0 overflow-hidden rounded-xl border bg-ink-900/80 text-left transition-[width,box-shadow] duration-200 md:h-24 md:w-40",
-        pinned
-          ? "w-40 border-brand-400/70 shadow-glow md:w-48"
-          : "border-white/10 hover:border-white/25",
+        "group relative overflow-hidden rounded-xl border bg-ink-900/80 text-left",
+        vertical
+          ? cn(TILE_VERTICAL_SIZE, "aspect-video")
+          : TILE_HORIZONTAL_SIZE,
+        // В горизонтальной ленте закреплённый спикер шире; в вертикальной
+        // колонке все плитки одной ширины — там хватает визуальной рамки.
+        !vertical && (pinned ? "w-40 border-brand-400/70 shadow-glow md:w-48" : "border-white/10 hover:border-white/25"),
+        vertical && (pinned ? "border-brand-400/70 shadow-glow" : "border-white/10 hover:border-white/25"),
         tile.speaking && "speaking-ring",
         !showPin && "cursor-default",
       )}
@@ -152,6 +182,13 @@ function FilmstripTile({ tile, pinned, onPin }: FilmstripTileProps) {
           {tile.name}
           {tile.isLocal && <span className="ml-1 text-slate-300">(вы)</span>}
         </span>
+
+        {pinned && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/30 px-1.5 py-0.5 text-[10px] font-medium text-brand-100">
+            <Pin className="h-2.5 w-2.5" />
+            Закреплён
+          </span>
+        )}
 
         {tile.screenOn && (
           <span className="inline-flex items-center gap-1 rounded-full bg-accent-500/25 px-1.5 py-0.5 text-[10px] font-medium text-accent-300">

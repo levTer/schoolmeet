@@ -57,6 +57,15 @@ export interface RegisterValidationOptions {
    * со ссылкой администратора — включая ADMIN (см. `invite-rules.ts`).
    */
   allowedRoles?: readonly Role[];
+  /**
+   * Школа без классной изоляции (`strictClassIsolation === false`, например
+   * «Школа Душа» или «Fullhouse»): класс ученику не обязателен, в БД
+   * уходит `classId = null` (`users.classId` в схеме опциональна).
+   *
+   * По умолчанию `false` — класс обязателен (строгая школа): прежнее
+   * поведение не меняется.
+   */
+  classIdOptional?: boolean;
 }
 
 export type ValidationResult<T> =
@@ -206,8 +215,10 @@ export function validateRegisterInput(
   const rawClassId = typeof raw.classId === "string" ? raw.classId.trim() : "";
   let classId: string | null = null;
   if (role === "STUDENT") {
-    if (!rawClassId) fields.classId = "Выберите свой класс";
-    else classId = rawClassId;
+    if (rawClassId) classId = rawClassId;
+    // Гибкая школа: ученик может зарегистрироваться без класса и посещать
+    // любые уроки своей школы. Строгая — класс обязателен.
+    else if (!options.classIdOptional) fields.classId = "Выберите свой класс";
   } else if (rawClassId) {
     fields.classId = "Класс выбирает только ученик";
   }

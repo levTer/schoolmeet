@@ -20,6 +20,7 @@ import { describe, it } from "node:test";
 
 import {
   CHAT_RECIPIENT_EVERYONE,
+  canPinChatMessage,
   canViewChatEnvelope,
   canViewChatMessage,
   chatVisibilityWhere,
@@ -217,6 +218,26 @@ describe("контракт связности (схема → сервер → �
     assert.match(chat, /bg-indigo-900\/40/, "приватное сообщение не отличается фоном");
     assert.match(chat, /🔒/, "нет иконки приватности");
     assert.match(chat, /describePrivateMessage\(\{/, "подпись не берётся из общих правил");
+  });
+
+  it("плашку закреплённого сообщения ведёт только учитель или администратор", () => {
+    assert.equal(canPinChatMessage("TEACHER"), true, "учитель должен закреплять сообщения");
+    assert.equal(canPinChatMessage("ADMIN"), true, "администратор должен закреплять сообщения");
+    assert.equal(canPinChatMessage("STUDENT"), false, "ученик не должен закреплять сообщения");
+  });
+
+  it("плашка закреплённого сообщения: крестик сбрасывает закрепление у всей комнаты", () => {
+    const realtimeContract = readSource("src/lib/realtime.ts");
+    const realtimeServer = readSource("src/server/realtime.ts");
+    const socketHook = readSource("src/hooks/useSocket.ts");
+
+    assert.match(realtimeContract, /\"pin-message\"/, "контракт не описывает закрепление сообщения");
+    assert.match(realtimeContract, /\"pinned-message\"/, "контракт не описывает событие плашки");
+    assert.match(realtimeServer, /canPinChatMessage\(socket\.data\.user\.role\)/, "сервер не проверяет право закрепления");
+    assert.match(realtimeServer, /loadChatEnvelopeById/, "сервер не умеет взять сообщение по id");
+    assert.match(realtimeServer, /canViewChatEnvelope\(envelope, socket\.data\.user\.id\)/, "приватное сообщение может утечь в общую плашку");
+    assert.match(realtimeServer, /emit\("pinned-message", \{ pinned: null \}\)/, "открепление не рассылается комнате");
+    assert.match(socketHook, /pinMessage/, "хук сокета не умеет закреплять/откреплять");
   });
 
   it("комната урока передаёт в чат участников и адресата при отправке", () => {
