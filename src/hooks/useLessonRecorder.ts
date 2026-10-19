@@ -3,10 +3,15 @@
 /**
  * Локальная запись урока на ПК (WebM, MediaRecorder).
  *
- * Запись идёт полностью на стороне ученика/учителя: поток собирается из
- * видеотрека демонстрации экрана (приоритет) или камеры и микса звука —
+ * Запись идёт полностью на стороне ученика/учителя: поток собирается на канвасе
+ * из видеотрека демонстрации экрана (приоритет) или камеры и микса звука —
  * локального микрофона и микрофонов участников (Web Audio API). Готовый файл
  * автоматически скачивается на компьютер как `schoolmeet-lesson-[дата].webm`.
+ *
+ * В финальный файл попадает ТОЛЬКО содержание урока: при демонстрации экрана
+ * на канвас рисуется экран (вписанный целиком, без обрезки краёв) и камера
+ * текущего спикера в углу. Элементы интерфейса, другие участники и пустое
+ * пространство страницы в запись не попадают.
  *
  * Ничего не отправляется на сервер: это личный архив урока.
  *
@@ -21,6 +26,12 @@ export interface LessonRecorderSource {
   screenTrack: MediaStreamTrack | null;
   /** Видеотрек камеры: основа записи или «картинка в углу» поверх экрана. */
   cameraTrack: MediaStreamTrack | null;
+  /**
+   * Камера текущего спикера — «картинка в углу» при демонстрации экрана
+   * (закреплённый участник → говорящий → учитель). Если её нет, в угол
+   * попадает своя камера (`cameraTrack`).
+   */
+  speakerCameraTrack?: MediaStreamTrack | null;
   /** Потоки со звуком: свой микрофон и микрофоны участников комнаты. */
   audioStreams: MediaStream[];
 }
@@ -50,6 +61,8 @@ const RECORDING_HEIGHT = 720;
 /** Правая нижняя камера в записи (как PiP на экране). */
 const PIP_WIDTH = 320;
 const PIP_HEIGHT = 180;
+/** Отступ «картинки в углу» от краёв канвы записи. */
+const PIP_MARGIN = 24;
 
 /** Имя файла записи: `schoolmeet-lesson-YYYY-MM-DD.webm`. */
 export function lessonRecordingFileName(date: Date = new Date()): string {
@@ -130,8 +143,30 @@ interface CompositeResult {
 }
 
 /**
- * Композит «экран + камера в углу» на канвасе: один видеотрек для записи.
- * Если канвас недоступен — возвращаем null, и тогда пишем «как есть».
+ * Вписывает кадр видео в прямоугольник, СОХРАНЯЯ пропорции (как
+ * `object-fit: contain`): презентация или экран попадают в запись целиком,
+ * без обрезки краёв, а свободное место остаётся чёрным.
+ */
+function drawVideoContain(
+  context: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  box: { x: number; y: number; width: number; height: number },
+): boolean {
+  const frameWidth = video.videoWidth;
+  const frameHeight = video.videoHeight;
+  if (!frameWidth || !frameHeight) return false;
+
+  const scale = Math.min(box.width / frameWidth, box.height / frameHeight);
+  const width = frameWidth * scale;
+  const height = frameHeight * scale;
+
+  context.drawImage(video, box.x + (box.width - width) / 2, box.y + (box.height - height) / 2, width, height);
+  return true;
+}
+
+/**
+ * Композит «экран + камера спикера в углу» на канвасе: один видеотрек для
+ * записи. Если канвас недоступен — возвращаем null, и тогда пишем «как есть».
  */
 async function createCompositeTrack(
   screenTrack: MediaStreamTrack,
@@ -159,13 +194,24 @@ async function createCompositeTrack(
 
   await Promise.all([playQuietly(screenVideo), playQuietly(cameraVideo)]);
 
+  const pipBox = {
+    x: canvas.width - PIP_WIDTH - PIP_MARGIN,
+    y: canvas.height - PIP_HEIGHT - PIP_MARGIN,
+    width: PIP_WIDTH,
+    height: PIP_HEIGHT,
+  };
+
   let frame = 0;
   let painted = false;
   const draw = () => {
     frame = window.requestAnimationFrame(draw);
 
+    // Фон кадра — только содержимое урока: экран и камера спикера.
+    context.fillStyle = "#000000";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
     if (screenVideo.readyState >= 2) {
-      context.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
+      drawVideoContain(context, screenVideo, { x: 0, y: 0, width: canvas.width, height: canvas.height });
       painted = true;
     } else if (!painted) {
       // Экран ещё не отдаёт кадров — держим чёрный фон.
@@ -174,13 +220,10 @@ async function createCompositeTrack(
     }
 
     if (cameraTrack && cameraVideo.readyState >= 2) {
-      context.drawImage(
-        cameraVideo,
-        canvas.width - PIP_WIDTH - 24,
-        canvas.height - PIP_HEIGHT - 24,
-        PIP_WIDTH,
-        PIP_HEIGHT,
-      );
+      // Подложка под «картинкой в углу», чтобы кадр не сливался с экраном.
+      context.fillStyle = "#000000";
+      context.fillRect(pipBox.x, pipBox.y, pipBox.width, pipBox.height);
+      drawVideoContain(context, cameraVideo, pipBox);
     }
   };
   draw();
@@ -236,7 +279,7 @@ export function useLessonRecorder(source: LessonRecorderSource): LessonRecorderA
       return;
     }
 
-    const { screenTrack, cameraTrack, audioStreams } = sourceRef.current;
+    const { screenTrack, cameraTrack, speakerCameraTrack, audioStreams } = sourceRef.current;
     const baseVideo = screenTrack ?? cameraTrack;
 
     if (!baseVideo) {
@@ -246,12 +289,15 @@ export function useLessonRecorder(source: LessonRecorderSource): LessonRecorderA
 
     setError(null);
 
-    // Видео: экран + камера в углу, если есть и то и другое.
+    // Видео: при демонстрации экрана на канвас идут ТОЛЬКО экран (вписанный
+    // целиком) и камера текущего спикера в углу. Интерфейс, другие участники
+    // и пустое пространство страницы в файл не попадают.
     let videoTrack: MediaStreamTrack | null = baseVideo;
     let cleanupComposite: (() => void) = () => undefined;
 
-    if (screenTrack && cameraTrack) {
-      const composite = await createCompositeTrack(screenTrack, cameraTrack);
+    if (screenTrack) {
+      const cornerCamera = speakerCameraTrack ?? cameraTrack;
+      const composite = await createCompositeTrack(screenTrack, cornerCamera);
       if (composite.track) {
         videoTrack = composite.track;
         cleanupComposite = composite.cleanup;

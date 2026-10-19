@@ -122,6 +122,12 @@ export interface JoinRoomResult {
   self: RoomParticipant;
   participants: RoomParticipant[];
   history: ChatEnvelope[];
+  /**
+   * Закреплённое сообщение урока (`null` — ничего не закреплено). Приходит
+   * конвертом: текст сообщения знает только клиент (AES-256), сервер лишь
+   * хранит и пересылает зашифрованное содержимое.
+   */
+  pinned: ChatEnvelope | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -158,6 +164,14 @@ export interface ClientToServerEvents {
   ) => void;
   /** Изменение состояния микрофона / камеры / экрана. */
   "media-state": (payload: MediaState) => void;
+  /**
+   * Закрепить сообщение урока (только TEACHER / ADMIN). `messageId = null` —
+   * открепить: сервер сбрасывает состояние и сообщает всей комнате.
+   */
+  "pin-message": (
+    payload: { messageId: string | null },
+    ack?: (result: Ack<{ pinned: ChatEnvelope | null }>) => void,
+  ) => void;
 
   /* Доска: рисование (только с правом; сервер проверяет политику) */
   "whiteboard-add": (payload: WhiteboardObjectPayload, ack?: (result: Ack) => void) => void;
@@ -205,6 +219,11 @@ export interface ServerToClientEvents {
   signal: (payload: { from: string; data: SignalData }) => void;
   "raise-hand": (payload: { socketId: string; raised: boolean }) => void;
   "chat-message": (message: ChatEnvelope) => void;
+  /**
+   * Закреплённое сообщение изменилось. `pinned === null` — сообщение
+   * открепили (учитель нажал крестик в плашке), плашка скрывается у всех.
+   */
+  "pinned-message": (payload: { pinned: ChatEnvelope | null }) => void;
   typing: (payload: { socketId: string; name: string }) => void;
   "media-state": (payload: { socketId: string; media: MediaState }) => void;
 

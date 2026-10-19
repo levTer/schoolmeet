@@ -77,6 +77,19 @@ export const CONFIGURED_SCHOOLS = [
 export const DEFAULT_SCHOOL = CONFIGURED_SCHOOLS[0];
 
 /**
+ * Политика изоляции классов настроенной школы по её коду.
+ *
+ * `true` — строгая школа (ученик заходит только в уроки своего класса),
+ * `false` — гибкая (любые уроки своей школы, класс ученику не обязателен).
+ * Неизвестный код считается гибкой школой: без класса доступ шире, чем
+ * «никто», а регистрация такого ученика не должна блокироваться.
+ */
+export function configuredStrictClassIsolation(code: string): boolean {
+  const needle = code.trim().toLowerCase();
+  return CONFIGURED_SCHOOLS.find((school) => school.code.toLowerCase() === needle)?.strictClassIsolation ?? false;
+}
+
+/**
  * Предустановленные admin-токены приглашений для наших школ.
  *
  * Задаются в сиде (`prisma/seed.ts`) и авто-инициализации школ

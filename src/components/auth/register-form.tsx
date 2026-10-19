@@ -54,7 +54,16 @@ const ROLE_OPTIONS: readonly {
 ];
 
 interface SchoolCheckData {
-  school: { name: string; code: string };
+  school: {
+    name: string;
+    code: string;
+    /**
+     * Политика изоляции классов школы. `false` — гибкая школа (например,
+     * «Школа Душа» или «Fullhouse»): класс при регистрации необязателен.
+     * Отсутствует/`true` — строгая, класс обязателен (fail closed).
+     */
+    strictClassIsolation?: boolean;
+  };
   classes: Array<{ id: string; name: string; grade: string }>;
   inviteRole?: InviteRole | null;
 }
@@ -127,6 +136,13 @@ export function RegisterForm({
   const [isCreated, setIsCreated] = useState(false);
 
   const strength = useMemo(() => getPasswordStrength(password), [password]);
+
+  /**
+   * Обязателен ли класс. В гибкой школе (`strictClassIsolation === false`)
+   * ученик регистрируется БЕЗ класса и посещает любые уроки своей школы;
+   * API принимает `classId = null` (в схеме БД колонка опциональна).
+   */
+  const classIsRequired = schoolCheck?.school.strictClassIsolation !== false;
 
   /** Автопроверка кода школы из ссылки-приглашения при открытии страницы. */
   const didAutoCheckRef = useRef(false);
@@ -217,7 +233,7 @@ export function RegisterForm({
         schoolCode,
         classId: effectiveRole === "STUDENT" ? classId : null,
       },
-      { allowedRoles },
+      { allowedRoles, classIdOptional: !classIsRequired },
     );
 
     const nextErrors: FieldErrors = validation.ok ? {} : { ...validation.fields };
@@ -227,6 +243,7 @@ export function RegisterForm({
     if (
       effectiveRole === "STUDENT" &&
       schoolCheck &&
+      classIsRequired &&
       !schoolCheck.classes.some((item) => item.id === classId)
     ) {
       nextErrors.classId = "Выберите класс из списка школы";
@@ -259,7 +276,7 @@ export function RegisterForm({
           confirmPassword,
           role: effectiveRole,
           schoolCode,
-          classId: effectiveRole === "STUDENT" ? classId : null,
+          classId: effectiveRole === "STUDENT" ? classId || null : null,
           invite,
         }),
       });
@@ -455,13 +472,21 @@ export function RegisterForm({
           label="Класс"
           value={classId}
           error={fieldErrors.classId}
-          hint={schoolCheck.classes.length === 0 ? "В школе пока не созданы классы. Обратитесь к администратору." : undefined}
+          hint={
+            classIsRequired
+              ? schoolCheck.classes.length === 0
+                ? "В школе пока не созданы классы. Обратитесь к администратору."
+                : undefined
+              : "Класс необязателен: школа без классной изоляции — вы сможете посещать любые уроки школы, а класс выбрать позже в меню."
+          }
           onChange={(event) => {
             setClassId(event.target.value);
             clearFieldError("classId");
           }}
         >
-          <option value="" className="bg-ink-900">Выберите свой класс</option>
+          <option value="" className="bg-ink-900">
+            {classIsRequired ? "Выберите свой класс" : "Без класса (необязательно)"}
+          </option>
           {schoolCheck.classes.map((schoolClass) => (
             <option key={schoolClass.id} value={schoolClass.id} className="bg-ink-900">
               {schoolClass.name}

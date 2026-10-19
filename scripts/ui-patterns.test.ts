@@ -250,10 +250,10 @@ describe("спикер поверх демонстрации экрана (Films
   const room = readSource("src/components/meeting/MeetingRoom.tsx");
   const strip = readSource("src/components/meeting/Filmstrip.tsx");
 
-  it("при демонстрации экрана сцена занимает место, участники — верхней полосой", () => {
+  it("при демонстрации экрана сцена занимает место, участники — полосой/колонкой", () => {
     assert.match(grid, /screenTile/, "режим демонстрации экрана не учитывается");
     assert.match(grid, /<VideoTileView tile=\{screenTile\} stage muted=\{true\}/, "нет сцены демонстрации экрана");
-    assert.match(room, /screenShareActive && !boardOpen && \(/, "нет верхней Filmstrip при экране");
+    assert.match(room, /screenShareActive && !boardOpen/, "комната не обрабатывает демонстрацию экрана при закрытой доске");
     assert.match(strip, /h-20 .*md:h-24/, "полоска не в диапазоне 96–112px");
     assert.match(strip, /aria-pressed=\{pinned\}/, "плитка полосы не показывает состояние pin");
   });
@@ -261,7 +261,7 @@ describe("спикер поверх демонстрации экрана (Films
   it("на карточках участников есть кнопка «Закрепить спикера»", () => {
     assert.match(grid, /Закрепить спикера/, "нет кнопки закрепления спикера");
     assert.match(grid, /onPin/, "закрепление спикера не пробрасывается наверх");
-    assert.match(room, /pinnedId=\{pinnedId\}/, "комната не хранит закреплённого спикера");
+    assert.match(room, /pinnedIds=\{pinnedIds\}/, "комната не хранит закреплённых спикеров");
   });
 });
 
@@ -380,12 +380,36 @@ describe("Filmstrip: камеры участников при доске и де
   });
 
   it("тулбар доски остаётся под полосой видимым (shrink-0, полоса СВЕРХУ тулбара)", () => {
-    assert.match(board, /topStrip && \(/, "доска не рендерит верхнюю полосу");
-    const stripAt = board.indexOf("{topStrip && (");
+    assert.match(board, /topStrip &&/, "доска не рендерит полосу участников");
+    const stripAt = board.indexOf("{topStrip &&");
     const toolbarAt = board.indexOf('role="toolbar"');
     assert.ok(stripAt > -1 && toolbarAt > -1, "не найдены полоса/тулбар в разметке доски");
     assert.ok(stripAt < toolbarAt, "полоса должна быть СВЕРХУ тулбара");
-    assert.match(board.slice(stripAt, stripAt + 220), /shrink-0/, "полоса может сжаться и задвинуть тулбар");
+    assert.match(board.slice(stripAt, stripAt + 240), /shrink-0/, "полоса может сжаться и задвить тулбар");
+  });
+
+  it("мобильные: полоса участников в обычном потоке, а не absolute поверх сцены", () => {
+    const stripAt = board.indexOf("{topStrip &&");
+    const toolbarAt = board.indexOf('role="toolbar"');
+    const stripBlock = board.slice(stripAt, toolbarAt);
+    // Все class-литералы блока: ни один не должен позиционировать полосу абсолютно.
+    const classNames = [...stripBlock.matchAll(/className="([^"]*)"/g)].map((match) => match[1]);
+    assert.ok(classNames.length > 0, "у полосы нет class-атрибутов");
+    for (const className of classNames) {
+      assert.ok(
+        !/(^|\s)absolute(\s|$)/.test(className),
+        `полоса снова absolute (${className}) — она перекрывает тулбар доски`,
+      );
+      assert.ok(!/fixed /.test(className), `полоса зафиксирована поверх экрана (${className})`);
+    }
+  });
+
+  it("десктоп: доска слева, камеры участников — правая колонка «плитка шоколада»", () => {
+    assert.match(board, /fixed inset-0 z-50[^"]*md:flex-row/, "доска не разделена на две колонки на md+");
+    assert.match(board, /w-60 shrink-0[^"]*md:flex lg:w-72/, "нет правой колонки камер шириной ~240–300px");
+    assert.match(board, /min-h-0 w-60/, "колонка камер не ограничена по высоте (прокрутка сломается)");
+    // Вертикальная прокрутка колонки живёт в Filmstrip (layout="vertical").
+    assert.match(strip, /flex-col gap-2 overflow-y-auto/, "вертикальная колонка камер не прокручивается");
   });
 
   it("треки не отключаются при переключении на доску", () => {
@@ -399,5 +423,165 @@ describe("Filmstrip: камеры участников при доске и де
     assert.match(grid, /silent = false/, "нет silent-режима сетки");
     assert.match(room, /silent=\{boardOpen\}/, "при доске сетка не переводится в silent");
     assert.match(strip, /muted=\{tile\.isLocal\}/, "полоса не стала источником аудио (muted только свой)");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Раскладка «плитка шоколада», object-contain, мульти-pin, запись, чат       */
+/* -------------------------------------------------------------------------- */
+
+describe("раскладка при доске и демонстрации экрана: сцена + «плитка шоколада»", () => {
+  const grid = readSource("src/components/meeting/VideoGrid.tsx");
+  const room = readSource("src/components/meeting/MeetingRoom.tsx");
+  const strip = readSource("src/components/meeting/Filmstrip.tsx");
+  const mediaQuery = readSource("src/hooks/useMediaQuery.ts");
+
+  it("десктоп: сцена слева (flex-grow), камеры — правая колонка 240–300px с прокруткой", () => {
+    assert.match(room, /md:flex lg:w-72/, "в комнате нет правой колонки камер ~288px");
+    assert.match(room, /w-60 shrink-0/, "колонка камер не ~240px и не предотвращает сжатие");
+    assert.match(strip, /layout="vertical"|layout === "vertical"/, "полоска не умеет вертикальную раскладку");
+    assert.match(strip, /flex min-h-0 w-full flex-1 flex-col gap-2 overflow-y-auto/, "колонка камер не прокручивается по вертикали");
+    assert.match(mediaQuery, /min-width: 768px/, "нет SSR-безопасного определения десктопа");
+    assert.match(room, /useIsDesktopLayout/, "комната не переключает раскладку по ширине");
+  });
+
+  it("мобильные: лента участников в обычном потоке, без absolute-наслоения", () => {
+    // Блок мобильной ленты в MeetingRoom: от условия до закрытия.
+    const stripAt = room.indexOf("screenShareActive && !boardOpen && !desktopLayout");
+    assert.ok(stripAt > -1, "нет мобильной ленты при демонстрации экрана");
+    const block = room.slice(stripAt, stripAt + 400);
+    const classNames = [...block.matchAll(/className="([^"]*)"/g)].map((match) => match[1]);
+    assert.ok(classNames.length > 0, "у мобильной ленты нет class-атрибутов");
+    for (const className of classNames) {
+      assert.ok(
+        !/(^|\s)absolute(\s|$)/.test(className),
+        `карточки участников снова absolute (${className}) — 3+ камер наслаиваются на смартфоне`,
+      );
+      assert.ok(!/\bfixed\b/.test(className), `мобильная лента зафиксирована поверх экрана (${className})`);
+    }
+    // Сетка камер строится обычным grid/flex с gap — без хардкода позиций.
+    assert.match(grid, /grid h-full w-full gap-2/, "сетка камер не использует CSS Grid с gap");
+  });
+});
+
+describe("демонстрация экрана вписывается целиком (object-contain)", () => {
+  const grid = readSource("src/components/meeting/VideoGrid.tsx");
+
+  it("сцена экрана: object-contain w-full h-full bg-black — края не обрезаются", () => {
+    assert.match(grid, /stage \? "object-contain w-full h-full bg-black"/, "сцена экрана не вписана целиком");
+    assert.match(grid, /"object-cover h-full w-full"/, "камеры участников должны заполнять плитку");
+  });
+
+  it("в записи экран тоже вписан с сохранением пропорций (letterbox)", () => {
+    const recorder = readSource("src/hooks/useLessonRecorder.ts");
+    assert.match(recorder, /function drawVideoContain/, "нет функции вписывания кадра в канвас");
+    assert.match(
+      recorder,
+      /Math\.min\(box\.width \/ frameWidth, box\.height \/ frameHeight\)/,
+      "кадр растягивается вместо того, чтобы вписываться — края экрана обрезаются",
+    );
+    assert.match(recorder, /PIP_MARGIN/, "«картинка в углу» без отступа от краёв канвы");
+  });
+});
+
+describe("мульти-закрепление участников", () => {
+  const grid = readSource("src/components/meeting/VideoGrid.tsx");
+  const room = readSource("src/components/meeting/MeetingRoom.tsx");
+  const strip = readSource("src/components/meeting/Filmstrip.tsx");
+
+  it("состояние — массив: можно закрепить 2, 3 и более участников", () => {
+    assert.match(room, /useState<string\[\]>\(\[\]\)/, "закреплённые участники не хранятся массивом");
+    assert.match(room, /\.\.\.current, tileId\]/, "повторный клик не добавляет второго закреплённого");
+    assert.match(room, /current\.filter\(\(id\) => id !== tileId\)/, "открепить закреплённого нельзя");
+    assert.match(grid, /pinnedIds\?: readonly string\[\]/, "сетка не принимает список закреплённых");
+    assert.match(strip, /pinnedIds\?: readonly string\[\]/, "полоска не принимает список закреплённых");
+  });
+
+  it("закреплённые рендерятся первыми и с визуальной рамкой", () => {
+    assert.match(grid, /function orderTilesByPinned/, "нет упорядочивания плиток по закреплению");
+    assert.match(grid, /pinned && "ring-2 ring-brand-400\/70"/, "у закреплённой плитки нет рамки");
+    assert.match(grid, /Закреплён/, "на закреплённой плитке нет подписи");
+    assert.match(strip, /orderTilesByPinned/, "полоска не выносит закреплённых вперёд");
+  });
+
+  it("«картинка в углу» записи — камера текущего спикера, а не дубль экрана", () => {
+    assert.match(room, /speakerCameraTrack: recordingSpeakerTrack/, "запись не получает камеру спикера");
+    assert.match(room, /pickSpotlightTile\(tiles, pinnedIds, screenTileId\)/, "спикер выбирается без закреплённых");
+    // Своя плитка при демонстрации экрана показывает камеру, а не экран.
+    assert.match(room, /rtc\.media\.screen \? localCameraStream : rtc\.localStream/, "в своей плитке снова дубль экрана");
+    assert.match(room, /videoOn: rtc\.media\.video,/, "видео своей плитки привязано не к камере");
+  });
+});
+
+describe("плашка закреплённого сообщения и открепление (unpin)", () => {
+  const chat = readSource("src/components/meeting/Chat.tsx");
+  const room = readSource("src/components/meeting/MeetingRoom.tsx");
+  const hook = readSource("src/hooks/useSocket.ts");
+  const contract = readSource("src/lib/realtime.ts");
+  const server = readSource("src/server/realtime.ts");
+
+  it("в плашке есть крестик, сбрасывающий закрепление", () => {
+    assert.match(chat, /aria-label="Открепить сообщение"/, "нет кнопки-крестика в плашке");
+    assert.match(chat, /onUnpinMessage/, "плашка не умеет откреплять сообщение");
+    assert.match(chat, /canPinMessages/, "плашка не различает учителя и ученика");
+    assert.match(room, /handleUnpinMessage/, "комната не обрабатывает открепление");
+    assert.match(room, /socket\.pinMessage\(null\)/, "открепление не уходит на сервер");
+  });
+
+  it("сервер пускает к плашке только учителя/админа и шлёт событие всей комнате", () => {
+    assert.match(server, /canPinChatMessage\(socket\.data\.user\.role\)/, "сервер не проверяет право закрепления");
+    assert.match(server, /"pin-message"/, "сервер не принимает закрепление сообщения");
+    assert.match(server, /io\.in\(roomId\)\.emit\("pinned-message", \{ pinned: null \}\)/, "открепление не рассылается комнате");
+    assert.match(server, /canViewChatEnvelope\(envelope, socket\.data\.user\.id\)/, "приватное сообщение может утечь в плашку");
+    assert.match(contract, /\"pin-message\"/, "контракт Socket.IO не описывает закрепление");
+    assert.match(hook, /socket\.on\("pinned-message"/, "клиент не слушает изменение плашки");
+    assert.match(hook, /const pinMessage = useCallback/, "хук сокета не умеет закреплять сообщение");
+  });
+
+  it("закрепившее сообщение приходит вместе с историей (перезаход видит плашку)", () => {
+    assert.match(contract, /pinned: ChatEnvelope \| null;/, "join-room не отдаёт закреплённое сообщение");
+    assert.match(server, /pinned: getPinnedMessage\(roomId\)/, "сервер не подставляет закреплённое сообщение");
+    assert.match(hook, /setPinnedMessage\(result\.pinned \?\? null\)/, "клиент не запоминает плашку при входе");
+  });
+});
+
+describe("запись урока: только экран и камера спикера", () => {
+  const recorder = readSource("src/hooks/useLessonRecorder.ts");
+
+  it("на канвас идут строго screenTrack и камера спикера — без интерфейса и других участников", () => {
+    assert.match(recorder, /speakerCameraTrack\?: MediaStreamTrack \| null/, "источник записи не принимает камеру спикера");
+    assert.match(recorder, /const cornerCamera = speakerCameraTrack \?\? cameraTrack;/, "в угол не попадает камера спикера");
+    assert.match(recorder, /new MediaStream\(\[screenTrack\]\)/, "экран не изолирован в отдельный элемент видео");
+    // Канвас — единственный источник видеотрека записи: UI в файл не попадает.
+    assert.match(recorder, /canvas\.captureStream\(30\)/, "запись идёт не с канваса композиции");
+  });
+});
+
+describe("регистрация без класса в гибкой школе", () => {
+  const form = readSource("src/components/auth/register-form.tsx");
+  const validation = readSource("src/lib/validation.ts");
+  const route = readSource("src/app/api/auth/register/route.ts");
+  const check = readSource("src/app/api/schools/check/route.ts");
+  const schema = readSource("prisma/schema.prisma");
+
+  it("поле класса необязательно, когда strictClassIsolation === false", () => {
+    assert.match(form, /strictClassIsolation\?: boolean/, "форма не знает политику школы");
+    assert.match(form, /classIsRequired = schoolCheck\?\.school\.strictClassIsolation !== false/, "нет признака обязательности класса");
+    assert.match(form, /classIdOptional: !classIsRequired/, "форма не сообщает API, что класс необязателен");
+    assert.match(form, /Без класса \(необязательно\)/, "в селекте нет варианта «без класса»");
+    assert.match(validation, /classIdOptional\?: boolean/, "валидация не умеет необязательный класс");
+    assert.match(route, /classIdOptional: !strictClassIsolation/, "роут регистрации игнорирует политику школы");
+    assert.match(route, /getSchoolPolicy/, "роут не читает политику школы");
+  });
+
+  it("схема БД и API принимают classId = null", () => {
+    assert.match(schema, /classId\s+String\?/, "колонка класса ученика не опциональна");
+    assert.match(route, /classId: schoolClass\?\.id \?\? null/, "роут не пишет classId = null");
+    assert.match(form, /classId: effectiveRole === "STUDENT" \? classId \|\| null : null/, "форма шлёт пустую строку вместо null");
+  });
+
+  it("проверка кода школы отдаёт политику изоляции классов", () => {
+    assert.match(check, /strictClassIsolation: true/, "проверка школы не забирает политику из БД");
+    assert.match(check, /strictClassIsolation: school\.strictClassIsolation/, "проверка школы не отдаёт политику клиенту");
   });
 });
