@@ -249,6 +249,87 @@ const CHECK_TEMPLATE = `## Проверка решения — чек-лист �
 - Своё решение по шагам.
 - Место, где возникло сомнение.`;
 
+const ILLUSTRATION_KEYWORDS = [
+  "нарисуй", "нарисовать", "изобрази", "покажи", "картинк", "фото", "портрет",
+  "иллюстрац", "рисунок", "кот", "кошк", "собак", "клетк", "арт",
+];
+
+/** «Нарисуй котика / схему клетки / портрет Ньютона» — картинка от Pollinations AI на доске. */
+function isIllustrationRequest(prompt: string): boolean {
+  const text = prompt.toLowerCase();
+  return ILLUSTRATION_KEYWORDS.some((keyword) => text.includes(keyword));
+}
+
+const HOMEWORK_CREATE_VERBS = [
+  "состав", "составь", "составьте", "составить", "придумай", "придумайте",
+  "сгенерир", "сгенерируй", "сгенерируйте", "созда", "создай", "создайте",
+  "напиш", "напиши", "напишите",
+];
+const HOMEWORK_OBJECTS = ["домашн", "дз", "викторину", "тест", "квизи", "вопросы по", "опроснику"];
+
+/** «Составь 5 вопросов по теме Дроби 6 класс» — генератор ДЗ/теста за 1 клик. */
+function isHomeworkGeneration(prompt: string): boolean {
+  const text = prompt.toLowerCase();
+  const create = HOMEWORK_CREATE_VERBS.some((verb) => text.includes(verb));
+  const object = HOMEWORK_OBJECTS.some((keyword) => text.includes(keyword));
+  return create && object;
+}
+
+const SUBJECT_KEYWORDS: [string, string][] = [
+  ["математ", "Математика"],
+  ["алгебр", "Математика"],
+  ["геометр", "Математика"],
+  ["русск", "Русский язык"],
+  ["англ", "Английский язык"],
+  ["истор", "История"],
+  ["биолог", "Биология"],
+  ["физик", "Физика"],
+  ["хими", "Химия"],
+  ["литер", "Литература / обществознание / география"],
+  ["обществ", "Литература / обществознание / география"],
+  ["географ", "Литература / обществознание / география"],
+];
+
+function detectHomeworkSubject(prompt: string): string {
+  const text = prompt.toLowerCase();
+  for (const [keyword, subject] of SUBJECT_KEYWORDS) {
+    if (text.includes(keyword)) return subject;
+  }
+  return "Общее развитие";
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** Динамический URL Pollinations AI: https://image.pollinations.ai/prompt/… */
+function pollinationsImageUrl(prompt: string): string {
+  const seed = Math.floor(Math.random() * 100_000);
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true&seed=${seed}`;
+}
+
+function homeworkGeneration(prompt: string): AIResponse {
+  const subject = detectHomeworkSubject(prompt);
+  const theme = prompt
+    .replace(/^(состав(и|ьте|ить)?|придумай(те)?|сгенерир(уй|уйте)?|созда(й|йте)?|напиш(и|ите)?)\s*/i, "")
+    .replace(/^(квизи|викторину|тест|домашнее задание|дз)\s*/i, "")
+    .trim()
+    .slice(0, 90);
+  const homeworkTitle = theme ? `${subject}: ${capitalize(theme)}` : `Домашнее задание по ${subject}`;
+  const description = [
+    `## ${homeworkTitle}`,
+    "",
+    `Предмет: ${subject}.`,
+    "",
+    `Задание (составлено по запросу): ${escapeMarkdown(prompt)}`,
+    "",
+    "Правильные ответы и ключ проверки укажите при выдаче задания или в комментарии к оценке.",
+  ].join("\n");
+  return {
+    text: JSON.stringify({ title: homeworkTitle, description, subject }),
+  };
+}
+
 const DRAW_TEMPLATES: Record<Topic, { text: string; drawing: DrawingInstruction[] }> = {
   geometry: {
     text: `## Чертёж по условию
@@ -404,6 +485,25 @@ export class MockAIProvider implements AIProvider {
     switch (request.action) {
       case "ask": {
         if (isDrawRequest(prompt) && /(домик|дом\b|картинк)/i.test(prompt)) return houseDrawing(prompt, title);
+        // Картинка/иллюстрация через Pollinations AI — объект image на доске.
+        if (isIllustrationRequest(prompt)) {
+          return {
+            text: `## Иллюстрация\n\n${escapeMarkdown(prompt)}${title}.`,
+            drawing: [
+              {
+                shape: "image",
+                url: pollinationsImageUrl(prompt),
+                x: 340,
+                y: 200,
+                w: 320,
+                h: 320,
+                label: prompt.slice(0, 60),
+              },
+            ],
+          };
+        }
+        // «Составь 5 вопросов по теме Дроби 6 класс» — генератор ДЗ/теста.
+        if (isHomeworkGeneration(prompt)) return homeworkGeneration(prompt);
         // Свободная просьба «нарисуй …» — тот же путь, что и действие draw:
         // возвращаем инструкции, клиент нарисует их на доске через мост.
         if (isDrawRequest(prompt)) {
@@ -462,6 +562,22 @@ export class MockAIProvider implements AIProvider {
 
       case "draw": {
         if (/(домик|дом\b|картинк)/i.test(prompt)) return houseDrawing(prompt, title);
+        if (isIllustrationRequest(prompt)) {
+          return {
+            text: `## Иллюстрация\n\n${escapeMarkdown(prompt)}${title}.`,
+            drawing: [
+              {
+                shape: "image",
+                url: pollinationsImageUrl(prompt),
+                x: 340,
+                y: 200,
+                w: 320,
+                h: 320,
+                label: prompt.slice(0, 60),
+              },
+            ],
+          };
+        }
         const template = DRAW_TEMPLATES[topic];
         return {
           text: prompt ? `${template.text}\n\n**Условие:** ${escapeMarkdown(prompt)}${title}.` : template.text,

@@ -84,7 +84,8 @@ export type DrawingShape =
   | "vector"
   | "graph"
   | "point"
-  | "text";
+  | "text"
+  | "image";
 
 /** Базовые поля любой фигуры. */
 interface DrawingBase {
@@ -185,6 +186,19 @@ export interface TextInstruction extends DrawingBase {
   fontSize?: number;
 }
 
+/** Картинка/иллюстрация по URL (Pollinations AI и др.). x/y — левый верхний угол. */
+export interface ImageInstruction extends DrawingBase {
+  shape: "image";
+  /** Адрес картинки (например Pollinations AI). */
+  url: string;
+  /** Левый верхний угол на холсте инструкции (холст ≈1000×600, y вниз). */
+  x: number;
+  y: number;
+  /** Ширина и высота в px. */
+  w: number;
+  h: number;
+}
+
 export type DrawingInstruction =
   | TriangleInstruction
   | CircleInstruction
@@ -197,7 +211,8 @@ export type DrawingInstruction =
   | VectorInstruction
   | GraphInstruction
   | PointInstruction
-  | TextInstruction;
+  | TextInstruction
+  | ImageInstruction;
 
 /* -------------------------------------------------------------------------- */
 /* Ответ провайдера                                                            */

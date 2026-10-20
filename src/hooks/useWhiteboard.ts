@@ -34,11 +34,13 @@ import {
 } from "fabric";
 
 import {
+  buildImageObject,
   buildObjectsFromInstructions,
   createArrow,
   parseDrawingInstructions,
 } from "@/lib/drawing-engine";
-import type { DrawingInstruction } from "@/lib/ai-provider";
+import type { DrawingInstruction, ImageInstruction } from "@/lib/ai-provider";
+import { Image as FabricImage } from "fabric";
 import {
   WHITEBOARD_CURSOR_TTL_MS,
   type WhiteboardClearPayload,
@@ -1141,26 +1143,42 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
   );
 
   const applyDrawing = useCallback(
-    (instructions: DrawingInstruction[]) => {
+    async (instructions: DrawingInstruction[]) => {
       // JSON от модели нельзя доверять вслепую: валидируем каждую фигуру
       // (заодно принимаются компактные команды {"type","x","y","size"}),
       // иначе одна битая запись роняет всю доску.
       const safeInstructions = parseDrawingInstructions(instructions);
       if (safeInstructions.length === 0) return;
       const page = currentPageRef.current;
-      const objects = buildObjectsFromInstructions(safeInstructions, { offset: { x: 120, y: 60 } });
-      const ops: HistoryOp[] = [];
+      const canvas = fabricRef.current;
+      if (!canvas) return;
 
-      for (const object of objects) {
+      const ops: HistoryOp[] = [];
+      const addObject = (object: FabricObject) => {
         const id = assignId(object);
         const json = serialize(object);
         pagesRef.current[page].set(id, json);
-        fabricRef.current?.add(object);
+        canvas.add(object);
         ops.push({ kind: "add", page, json });
         sendOrResync(() => syncRef.current?.sendAdd({ id, page, json }) ?? Promise.resolve(false));
+      };
+
+      // Векторные фигуры — отрисовываем синхронно.
+      const vectorInstructions = safeInstructions.filter((i) => i.shape !== "image");
+      const objects = buildObjectsFromInstructions(vectorInstructions, { offset: { x: 120, y: 60 } });
+      for (const object of objects) addObject(object);
+
+      // Картинки загружаются по URL (Pollinations AI и др.) асинхронно — не
+      // блокируем остальной чертёж, а дорисовываем каждую по мере готовности.
+      for (const instruction of safeInstructions.filter(
+        (i): i is ImageInstruction => i.shape === "image",
+      )) {
+        const image = await buildImageObject(instruction, { offset: { x: 120, y: 60 } });
+        if (image instanceof FabricImage) addObject(image);
       }
-      fabricRef.current?.requestRenderAll();
-      pushHistory({ kind: "batch", ops });
+
+      canvas.requestRenderAll();
+      if (ops.length > 0) pushHistory({ kind: "batch", ops });
     },
     [pushHistory, sendOrResync],
   );

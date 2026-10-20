@@ -141,6 +141,8 @@ export interface DrawShapeCommand {
   to?: unknown;
   topLeft?: unknown;
   at?: unknown;
+  /** Адрес картинки (Pollinations AI и др.) для примитива image. */
+  url?: string;
   fn?: string;
   domain?: unknown;
   origin?: unknown;
@@ -398,6 +400,17 @@ export function shapesToInstructions(shapes: unknown): DrawingInstruction[] {
           text: text.slice(0, 500),
           fontSize: clamp(Math.round(asNumber(raw.fontSize, 24)), 10, 96),
         });
+        break;
+      }
+      case "image": {
+        const url = typeof raw.url === "string" ? raw.url.trim() : "";
+        if (!url) continue;
+        const width = clamp(asNumber(raw.w, Number.NaN) || asNumber(raw.width, Number.NaN) || size, 8, 1600);
+        const height = clamp(asNumber(raw.h, Number.NaN) || asNumber(raw.height, Number.NaN) || size, 8, 1200);
+        const rawXY: [number, number] | null =
+          Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+        const topLeft = asPoint(raw.topLeft) ?? (rawXY ? rawXY : center);
+        result.push({ shape: "image", ...base, url, x: topLeft[0], y: topLeft[1], w: width, h: height });
         break;
       }
       case "graph": {

@@ -752,6 +752,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
           onOpenChange={setAiOpen}
           onApplyDrawing={applyDrawing}
           captureBoard={captureBoard}
+          chatMessages={messages}
           reservedTop={boardOpen ? WHITEBOARD_TOP_RESERVED_PX : undefined}
         />
       )}

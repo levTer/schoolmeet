@@ -8,7 +8,7 @@
  * Модуль импортируется только на клиенте (нужен DOM-канвас Fabric.js).
  */
 
-import { Circle, Ellipse, Group, Line, Path, Polygon, Rect, Textbox, type Canvas, type FabricObject } from "fabric";
+import { Circle, Ellipse, Group, Image, Line, Path, Polygon, Rect, Textbox, type Canvas, type FabricObject } from "fabric";
 
 import { commandToInstructions, shapesToInstructions } from "@/lib/whiteboard-bridge";
 import type {
@@ -208,12 +208,49 @@ export function parseDrawingInstructions(value: unknown): DrawingInstruction[] {
         } satisfies TextInstruction);
         break;
       }
+      case "image": {
+        const url = asString(raw.url);
+        const topLeft = asPoint(raw.topLeft ?? raw.at);
+        const x = typeof raw.x === "number" && Number.isFinite(raw.x) ? raw.x : topLeft ? topLeft[0] : 0;
+        const y = typeof raw.y === "number" && Number.isFinite(raw.y) ? raw.y : topLeft ? topLeft[1] : 0;
+        const w = asNumber(raw.width, asNumber(raw.w, 0));
+        const h = asNumber(raw.height, asNumber(raw.h, 0));
+        if (!url || w <= 0 || h <= 0) continue;
+        result.push({ shape: "image", ...base, url, x, y, w, h } satisfies ImageInstruction);
+        break;
+      }
       default:
         break;
     }
   }
 
   return result;
+}
+
+/**
+ * Загружает картинку по URL и создаёт объект Fabric.Image с заданным размером и
+ * позицией. Загрузка асинхронная — ошибка сети/битый URL не роняют cały чертёж:
+ * возвращается `null`, и движок продолжает работу с остальными фигурами.
+ */
+export function buildImageObject(
+  instruction: ImageInstruction,
+  options: BuildOptions = {},
+): Promise<FabricObject | null> {
+  const offset = options.offset ?? { x: 0, y: 0 };
+  return Image.fromURL(instruction.url, { crossOrigin: "anonymous" }, {
+    left: instruction.x + offset.x,
+    top: instruction.y + offset.y,
+    width: instruction.w,
+    height: instruction.h,
+    objectCaching: false,
+    selectable: false,
+    evented: false,
+  })
+    .then((image) => image as unknown as FabricObject)
+    .catch((error) => {
+      console.warn("[drawing-engine] не удалось загрузить картинку:", instruction.url, error);
+      return null;
+    });
 }
 
 /* -------------------------------------------------------------------------- */
