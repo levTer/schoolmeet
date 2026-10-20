@@ -48,9 +48,6 @@ const MAX_IMAGE_LENGTH = 6 * 1024 * 1024;
 const MAX_CONCURRENT_AI_REQUESTS = 4;
 let activeAiRequests = 0;
 
-/** Роль пользователя в сессии (см. `src/types/next-auth.d.ts`). */
-type SessionRole = "ADMIN" | "TEACHER" | "STUDENT";
-
 /**
  * GET /api/ai — сведения об ИИ-движке для бейджа в UI:
  * активный провайдер (AutoAI/Mock) и статусы всех звеньев цепочки
@@ -59,10 +56,14 @@ type SessionRole = "ADMIN" | "TEACHER" | "STUDENT";
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if ((session.user.role as SessionRole) === "STUDENT") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const isTeacherOrAdmin = session.user.role === 'TEACHER' || session.user.role === 'ADMIN';
+  if (!isTeacherOrAdmin) {
+    return NextResponse.json(
+      { error: 'Доступ к ИИ-помощнику разрешен только учителям и администраторам' },
+      { status: 403 }
+    );
   }
 
   const { provider, statuses } = getAIProvidersStatus();
@@ -83,10 +84,14 @@ export async function GET(): Promise<NextResponse> {
 export async function POST(request: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (session.user.role === "STUDENT") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const isTeacherOrAdmin = session.user.role === 'TEACHER' || session.user.role === 'ADMIN';
+  if (!isTeacherOrAdmin) {
+    return NextResponse.json(
+      { error: 'Доступ к ИИ-помощнику разрешен только учителям и администраторам' },
+      { status: 403 }
+    );
   }
 
   let body: unknown;

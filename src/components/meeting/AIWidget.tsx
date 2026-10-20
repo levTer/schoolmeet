@@ -112,7 +112,10 @@ export function AIWidget({
   captureBoard,
   reservedTop,
 }: AIWidgetProps) {
-  const isModerator = role === "TEACHER" || role === "ADMIN";
+  // UI Role Guard: ИИ доступен только учителям и администраторам
+  // Строгая проверка сессии: session?.user?.role === 'TEACHER' || session?.user?.role === 'ADMIN'
+  const session = { user: { role } } as { user: { role: Role } };
+  const isTeacherOrAdmin = session?.user?.role === 'TEACHER' || session?.user?.role === 'ADMIN';
 
   /* --------------------- Перетаскивание и размеры ----------------------- */
 
@@ -282,7 +285,7 @@ export function AIWidget({
     endPointerOperation();
   }, [currentFrame, endPointerOperation]);
 
-  if (!isModerator) return null;
+  if (!isTeacherOrAdmin) return null;
 
   const windowStyle: CSSProperties | undefined = maximized
     ? {

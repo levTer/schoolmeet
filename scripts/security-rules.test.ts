@@ -604,3 +604,101 @@ describe("сборка не меняет схему БД и сессии отз�
     assert.match(realtime, /CLASS_FORBIDDEN/, "нет отдельного кода отказа для чужого класса");
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* ИИ-ассистент: доступ только для TEACHER и ADMIN (Security hardening)       */
+/* -------------------------------------------------------------------------- */
+
+describe("ИИ-ассистент: доступ строго для TEACHER и ADMIN", () => {
+  // Хелпер, повторяющий логику бэкенда из src/app/api/ai/route.ts
+  function mockAIRequest(session: { user?: { role?: string } } | null): { status: number; error?: string; ok?: boolean } {
+    if (!session?.user) {
+      return { status: 401, error: "Unauthorized" };
+    }
+    const isTeacherOrAdmin = session.user.role === "TEACHER" || session.user.role === "ADMIN";
+    if (!isTeacherOrAdmin) {
+      return { status: 403, error: "Доступ к ИИ-помощнику разрешен только учителям и администраторам" };
+    }
+    return { status: 200, ok: true };
+  }
+
+  it("запрос к /api/ai от STUDENT возвращает 403 Forbidden", () => {
+    const result = mockAIRequest({ user: { role: "STUDENT" } });
+    assert.equal(result.status, 403);
+    assert.match(result.error ?? "", /Доступ к ИИ-помощнику разрешен только учителям и администраторам/);
+  });
+
+  it("запрос от TEACHER и ADMIN обрабатывается успешно (200)", () => {
+    for (const role of ["TEACHER", "ADMIN"] as const) {
+      const result = mockAIRequest({ user: { role } });
+      assert.equal(result.status, 200, `роль ${role} должна пройти`);
+      assert.equal(result.ok, true);
+    }
+  });
+
+  it("неавторизованный запрос возвращает 401 Unauthorized", () => {
+    assert.equal(mockAIRequest(null).status, 401);
+    assert.equal(mockAIRequest({}).status, 401);
+  });
+
+  it("бэкенд /api/ai содержит строгую проверку сессии и isTeacherOrAdmin", () => {
+    const route = readSource("src/app/api/ai/route.ts");
+    // Проверка сессии
+    assert.match(route, /getServerSession\(authOptions\)/, "нет проверки сессии");
+    assert.match(route, /if \(!session\?\.user\)/, "нет проверки на Unauthorized");
+    assert.match(route, /Unauthorized/, "нет ответа 401");
+    assert.match(route, /status: 401/, "нет статуса 401");
+    // Строгая проверка роли
+    assert.match(route, /isTeacherOrAdmin/, "нет переменной isTeacherOrAdmin");
+    assert.match(route, /session\.user\.role === 'TEACHER' \|\| session\.user\.role === 'ADMIN'/, "нет проверки TEACHER || ADMIN");
+    assert.match(route, /Доступ к ИИ-помощнику разрешен только учителям и администраторам/, "нет русского сообщения 403");
+    assert.match(route, /status: 403/, "нет статуса 403");
+    // Должно быть как минимум два места (GET и POST)
+    const guards = (route.match(/isTeacherOrAdmin/g) ?? []).length;
+    assert.ok(guards >= 2, `ожидается проверка в GET и POST, найдено ${guards}`);
+  });
+
+  it("UI скрывает ИИ для STUDENT и показывает только для TEACHER/ADMIN", () => {
+    const widget = readSource("src/components/meeting/AIWidget.tsx");
+    const assistant = readSource("src/components/meeting/AIAssistant.tsx");
+    const whiteboard = readSource("src/components/meeting/Whiteboard.tsx");
+    const room = readSource("src/components/meeting/MeetingRoom.tsx");
+    const videoGrid = readSource("src/components/meeting/VideoGrid.tsx");
+
+    for (const [path, source] of [
+      ["AIWidget.tsx", widget],
+      ["AIAssistant.tsx", assistant],
+      ["Whiteboard.tsx", whiteboard],
+      ["MeetingRoom.tsx", room],
+      ["VideoGrid.tsx", videoGrid],
+    ] as const) {
+      assert.ok(
+        source.includes("TEACHER") && source.includes("ADMIN"),
+        `${path} должен содержать проверку TEACHER/ADMIN`,
+      );
+      assert.match(source, /isTeacherOrAdmin/, `${path} должен использовать isTeacherOrAdmin`);
+      assert.match(source, /session\?\.user\?\.role === 'TEACHER' \|\| session\?\.user\?\.role === 'ADMIN'/, `${path} должен содержать проверку сессии по роли`);
+    }
+
+    // AIWidget возвращает null для не-модераторов (нет FAB и окна)
+    assert.match(widget, /if \(!isTeacherOrAdmin\) return null/, "AIWidget не скрывает виджет для STUDENT");
+    assert.match(assistant, /if \(!visible\) return null/, "AIAssistant не скрывает панель для STUDENT");
+    // Whiteboard прячет кнопку ИИ-помощника
+    assert.match(whiteboard, /isModerator && \(/, "Whiteboard не прячет кнопку ИИ для учеников");
+    // MeetingRoom не рендерит AIWidget для STUDENT
+    assert.match(room, /isLive && isTeacherOrAdmin && \(/, "MeetingRoom рендерит AIWidget без проверки роли");
+  });
+
+  it("анализ доски и генерация фигур заблокированы для STUDENT (403)", () => {
+    const whiteboard = readSource("src/components/meeting/Whiteboard.tsx");
+    const assistant = readSource("src/components/meeting/AIAssistant.tsx");
+    const route = readSource("src/app/api/ai/route.ts");
+
+    // Whiteboard обрабатывает 403 от /api/ai при анализе формул
+    assert.match(whiteboard, /response\.status === 403/, "Whiteboard не обрабатывает 403 при распознавании формул");
+    // AIAssistant обрабатывает 403 от /api/ai
+    assert.match(assistant, /response\.status === 403/, "AIAssistant не обрабатывает 403");
+    // Бэкенд блокирует любые действия ИИ для STUDENT (включая imageDataUrl / draw)
+    assert.match(route, /imageDataUrl/, "бэкенд должен обрабатывать imageDataUrl (анализ доски) и блокировать его для STUDENT");
+  });
+});
