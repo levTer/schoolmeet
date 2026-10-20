@@ -171,7 +171,7 @@ export interface WhiteboardApi {
   exportPNG: () => void;
   /**
    * PNG-снимок текущей страницы (data URL) для ИИ-панели («Передать доску»):
-   * уезжает на сервер и передаётся в Gemini Vision. `null`, если доска ещё не готова.
+   * уезжает на сервер и передаётся в Groq Vision (основной). `null`, если доска ещё не готова.
    */
   captureBoard: (maxWidth?: number) => string | null;
   /** Заменить выделенный рисунок печатной формулой (после /api/ai). */
@@ -1084,7 +1084,7 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
   /**
    * Снимок доски для ИИ-панели (кнопка «Передать доску»).
    *
-   * Ширину ограничиваем 1280 px: снимок остаётся читаемым для Gemini Vision,
+   * Ширину ограничиваем 1280 px: снимок остаётся читаемым для Groq Vision,
    * но не раздувает запрос (лимит `/api/ai` — 6 МБ на data URL).
    */
   const captureBoard = useCallback((maxWidth = 1280): string | null => {

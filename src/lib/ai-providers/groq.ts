@@ -20,14 +20,16 @@
  * в браузер. Из РФ API Groq напрямую недоступен — поэтому запросы идут
  * через сервер Vercel (Европа), и пользователям VPN не нужен.
  *
- * GROQ VISION (анализ снимка доски):
- * Если к запросу приложен `imageDataUrl`, провайдер переключается на
- * мультимодальные модели `llama-3.2-11b-vision-preview` /
- * `llama-3.2-90b-vision-preview` и отправляет изображение в
- * OpenAI-совместимом формате `image_url` (data URL). Это резервный
- * Vision-провайдер: `AutoAIProvider` сначала пробует Gemini 1.5 Flash,
- * а при отсутствии `GEMINI_API_KEY` или ошибке Gemini автоматически
- * переходит сюда — учитель всё равно получает реальный разбор доски.
+ * GROQ VISION (анализ снимка доски) — ОСНОВНОЙ Vision-провайдер SchoolMeet
+ * (выбран, чтобы избежать региональных блокировок Google):
+ * если к запросу приложен `imageDataUrl`, провайдер переключается на
+ * мультимодальную модель `llama-3.2-11b-vision-preview` (резерв —
+ * `llama-3.2-90b-vision-preview`) и отправляет изображение строго в
+ * OpenAI Vision формате: сообщение `content` — массив из текстовой части
+ * `GROQ_VISION_BOARD_PROMPT` и `{type:"image_url", image_url:{url}}`.
+ * `AutoAIProvider` ставит Groq первым в `VISION_CHAIN`, поэтому при наличии
+ * `GROQ_API_KEY` ответ с анализом доски приходит ВСЕГДА (далее по цепочке —
+ * Gemini Vision → OpenRouter Vision → Mock только при сбое Groq).
  */
 
 import {
@@ -85,6 +87,10 @@ export const GROQ_DEFAULT_REASONING_MODEL = "openai/gpt-oss-120b";
  * переключается на `llama-3.2-90b-vision-preview`.
  */
 export const GROQ_DEFAULT_VISION_MODEL = "llama-3.2-11b-vision-preview";
+
+/** Точный текст запроса к Groq Vision для анализа снимка школьной доски. */
+export const GROQ_VISION_BOARD_PROMPT =
+  "Подробно проанализируй этот снимок школьной доски. Опиши рукописный текст, математические формулы, геометрию и решения:";
 
 /**
  * Резервные Vision-модели Groq — перебираются по очереди, если текущая
@@ -251,7 +257,12 @@ export class GroqProvider implements AIProvider {
                 role: "user",
                 content: hasImage
                   ? [
-                      { type: "text", text: buildUserPrompt(request) },
+                      {
+                        type: "text",
+                        text: request.prompt.trim()
+                          ? `${GROQ_VISION_BOARD_PROMPT}\nЗапрос учителя: ${request.prompt.trim()}`
+                          : GROQ_VISION_BOARD_PROMPT,
+                      },
                       { type: "image_url", image_url: { url: request.imageDataUrl } },
                     ]
                   : buildUserPrompt(request),

@@ -169,7 +169,7 @@ export function Whiteboard({
     onFormulaRegion: (payload) => formulaHandlerRef.current(payload),
   });
 
-  /* ---------------- Распознавание формулы (Gemini Vision) ----------------- */
+  /* ---------------- Распознавание формулы (Groq Vision) ----------------- */
 
   const handleFormulaRegion = useCallback(
     async (payload: FormulaRegionPayload) => {

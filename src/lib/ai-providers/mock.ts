@@ -359,7 +359,19 @@ const FORMULA_HINT = `### Формула распознана
 
 Рукописный фрагмент заменён печатной формулой. Нажмите **«Распознать формулу»** ещё раз и выделите следующий фрагмент — так можно оцифровать всю доску.
 
-*Локальный резервный режим: изображение не отправляется наружу, формула подбирается из набора школьных формул. Настоящее распознавание доски выполняет Gemini Vision — добавьте GEMINI_API_KEY (см. DEPLOYMENT.md).*`;
+*Снимок доски в основном режиме анализирует Groq Vision (llama-3.2-11b-vision-preview, GROQ_API_KEY).*`;
+
+/** Составная иллюстрация «Домик» из новых примитивов rect+polygon+text (пример из системного промпта). */
+function houseDrawing(prompt: string, title: string): AIResponse {
+  return {
+    text: `## Иллюстрация: Домик\n\nНарисовал домик на доске: стены (rect), крышу (polygon) и подпись (text).${title ? ` Урок: ${title}.` : ""}`,
+    drawing: [
+      { shape: "rect", topLeft: [150, 150], width: 120, height: 100, color: "#3b82f6", strokeWidth: 3 },
+      { shape: "polygon", points: [[140, 150], [210, 100], [280, 150]], color: "#ef4444", strokeWidth: 3 },
+      { shape: "text", at: [210, 80], text: "Домик", color: "#ffffff", fontSize: 24 },
+    ],
+  };
+}
 
 /**
  * Локальный мок-провайдер ИИ — последнее звено waterfall-цепочки (этап 8).
@@ -391,6 +403,7 @@ export class MockAIProvider implements AIProvider {
 
     switch (request.action) {
       case "ask": {
+        if (isDrawRequest(prompt) && /(домик|дом\b|картинк)/i.test(prompt)) return houseDrawing(prompt, title);
         // Свободная просьба «нарисуй …» — тот же путь, что и действие draw:
         // возвращаем инструкции, клиент нарисует их на доске через мост.
         if (isDrawRequest(prompt)) {
@@ -400,11 +413,11 @@ export class MockAIProvider implements AIProvider {
             drawing: template.drawing,
           };
         }
-        // Снимок доски распознают мультимодальные провайдеры
-        // (Gemini 1.5 Flash Vision → Groq Vision → OpenRouter Vision).
-        // Mock — последнее звено цепочки и изображения не видит, поэтому
-        // никаких «заглушек про неумение»: если снимок сюда дошёл, значит все
-        // Vision-провайдеры недоступны, и честнее дать разбор по теме урока.
+        // Снимок доски распознаёт ОСНОВНОЙ мультимодальный провайдер
+        // Groq Vision (llama-3.2-11b-vision-preview) → Gemini Vision →
+        // OpenRouter Vision. Mock — последнее звено цепочки: никаких
+        // текстовых заглушек о недоступности Vision здесь нет, даём разбор
+        // по теме урока.
         if (request.imageDataUrl && isBoardAnalysisRequest(prompt)) {
           return {
             text: [
@@ -414,7 +427,7 @@ export class MockAIProvider implements AIProvider {
               "",
               SUMMARY_TEMPLATES[topic],
               "",
-              "> Ответ по типовым материалам темы: внешние Vision-модели сейчас недоступны. Проверьте `GEMINI_API_KEY` / `GROQ_API_KEY` — снимок доски автоматически уйдёт в Gemini 1.5 Flash Vision или Groq Vision.",
+              "> Снимок доски в основном режиме разбирает Groq Vision (llama-3.2-11b-vision-preview по GROQ_API_KEY).",
             ].join("\n"),
           };
         }
@@ -448,6 +461,7 @@ export class MockAIProvider implements AIProvider {
         return { text: CHECK_TEMPLATE };
 
       case "draw": {
+        if (/(домик|дом\b|картинк)/i.test(prompt)) return houseDrawing(prompt, title);
         const template = DRAW_TEMPLATES[topic];
         return {
           text: prompt ? `${template.text}\n\n**Условие:** ${escapeMarkdown(prompt)}${title}.` : template.text,
