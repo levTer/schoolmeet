@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarPlus, Plus, X } from "lucide-react";
+import { CalendarPlus, Plus, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { useHomeworkCreateModal } from "@/components/homework/homework-create-store";
@@ -10,6 +10,7 @@ import { TextField } from "@/components/ui/field";
 import { SelectField, TextAreaField } from "@/components/ui/form-controls";
 import { Modal } from "@/components/ui/modal";
 import { apiRequest } from "@/lib/client-api";
+import { extractJsonObject } from "@/lib/ai-providers/shared";
 import { HOMEWORK_LIMITS, validateCreateHomework } from "@/lib/homework-rules";
 import { formatSchoolLocalInput, schoolLocalToDate, type GradeCode } from "@/lib/schedule-rules";
 import type { SchoolClassOption } from "@/lib/schools";
@@ -79,6 +80,10 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
   const [form, setForm] = useState<FormState>(() => buildInitialForm(subjects, classes));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [aiMode, setAiMode] = useState<"idle" | "input" | "generating">("idle");
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiError, setAiError] = useState("");
+  const [aiGenerating, setAiGenerating] = useState(false);
   const wasOpen = useRef(false);
 
   useEffect(() => {
@@ -148,6 +153,92 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
     router.refresh();
   }
 
+  /** «✨ Сгенерировать через ИИ»: вызывает /api/ai и заполняет форму ответом. */
+  async function generateHomeworkWithAI() {
+    const request = aiPrompt.trim();
+    if (!request) {
+      setAiError("Напишите, что нужно сгенерировать (например: «Составь 5 вопросов по теме Дроби 6 класс»).");
+      return;
+    }
+
+    setAiError("");
+    setAiGenerating(true);
+    try {
+      const response = await fetch("/api/ai", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ask",
+          prompt: [
+            "Ты — школьный методолог. Составь домашнее задание/тест по запросу учителя.",
+            `Запрос учителя: ${request}`,
+            "",
+            'Верни ТОЛЬКО один JSON-объект без markdown-обёртки и без текста вне JSON:',
+            "{",
+            '  "title": "Заголовок задания (до 120 символов)",',
+            '  "description": "Полное условие задания или тест с вопросами и правильными ответами (Markdown, допустимы формулы LaTeX)",',
+            '  "subject": "Предмет по-русски (например «Математика», «Алгебра», «Геометрия», «Русский язык», «Английский язык», «История», «Биология», «Физика», «Химия», «Литература», «Обществознание», «География»)"',
+            "}",
+          ].join("\n"),
+          context: { meetingTitle: undefined },
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        data?: { text: string };
+        error?: string;
+      } | undefined;
+      if (!response.ok) throw new Error((payload as { error?: string })?.error ?? "ИИ не ответил");
+      if (!payload || !payload.ok || !payload.data) throw new Error(payload?.error ?? "Не удалось сгенерировать задание");
+
+      const generated = extractJsonObject(payload.data.text);
+      let filled = false;
+      if (generated && (typeof generated.title === "string" || typeof generated.description === "string")) {
+        if (typeof generated.title === "string" && generated.title.trim()) {
+          update("title", generated.title.trim().slice(0, HOMEWORK_LIMITS.titleMax));
+        }
+        if (typeof generated.description === "string" && generated.description.trim()) {
+          update("description", generated.description.trim());
+        }
+        const subjectName = typeof generated.subject === "string" ? generated.subject.trim() : "";
+        if (subjectName && subjects.length > 0) {
+          const normalized = subjectName.toLowerCase();
+          const matched =
+            subjects.find((subject) => subject.name.toLowerCase() === normalized) ??
+            subjects.find(
+              (subject) =>
+                normalized.includes(subject.name.toLowerCase()) || subject.name.toLowerCase().includes(normalized),
+            );
+          if (matched) {
+            update("subjectId", matched.id);
+          } else {
+            setAiError(
+              "Предмет не найден в списке предметов — заголовок и условие заполнены, выберите предмет вручную.",
+            );
+          }
+        }
+        filled = true;
+      }
+
+      if (!filled) {
+        // Мок-ответ или не-JSON: текст ИИ — в условие, запрос — в название.
+        update("title", request.slice(0, HOMEWORK_LIMITS.titleMax));
+        update("description", payload.data.text.trim());
+      }
+
+      setAiMode("idle");
+      setAiPrompt("");
+      setAiError("");
+      toast.success("Поля заполнены генерацией ИИ — проверьте текст и отредактируйте перед выдачей.");
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "Не удалось сгенерировать задание. Попробуйте ещё раз.");
+    } finally {
+      setAiGenerating(false);
+    }
+  }
+
   return (
     <Modal
       open={open}
@@ -183,6 +274,55 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
 
       {/* Прокручиваемая область: вся форма живёт здесь, отступ сверху — pt-2 */}
       <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
+        {/* ✨ Генерация задания через ИИ */}
+        {aiMode === "idle" && (
+          <button
+            type="button"
+            onClick={() => {
+              setAiMode("input");
+              setAiError("");
+              setAiPrompt("");
+            }}
+            className="sm:col-span-2 inline-flex items-center gap-2 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs font-medium text-brand-400 transition hover:bg-brand-500/20"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            ✨ Сгенерировать через ИИ
+          </button>
+        )}
+        {aiMode === "input" && (
+          <div className="sm:col-span-2 flex flex-col gap-2">
+            <TextAreaField
+              label="Опишите задание для ИИ"
+              value={aiPrompt}
+              onChange={(event) => setAiPrompt(event.target.value)}
+              error={aiError}
+              hint="Например: «Составь 5 вопросов по теме Дроби 6 класс»"
+              placeholder="Составь 5 вопросов по теме Дроби 6 класс"
+              rows={2}
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAiMode("idle")}
+                disabled={aiGenerating}
+                className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-300 transition hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={generateHomeworkWithAI}
+                disabled={aiGenerating || !aiPrompt.trim()}
+                className="ml-auto rounded-xl bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {aiGenerating ? "Генерация…" : "Сгенерировать"}
+              </button>
+            </div>
+            {aiGenerating && (
+              <p className="text-xs text-slate-400">ИИ составляет задание… Это займёт несколько секунд.</p>
+            )}
+          </div>
+        )}
         <form id="homework-create-form" onSubmit={handleSubmit} noValidate className="grid gap-4 sm:grid-cols-2">
           <div className="pt-2 sm:col-span-2">
             <TextField

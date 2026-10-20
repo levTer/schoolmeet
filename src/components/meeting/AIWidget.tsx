@@ -35,6 +35,7 @@ import {
 import { Sparkles } from "lucide-react";
 
 import { AIAssistant } from "@/components/meeting/AIAssistant";
+import type { ChatViewMessage } from "@/components/meeting/Chat";
 import type { DrawingInstruction } from "@/lib/ai-provider";
 import { drawCommand, getCanvasSnapshot } from "@/lib/whiteboard-bridge";
 import { cn } from "@/lib/utils";
@@ -43,11 +44,13 @@ import type { Role } from "@/types";
 export interface AIWidgetProps {
   /** Роль пользователя: виджет показывается только учителю и администратору. */
   role: Role;
-  /** Название урока — попадает в контекст запросов. */
+  /** Название урока — попадает в контекст запросов и конспекта. */
   meetingTitle: string;
   /** Открыт ли виджет. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Расшифрованные сообщения чата урока — для конспекта урока. */
+  chatMessages?: ChatViewMessage[];
   /**
    * ИИ вернул инструкции для доски. По умолчанию — `drawCommand()` моста
    * `whiteboard-bridge`: фигуры рисуются на открытой доске без проводки
@@ -110,6 +113,7 @@ export function AIWidget({
   onOpenChange,
   onApplyDrawing,
   captureBoard,
+  chatMessages,
   reservedTop,
 }: AIWidgetProps) {
   // UI Role Guard: ИИ доступен только учителям и администраторам
@@ -349,6 +353,7 @@ export function AIWidget({
           <AIAssistant
             role={role}
             meetingTitle={meetingTitle}
+            chatMessages={chatMessages}
             onApplyDrawing={onApplyDrawing ?? ((instructions) => void drawCommand(instructions))}
             captureBoard={captureBoard ?? (() => getCanvasSnapshot())}
             onClose={() => onOpenChange(false)}

@@ -36,6 +36,7 @@ import {
   Bot,
   Expand,
   Eye,
+  FileText,
   Lightbulb,
   Loader2,
   Mic,
@@ -49,8 +50,10 @@ import {
 } from "lucide-react";
 
 import { Markdown } from "@/components/ui/markdown";
+import { Modal } from "@/components/ui/modal";
 import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
+import type { ChatViewMessage } from "@/components/meeting/Chat";
 import {
   AI_ACTION_LABELS,
   type AIAction,
@@ -76,8 +79,10 @@ import type { Role } from "@/types";
 export interface AIAssistantProps {
   /** Роль текущего пользователя — защита от рендера для учеников. */
   role: Role;
-  /** Название урока — попадает в контекст запросов. */
+  /** Название урока — попадает в контекст запросов и конспекта. */
   meetingTitle: string;
+  /** Расшифрованные сообщения чата урока — для конспекта урока. */
+  chatMessages?: ChatViewMessage[];
   /** ИИ вернул JSON-инструкции — нарисовать их на доске. */
   onApplyDrawing: (instructions: DrawingInstruction[]) => void;
   /** Снимок доски (PNG data URL) для переключателя «Передать доску». */
@@ -165,6 +170,19 @@ const QUICK_HINTS_HINT: Partial<Record<AIAction, string>> = {
   draw: "Условие → чертёж на доске",
 };
 
+/** Расшифрованные сообщения чата урока → транскрипт «Автор: текст» для конспекта. */
+function buildChatTranscript(messages?: ChatViewMessage[]): string {
+  if (!messages?.length) return "";
+  return messages
+    .map((message) => {
+      const time = message.createdAt ? new Date(message.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
+      const author = message.author?.name ?? "Участник";
+      const to = message.recipient ? ` → ${message.recipient.name}` : "";
+      return `${time} ${author}${to}: ${message.text ?? ""}`;
+    })
+    .join("\n");
+}
+
 /* -------------------------------------------------------------------------- */
 /* Компонент                                                                   */
 /* -------------------------------------------------------------------------- */
@@ -172,6 +190,7 @@ const QUICK_HINTS_HINT: Partial<Record<AIAction, string>> = {
 export function AIAssistant({
   role,
   meetingTitle,
+  chatMessages,
   onApplyDrawing,
   captureBoard,
   onClose,
@@ -203,9 +222,13 @@ export function AIAssistant({
     if (onToggleMaximized) onToggleMaximized();
     else setIsMaximized((value) => !value);
   }, [onToggleMaximized]);
-  const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
-  const [boardAttached, setBoardAttached] = useState(false);
+const [error, setError] = useState<string | null>(null);
+const [warning, setWarning] = useState<string | null>(null);
+const [boardAttached, setBoardAttached] = useState(false);
+/** Конспект урока: модальное окно с результатом и кнопкой копирования. */
+const [summaryOpen, setSummaryOpen] = useState(false);
+const [summaryText, setSummaryText] = useState("");
+const [summaryCopying, setSummaryCopying] = useState(false);
   const [providerName, setProviderName] = useState("ИИ-движок SchoolMeet");
   const [providerIsLocal, setProviderIsLocal] = useState(true);
   const [interim, setInterim] = useState("");
@@ -453,6 +476,58 @@ export function AIAssistant({
     void send({ promptOverride: ANALYZE_BOARD_PROMPT, forceBoard: true });
   }, [send]);
 
+  /** «📄 Сгенерировать конспект урока»: снимок доски + чат урока → /api/ai (summary). */
+  const generateSummary = useCallback(async () => {
+    if (loading) return;
+    const snapshot = takeBoardSnapshot();
+    const prompt = [
+      `Составь структурированный конспект урока «${meetingTitle}».`,
+      "",
+      "Используй снимок доски (передан отдельно) и расшифрованный чат урока ниже.",
+      "",
+      "Чат урока:",
+      buildChatTranscript(chatMessages) || "(чат пуст)",
+    ].join("\n");
+
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/ai", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "summary",
+          prompt,
+          imageDataUrl: snapshot,
+          context: { meetingTitle },
+        }),
+      });
+
+      if (response.status === 403) {
+        setError("Доступ запрещён: ИИ-панель доступна только учителям и администраторам.");
+        return;
+      }
+      if (!response.ok) {
+        setError("ИИ-помощник временно недоступен. Попробуйте ещё раз.");
+        return;
+      }
+
+      const payload = (await response.json()) as { ok: boolean; data?: AIResponse; error?: string };
+      if (!payload.ok || !payload.data) {
+        setError(payload.error ?? "Не удалось составить конспект.");
+        return;
+      }
+
+      setSummaryText(payload.data.text);
+      setSummaryOpen(true);
+    } catch {
+      setError("Нет соединения с сервером. Проверьте интернет.");
+    } finally {
+      setLoading(false);
+    }
+  }, [chatMessages, loading, meetingTitle, takeBoardSnapshot]);
+
   /** Повторить рисование чертежа из записи чата (доску открыли после ответа ИИ). */
   const applyEntryDrawing = useCallback(
     (entryId: string) => {
@@ -465,6 +540,19 @@ export function AIAssistant({
     },
     [applyDrawingViaBridge],
   );
+
+  const copySummary = useCallback(async () => {
+    if (!summaryText) return;
+    setSummaryCopying(true);
+    try {
+      await navigator.clipboard.writeText(summaryText);
+      toast.success("Конспект скопирован в буфер обмена");
+    } catch {
+      toast.error("Не удалось скопировать конспект");
+    } finally {
+      setSummaryCopying(false);
+    }
+  }, [summaryText]);
 
   /* --------------------------- Идеи запросов ----------------------------- */
 
@@ -509,16 +597,64 @@ export function AIAssistant({
   /* ----------------------------- Разметка -------------------------------- */
 
   return (
-    <aside
-      className={cn(
-        "glass flex min-h-0 flex-col overflow-hidden rounded-3xl",
-        floating
-          ? "h-full w-full"
-          : isExpanded
-            ? "fixed inset-4 z-50 max-h-none max-w-none shadow-2xl md:inset-10"
-            : "h-full w-full md:w-[420px] md:shrink-0 lg:w-[460px]",
+    <>
+      {/* Конспект урока — модалка с Markdown и кнопкой «Скопировать конспект» */}
+
+      {summaryOpen && (
+        <Modal
+          open={summaryOpen}
+          onClose={() => setSummaryOpen(false)}
+          labelledBy="lesson-summary-modal-title"
+          className="w-full max-w-3xl sm:max-w-4xl max-h-[85vh] flex flex-col p-0"
+        >
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 px-6 pb-4 pt-5">
+            <div>
+              <h2 id="lesson-summary-modal-title" className="flex items-center gap-2 text-lg font-semibold text-white">
+                <FileText className="h-5 w-5 text-brand-300" />
+                Конспект урока
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">{meetingTitle}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSummaryOpen(false)}
+              className="rounded-full p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
+            <Markdown text={summaryText} />
+          </div>
+          <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-white/10 px-6 py-4 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setSummaryOpen(false)}
+              className="rounded-xl border border-white/10 px-5 py-2.5 text-sm text-slate-300 transition hover:bg-white/5"
+            >
+              Закрыть
+            </button>
+            <button
+              type="button"
+              onClick={copySummary}
+              disabled={summaryCopying}
+              className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition disabled:opacity-60"
+            >
+              {summaryCopying ? "Скопировано" : "Скопировать конспект"}
+            </button>
+          </div>
+        </Modal>
       )}
-    >
+      <aside
+        className={cn(
+          "glass flex min-h-0 flex-col overflow-hidden rounded-3xl",
+          floating
+            ? "h-full w-full"
+            : isExpanded
+              ? "fixed inset-4 z-50 max-h-none max-w-none shadow-2xl md:inset-10"
+              : "h-full w-full md:w-[420px] md:shrink-0 lg:w-[460px]",
+        )}
+      >
       {/* Шапка — ручка перетаскивания плавающего окна (cursor-grab / cursor-grabbing) */}
       <header
         className={cn(
@@ -705,6 +841,21 @@ export function AIAssistant({
 
           <button
             type="button"
+            onClick={generateSummary}
+            disabled={loading}
+            title="Структурированный конспект урока: тема, понятия, формулы, разбор материала, рекомендации для повторения"
+            className={cn(
+              "inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition",
+              "border-white/10 bg-white/[0.06] text-slate-200 hover:bg-white/10",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+          >
+            <FileText className="h-4 w-4" />
+            📄 Конспект урока
+          </button>
+
+          <button
+            type="button"
             onClick={toggleVoice}
             disabled={!voice.supported}
             aria-pressed={voice.listening}
@@ -835,5 +986,6 @@ export function AIAssistant({
         )}
       </footer>
     </aside>
+    </>
   );
 }
