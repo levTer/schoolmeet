@@ -12,7 +12,7 @@ import {
 
 export const dynamic = "force-dynamic";
 /**
- * Внешние ИИ-вызовы (особенно Gemini Vision с изображением доски) могут
+ * Внешние ИИ-вызовы (особенно Groq Vision с изображением доски) могут
  * занимать десятки секунд — поднимаем лимит serverless-функции Vercel.
  * На Hobby-плане с Fluid Compute доступно до 60 с.
  */
@@ -27,9 +27,10 @@ export const maxDuration = 60;
  * а API-ключи никогда не попадают в клиентский бандл.
  *
  * Провайдера выбирает `AutoAIProvider` (src/lib/ai-provider.ts):
- *   • изображение доски → Gemini Vision → Groq Vision (llama-3.2-vision)
- *     → OpenRouter Vision → Mock; без GEMINI_API_KEY снимок сразу уходит
- *     в Groq Vision через GROQ_API_KEY;
+ *   • изображение доски → Groq Vision (`llama-3.2-11b-vision-preview`,
+ *     ОСНОВНОЙ Vision-провайдер — без региональных блокировок Google)
+ *     → Gemini Vision → OpenRouter Vision → Mock; при наличии
+ *     `GROQ_API_KEY` анализ снимка доски приходит всегда;
  *   • текст/задача      → Groq → OpenRouter :free → Gemini → Mock.
  * Сбой любого звена не роняет API — запрос автоматически уходит следующему.
  *
@@ -41,7 +42,7 @@ export const maxDuration = 60;
 const MAX_PROMPT_LENGTH = 2000;
 /**
  * data URL фрагмента доски (PNG base64) — до ~6 МБ: настоящего распознавания
- * рукописных формул (Gemini Vision) требуются полноценные снимки области.
+ * рукописных формул (Groq Vision) требуются полноценные снимки области.
  */
 const MAX_IMAGE_LENGTH = 6 * 1024 * 1024;
 /** Bound in-flight model/image work so AI traffic cannot exhaust the web process. */

@@ -192,7 +192,7 @@ describe("провайдерские парсеры и промпты (shared.ts
   });
 
   it("промпт ask требует JSON-команду при просьбе нарисовать, draw описывает компактный формат", () => {
-    assert.match(buildSystemPrompt("ask", "Геометрия"), /\{"action":"draw","shapes":/);
+    assert.match(buildSystemPrompt("ask", "Геометрия"), /\{"action":"draw",.*"shapes":/);
     assert.match(buildSystemPrompt("draw", "Геометрия"), /компактная команда моста доски/);
   });
 
@@ -206,6 +206,46 @@ describe("провайдерские парсеры и промпты (shared.ts
 /* -------------------------------------------------------------------------- */
 /* Движок черчения принимает команды моста                                     */
 /* -------------------------------------------------------------------------- */
+
+describe("составное рисование ИИ: домик и новые примитивы", () => {
+  it("команда «Иллюстрация: Домик» из промпта → rect(w/h как topLeft)+polygon+text", () => {
+    const instructions = commandToInstructions({
+      action: "draw",
+      title: "Иллюстрация: Домик",
+      shapes: [
+        { type: "rect", x: 150, y: 150, w: 120, h: 100, color: "#3b82f6" },
+        { type: "polygon", points: [[140, 150], [210, 100], [280, 150]], color: "#ef4444" },
+        { type: "text", text: "Домик", x: 210, y: 80, color: "#ffffff" },
+      ],
+    });
+    assert.deepEqual(instructions.map((i) => i.shape), ["rect", "polygon", "text"]);
+    const rect = instructions[0];
+    assert.deepEqual(rect.shape === "rect" ? rect.topLeft : null, [150, 150]);
+    assert.equal(rect.shape === "rect" ? rect.width : 0, 120);
+    assert.equal(parseDrawingInstructions(instructions).length, 3);
+  });
+
+  it("ellipse/path/arc нормализуются и проходят движок", () => {
+    const instructions = shapesToInstructions([
+      { type: "ellipse", x: 200, y: 150, radiusX: 80, radiusY: 40 },
+      { type: "path", points: [[0, 0], [60, 40], [120, 0]] },
+      { type: "arc", x: 300, y: 300, radius: 60, startAngle: 0, endAngle: 180 },
+    ]);
+    assert.deepEqual(instructions.map((i) => i.shape), ["ellipse", "path", "arc"]);
+    assert.equal(parseDrawingInstructions(instructions).length, 3);
+  });
+
+  it("промпт разрешает draw для домика/схемы/системы координат и описывает новые типы", () => {
+    const prompt = buildSystemPrompt("ask", "Геометрия");
+    assert.match(prompt, /"action":"draw"/);
+    assert.match(prompt, /Иллюстрация: Домик/);
+    assert.match(prompt, /ellipse/);
+    assert.match(prompt, /polygon/);
+    assert.match(prompt, /arc/);
+    assert.equal(isDrawRequest("Нарисуй домик"), true);
+    assert.equal(isDrawRequest("нарисуй систему координат"), true);
+  });
+});
 
 describe("parseDrawingInstructions принимает формат моста", () => {
   it("массив компактных фигур и команда целиком", () => {

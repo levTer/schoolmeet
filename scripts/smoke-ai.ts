@@ -15,7 +15,7 @@
  *     с ключом в `?key=`, перебор моделей при 404 NOT_FOUND;
  *  7. OpenRouterProvider: text/vision-модели, image_url в сообщении;
  *  8. AutoAIProvider: waterfall-цепочки (текст → Groq, изображение →
- *     Gemini Vision → Groq Vision),
+ *     Groq Vision (ОСНОВНОЙ, llama-3.2-11b-vision-preview) → Gemini Vision),
  *     авто-переключение при сбоях, работа БЕЗ ключей на локальном Mock;
  *  9. WebRTC-конфиг: STUN Google по умолчанию, NEXT_PUBLIC_TURN_SERVERS,
  *     legacy-override NEXT_PUBLIC_ICE_SERVERS, устойчивость к битому JSON.
@@ -40,6 +40,7 @@ import {
   resolveGeminiModel,
   setAIProvider,
   VISION_CHAIN,
+  GROQ_VISION_BOARD_PROMPT,
   type AIAction,
   type AIProvider,
   type AIRequest,
@@ -186,6 +187,22 @@ async function main(): Promise<void> {
     { shape: "graph", fn: "parabola", domain: [-2, 2], origin: [50, 50], scale: 10 },
   ]);
   check("валидные инструкции проходят", valid.length === 4, `получено ${valid.length}`);
+  const composite = parseDrawingInstructions([
+    { shape: "rect", topLeft: [150, 150], width: 120, height: 100, color: "#3b82f6" },
+    { shape: "polygon", points: [[140, 150], [210, 100], [280, 150]], color: "#ef4444" },
+    { shape: "ellipse", center: [400, 200], radiusX: 80, radiusY: 40 },
+    { shape: "path", points: [[0, 0], [50, 50], [100, 0]], closed: false },
+    { shape: "arc", center: [300, 300], radius: 60, startAngle: 0, endAngle: 180 },
+    { shape: "text", at: [210, 80], text: "Домик" },
+  ]);
+  check("составные примитивы rect/polygon/ellipse/path/arc/text проходят", composite.length === 6, `получено ${composite.length}`);
+  const badComposite = parseDrawingInstructions([
+    { shape: "polygon", points: [[0, 0], [1, 1]] },
+    { shape: "ellipse", center: [0, 0], radiusX: -1, radiusY: 10 },
+    { shape: "path", points: [[0, 0]] },
+    { shape: "arc", center: [0, 0], radius: 0 },
+  ]);
+  check("битые составные примитивы отбрасываются", badComposite.length === 0, `прошло ${badComposite.length}`);
 
   const invalid = parseDrawingInstructions([
     { shape: "triangle", points: [[0, 0]] },
@@ -349,6 +366,12 @@ async function main(): Promise<void> {
     "Groq Vision: изображение передано как image_url (data URL)",
     JSON.stringify(groqVisionBody).includes('"type":"image_url"') &&
       JSON.stringify(groqVisionBody).includes("data:image/png;base64,iVBORw0KGgo="),
+  );
+  check(
+    "Groq Vision: текст строго по OpenAI Vision формату (board prompt + image_url)",
+    GROQ_VISION_BOARD_PROMPT ===
+      "Подробно проанализируй этот снимок школьной доски. Опиши рукописный текст, математические формулы, геометрию и решения:" &&
+      JSON.stringify(groqVisionBody).includes(GROQ_VISION_BOARD_PROMPT),
   );
   check(
     "Groq Vision: системный промпт требует разбор снимка",
@@ -544,7 +567,7 @@ async function main(): Promise<void> {
   check("сбой Groq → авто-переключение на OpenRouter", log1.join(",") === "groq,openrouter", log1.join(","));
   check("ответ помечен провайдером", textAnswer.providerId === "openrouter");
 
-  // 8.3. Запрос с изображением доски — сразу Gemini Vision.
+  // 8.3. Запрос с изображением доски — СРАЗУ Groq Vision (основной провайдер).
   const log2: string[] = [];
   const autoVision = new AutoAIProvider({
     env: {} as NodeJS.ProcessEnv,
@@ -555,15 +578,15 @@ async function main(): Promise<void> {
     },
   });
   await autoVision.complete({ action: "formula", prompt: "распознай", imageDataUrl: "data:image/png;base64,AAAA" });
-  check("изображение → первым вызван Gemini (Groq пропущен)", log2[0] === "gemini" && !log2.includes("groq"), log2.join(","));
+  check("изображение → первым вызван Groq Vision (Gemini пропущен)", log2[0] === "groq" && !log2.includes("gemini"), log2.join(","));
 
-  // 8.3b. Gemini Vision упал → снимок автоматически уходит в Groq Vision.
+  // 8.3b. Groq Vision упал → снимок автоматически уходит в Gemini Vision.
   const log2b: string[] = [];
   const autoVisionGroq = new AutoAIProvider({
     env: {} as NodeJS.ProcessEnv,
     registry: {
-      gemini: recordingProvider("gemini", log2b, true), // ошибка Gemini
-      groq: recordingProvider("groq", log2b), // сработает Groq Vision
+      groq: recordingProvider("groq", log2b, true), // ошибка Groq Vision
+      gemini: recordingProvider("gemini", log2b), // сработает Gemini Vision
       openrouter: recordingProvider("openrouter", log2b),
     },
   });
@@ -573,13 +596,13 @@ async function main(): Promise<void> {
     imageDataUrl: "data:image/png;base64,AAAA",
   });
   check(
-    "сбой Gemini Vision → авто-переключение на Groq Vision",
-    log2b.join(",") === "gemini,groq" && groqVisionAnswer.providerId === "groq",
+    "сбой Groq Vision → авто-переключение на Gemini Vision",
+    log2b.join(",") === "groq,gemini" && groqVisionAnswer.providerId === "gemini",
     log2b.join(","),
   );
   check(
-    "Vision-цепочка: Gemini → Groq → OpenRouter",
-    VISION_CHAIN.join(",") === "gemini,groq,openrouter",
+    "Vision-цепочка: Groq (основной) → Gemini → OpenRouter",
+    VISION_CHAIN.join(",") === "groq,gemini,openrouter",
     VISION_CHAIN.join(","),
   );
 

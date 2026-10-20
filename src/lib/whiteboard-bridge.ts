@@ -9,7 +9,7 @@
  * Этот модуль — единый реестр моста (singleton + подписки для React):
  *  - доска при монтировании регистрирует себя: `registerWhiteboardBridge(...)`;
  *  - `getCanvasSnapshot()` — текущий снимок доски в base64 PNG
- *    (`canvas.toDataURL('image/png')` под капотом Fabric.js) для Vision-анализа;
+ *    (`canvas.toDataURL('image/png')` под капотом Fabric.js) для Vision-анализа (Groq Vision — основной);
  *  - `drawCommand(command)` — выполнить команду рисования ИИ на открытой доске.
  *    Принимает ОБА формата: структурированные `DrawingInstruction[]` движка
  *    черчения и компактную JSON-команду вида
@@ -93,7 +93,7 @@ export function subscribeWhiteboardBridge(listener: BridgeListener): () => void 
 
 /**
  * Снимок текущей страницы доски в формате PNG base64 (`data:image/png;base64,…`)
- * — готов к отправке в `/api/ai` и далее в Gemini Vision.
+ * — готов к отправке в `/api/ai` и далее в Groq Vision (основной провайдер).
  * `null`, если доска закрыта или канва ещё не готова.
  */
 export function getCanvasSnapshot(maxWidth?: number): string | null {
@@ -145,11 +145,24 @@ export interface DrawShapeCommand {
   domain?: unknown;
   origin?: unknown;
   scale?: number;
+  /** Короткие алиасы размеров из примера ИИ: {"type":"rect","x":150,"y":150,"w":120,"h":100}. */
+  w?: number;
+  h?: number;
+  rx?: number;
+  ry?: number;
+  radiusX?: number;
+  radiusY?: number;
+  startAngle?: number;
+  endAngle?: number;
+  closed?: boolean;
+  fill?: string;
 }
 
 /** JSON-команда рисования, которую ИИ возвращает по просьбе «нарисуй …». */
 export interface DrawCommand {
   action: "draw";
+  /** Название иллюстрации, например «Иллюстрация: Домик». */
+  title?: string;
   /** Компактные фигуры (`type`/`x`/`y`/`size`…). */
   shapes?: DrawShapeCommand[];
   /** Полные инструкции движка черчения (`shape` + геометрия). */
@@ -228,7 +241,15 @@ const SHAPE_ALIASES: Record<string, string> = {
   circle: "circle",
   круг: "circle",
   окружность: "circle",
-  ellipse: "circle",
+  ellipse: "ellipse",
+  овал: "ellipse",
+  oval: "ellipse",
+  polygon: "polygon",
+  многоугольник: "polygon",
+  path: "path",
+  контур: "path",
+  arc: "arc",
+  дуга: "arc",
   rect: "rect",
   rectangle: "rect",
   прямоугольник: "rect",
@@ -305,10 +326,48 @@ export function shapesToInstructions(shapes: unknown): DrawingInstruction[] {
         break;
       }
       case "rect": {
-        const width = clamp(asNumber(raw.width, Number.NaN) || size * 1.4, 8, 1600);
-        const height = clamp(asNumber(raw.height, Number.NaN) || size, 8, 1200);
-        const topLeft = asPoint(raw.topLeft) ?? [center[0] - width / 2, center[1] - height / 2];
+        // Короткий формат из промпта ИИ ({"x":150,"y":150,"w":120,"h":100}):
+        // x/y — левый верхний угол. Полный width/height-формат: x/y — центр.
+        const hasShortSize = raw.w !== undefined || raw.h !== undefined;
+        const width = clamp(asNumber(raw.width, Number.NaN) || asNumber(raw.w, Number.NaN) || size * 1.4, 8, 1600);
+        const height = clamp(asNumber(raw.height, Number.NaN) || asNumber(raw.h, Number.NaN) || size, 8, 1200);
+        const rawXY: [number, number] | null =
+          Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+        const topLeft =
+          asPoint(raw.topLeft) ?? (hasShortSize && rawXY ? rawXY : [center[0] - width / 2, center[1] - height / 2]);
         result.push({ shape: "rect", ...base, topLeft, width, height });
+        break;
+      }
+      case "ellipse": {
+        const radiusX = clamp(asNumber(raw.radiusX, Number.NaN) || asNumber(raw.rx, Number.NaN) || (asNumber(raw.width, Number.NaN) || asNumber(raw.w, Number.NaN) || size) / 2, 4, 1000);
+        const radiusY = clamp(asNumber(raw.radiusY, Number.NaN) || asNumber(raw.ry, Number.NaN) || (asNumber(raw.height, Number.NaN) || asNumber(raw.h, Number.NaN) || size * 0.7) / 2, 4, 1000);
+        result.push({ shape: "ellipse", ...base, center, radiusX, radiusY });
+        break;
+      }
+      case "polygon": {
+        const pts = Array.isArray(raw.points) ? raw.points.map(asPoint).filter((pt): pt is [number, number] => pt !== null) : [];
+        if (pts.length < 3) continue;
+        result.push({ shape: "polygon", ...base, points: pts, fill: typeof raw.fill === "string" ? raw.fill : undefined });
+        break;
+      }
+      case "path": {
+        const pts = Array.isArray(raw.points) ? raw.points.map(asPoint).filter((pt): pt is [number, number] => pt !== null) : [];
+        if (pts.length < 2) {
+          // path без points — обычная линия от (x,y) к (x2,y2)
+          const toPt: [number, number] = [asNumber(raw.x2, center[0] + size), asNumber(raw.y2, center[1])];
+          result.push({ shape: "path", ...base, points: [center, toPt], closed: raw.closed === true });
+          break;
+        }
+        result.push({ shape: "path", ...base, points: pts, closed: raw.closed === true, fill: typeof raw.fill === "string" ? raw.fill : undefined });
+        break;
+      }
+      case "arc": {
+        const radius = clamp(asNumber(raw.radius, Number.NaN) || size / 2, 4, 1000);
+        result.push({
+          shape: "arc", ...base, center, radius,
+          startAngle: asNumber(raw.startAngle, 0),
+          endAngle: asNumber(raw.endAngle, 180),
+        });
         break;
       }
       case "line":
@@ -511,7 +570,7 @@ export function drawCommand(command: DrawCommand | DrawingInstruction[] | string
 /** Просит ли пользователь что-то нарисовать/построить на доске. */
 export function isDrawRequest(text: string): boolean {
   return /(нарисуй|нарисовать|построй|построить|начерти|черт[её]ж|изобрази|draw|plot)\b/i.test(text) ||
-    /(нарисуй|построй|начерти)[^\n]{0,40}(треугольник|круг|окружность|квадрат|прямоугольник|график|схему|вектор|линию)/i.test(text);
+    /(нарисуй|построй|начерти)[^\n]{0,60}(треугольник|круг|окружность|квадрат|прямоугольник|график|схему|вектор|линию|домик|дом|картинку|иллюстрац|систему координат|овал|дугу|многоугольник)/i.test(text);
 }
 
 /** Спрашивает ли пользователь про содержимое доски (нужен Vision-снимок). */

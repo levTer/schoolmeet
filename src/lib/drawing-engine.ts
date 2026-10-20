@@ -8,15 +8,19 @@
  * Модуль импортируется только на клиенте (нужен DOM-канвас Fabric.js).
  */
 
-import { Circle, Group, Line, Path, Polygon, Rect, Textbox, type Canvas, type FabricObject } from "fabric";
+import { Circle, Ellipse, Group, Line, Path, Polygon, Rect, Textbox, type Canvas, type FabricObject } from "fabric";
 
 import { commandToInstructions, shapesToInstructions } from "@/lib/whiteboard-bridge";
 import type {
+  ArcInstruction,
   CircleInstruction,
+  EllipseInstruction,
   DrawingInstruction,
   GraphInstruction,
   LineInstruction,
+  PathInstruction,
   PointInstruction,
+  PolygonInstruction,
   RectInstruction,
   TextInstruction,
   TriangleInstruction,
@@ -124,6 +128,42 @@ export function parseDrawingInstructions(value: unknown): DrawingInstruction[] {
         const to = asPoint(raw.to);
         if (!from || !to) continue;
         result.push({ shape: "vector", ...base, from, to } satisfies VectorInstruction);
+        break;
+      }
+      case "ellipse": {
+        const center = asPoint(raw.center);
+        const radiusX = asNumber(raw.radiusX, 0);
+        const radiusY = asNumber(raw.radiusY, 0);
+        if (!center || radiusX <= 0 || radiusY <= 0 || radiusX > 2000 || radiusY > 2000) continue;
+        result.push({ shape: "ellipse", ...base, center, radiusX, radiusY } satisfies EllipseInstruction);
+        break;
+      }
+      case "polygon": {
+        const points = Array.isArray(raw.points) ? raw.points.map(asPoint) : [];
+        if (points.length < 3 || points.some((point) => point === null)) continue;
+        result.push({
+          shape: "polygon", ...base, points: points as PolygonInstruction["points"],
+          fill: asString(raw.fill) || undefined,
+        } satisfies PolygonInstruction);
+        break;
+      }
+      case "path": {
+        const points = Array.isArray(raw.points) ? raw.points.map(asPoint) : [];
+        if (points.length < 2 || points.some((point) => point === null)) continue;
+        result.push({
+          shape: "path", ...base, points: points as PathInstruction["points"],
+          closed: raw.closed === true, fill: asString(raw.fill) || undefined,
+        } satisfies PathInstruction);
+        break;
+      }
+      case "arc": {
+        const center = asPoint(raw.center);
+        const radius = asNumber(raw.radius, 0);
+        if (!center || radius <= 0 || radius > 2000) continue;
+        result.push({
+          shape: "arc", ...base, center, radius,
+          startAngle: asNumber(raw.startAngle, 0), endAngle: asNumber(raw.endAngle, 180),
+        } satisfies ArcInstruction);
         break;
       }
       case "graph": {
@@ -242,6 +282,12 @@ function shapeCentroids(instructions: DrawingInstruction[]): Array<[number, numb
         instruction.points.reduce((sum, [x]) => sum + x, 0) / count,
         instruction.points.reduce((sum, [, y]) => sum + y, 0) / count,
       ]);
+    } else if (instruction.shape === "polygon" || instruction.shape === "path") {
+      const count = instruction.points.length || 1;
+      centroids.push([
+        instruction.points.reduce((sum, [x]) => sum + x, 0) / count,
+        instruction.points.reduce((sum, [, y]) => sum + y, 0) / count,
+      ]);
     } else if (instruction.shape === "rect") {
       centroids.push([
         instruction.topLeft[0] + instruction.width / 2,
@@ -327,6 +373,24 @@ function graphPath(instruction: GraphInstruction, offset: { x: number; y: number
     points.push(`${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`);
   }
   return points.join(" ");
+}
+
+/** SVG-path из точек: M … L … (+ Z при closed) — произвольные контуры ИИ. */
+function pointsToPath(points: [number, number][], closed = false): string {
+  const d = points.map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
+  return closed ? `${d} Z` : d;
+}
+
+/** SVG-дуга окружности: углы в градусах, 0° — вправо, по часовой (y вниз). */
+function arcPathD(center: [number, number], radius: number, startAngle: number, endAngle: number): string {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const start: [number, number] = [center[0] + radius * Math.cos(toRad(startAngle)), center[1] + radius * Math.sin(toRad(startAngle))];
+  const end: [number, number] = [center[0] + radius * Math.cos(toRad(endAngle)), center[1] + radius * Math.sin(toRad(endAngle))];
+  let sweepDeg = endAngle - startAngle;
+  while (sweepDeg <= 0) sweepDeg += 360;
+  if (sweepDeg >= 360) sweepDeg = 359.99;
+  const largeArc = sweepDeg > 180 ? 1 : 0;
+  return `M ${start[0].toFixed(2)} ${start[1].toFixed(2)} A ${radius} ${radius} 0 ${largeArc} 1 ${end[0].toFixed(2)} ${end[1].toFixed(2)}`;
 }
 
 function groupOf(parts: FabricObject[]): FabricObject {
@@ -466,6 +530,56 @@ export function buildObjectsFromInstructions(
         if (instruction.label) {
           parts.push(makeCenteredLabel(instruction.label, (from[0] + to[0]) / 2, (from[1] + to[1]) / 2 - 30));
         }
+        objects.push(groupOf(parts));
+        break;
+      }
+
+      case "ellipse": {
+        const [cx, cy] = shift(instruction.center, offset);
+        const ellipse = new Ellipse({
+          left: cx, top: cy, rx: instruction.radiusX, ry: instruction.radiusY,
+          originX: "center", originY: "center", fill: "transparent", stroke: color,
+          ...sharpStroke(stroke), objectCaching: false,
+        });
+        const parts: FabricObject[] = [ellipse];
+        if (instruction.label) parts.push(makeCenteredLabel(instruction.label, cx, cy - instruction.radiusY - 22));
+        objects.push(groupOf(parts));
+        break;
+      }
+
+      case "polygon": {
+        const points = instruction.points.map((point) => shift(point, offset));
+        const polygon = new Polygon(points.map(([x, y]) => ({ x, y })), {
+          fill: instruction.fill ?? "transparent", stroke: color, ...sharpStroke(stroke),
+          originX: "left", originY: "top", objectCaching: false,
+        });
+        const cx = points.reduce((sum, pt) => sum + pt[0], 0) / points.length;
+        const cy = points.reduce((sum, pt) => sum + pt[1], 0) / points.length;
+        const parts: FabricObject[] = [polygon];
+        if (instruction.label) parts.push(makeCenteredLabel(instruction.label, cx, cy));
+        objects.push(groupOf(parts));
+        break;
+      }
+
+      case "path": {
+        const points = instruction.points.map((point) => shift(point, offset));
+        const path = new Path(pointsToPath(points, instruction.closed), {
+          fill: instruction.closed ? (instruction.fill ?? "transparent") : "", stroke: color,
+          ...sharpStroke(stroke), objectCaching: false,
+        });
+        const parts: FabricObject[] = [path];
+        if (instruction.label && points[0]) parts.push(makeCenteredLabel(instruction.label, points[0][0], points[0][1] - 22));
+        objects.push(groupOf(parts));
+        break;
+      }
+
+      case "arc": {
+        const centerPt = shift(instruction.center, offset);
+        const arc = new Path(arcPathD(centerPt, instruction.radius, instruction.startAngle, instruction.endAngle), {
+          fill: "", stroke: color, ...sharpStroke(stroke), objectCaching: false,
+        });
+        const parts: FabricObject[] = [arc];
+        if (instruction.label) parts.push(makeCenteredLabel(instruction.label, centerPt[0], centerPt[1] - instruction.radius - 22));
         objects.push(groupOf(parts));
         break;
       }

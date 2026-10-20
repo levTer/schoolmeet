@@ -317,6 +317,10 @@ const DRAWING_SCHEMA = `Схема JSON-чертежа (координаты в 
 Допустимые фигуры (каждый объект ОБЯЗАН содержать поле "shape"):
 - {"shape":"triangle","points":[[x,y],[x,y],[x,y]]} — ровно 3 точки;
 - {"shape":"circle","center":[x,y],"radius":r} — r > 0;
+- {"shape":"ellipse","center":[x,y],"radiusX":rx,"radiusY":ry} — овал, rx,ry > 0;
+- {"shape":"polygon","points":[[x,y],[x,y],[x,y],…]} — многоугольник/треугольник, минимум 3 точки;
+- {"shape":"path","points":[[x,y],[x,y],…],"closed":false} — произвольный контур/ломаная, минимум 2 точки;
+- {"shape":"arc","center":[x,y],"radius":r,"startAngle":0,"endAngle":180} — дуга, углы в градусах;
 - {"shape":"line","from":[x,y],"to":[x,y]};
 - {"shape":"rect","topLeft":[x,y],"width":w,"height":h} — w,h > 0;
 - {"shape":"vector","from":[x,y],"to":[x,y]} — отрезок со стрелкой;
@@ -326,10 +330,11 @@ const DRAWING_SCHEMA = `Схема JSON-чертежа (координаты в 
 Необязательные поля любой фигуры: "color" (CSS-цвет, например "#2563eb"), "strokeWidth" (число px), "label" (короткая подпись).
 Правила: фигур не больше 12; все координаты — конечные числа в пределах холста; никаких других ключей и никакого текста вне JSON.
 Также принимается эквивалентная компактная команда моста доски:
-{"action":"draw","shapes":[{"type":"triangle","x":300,"y":220,"size":160,"color":"#ef4444"}]}
-где "type" — triangle|circle|rect|line|vector|point|text|graph, "x"/"y" — центр фигуры,
-"size" — её габарит в px; для rect можно "width"/"height", для line/vector — "x2"/"y2" (конец),
-для circle — "radius", для text — "text".`;
+{"action":"draw","title":"Иллюстрация: Домик","shapes":[{"type":"rect","x":150,"y":150,"w":120,"h":100,"color":"#3b82f6"},{"type":"polygon","points":[[140,150],[210,100],[280,150]],"color":"#ef4444"},{"type":"text","text":"Домик","x":210,"y":80,"color":"#ffffff"}]}
+где "type" — rect|circle|ellipse|polygon|path|text|arc|triangle|line|vector|point|graph, "x"/"y" — центр фигуры
+(для rect в короткой записи с "w"/"h" — левый верхний угол), "size" — габарит в px; для rect можно "w"/"h" или "width"/"height",
+для line/vector/path — "x2"/"y2" (конец) или "points", для polygon — "points" (минимум 3),
+для ellipse — "radiusX"/"radiusY" (или "rx"/"ry"), для arc — "radius"/"startAngle"/"endAngle", для text обязателен "text".`;
 
 const ROLE_PREAMBLE =
   "Ты — ИИ-помощник учителя в российской школьной платформе видеоуроков «Лицей Сингулярити». " +
@@ -358,9 +363,9 @@ export function buildSystemPrompt(action: AIAction, meetingTitle?: string, hasIm
       return `${ROLE_PREAMBLE}${lesson}${board}
 Задача: ответить на ЛЮБОЙ вопрос учителя — это может быть вопрос по теме урока, разбор уравнения, просьба объяснить правило, придумать задачу, составить план или проверить идею.
 Формат ответа: Markdown. Сначала короткий прямой ответ, затем — при необходимости — пошаговое обоснование, примеры и формулы в LaTeX. Если вопрос требует вычислений, покажи шаги. Если данных в условии не хватает, задай один уточняющий вопрос и явно укажи сделанные допущения. Не отказывайся от вопроса: дай максимально полезный ответ по существу.
-РИСОВАНИЕ НА ДОСКЕ: если учитель просит НАРИСОВАТЬ/ПОСТРОИТЬ фигуру, схему или график («нарисуй треугольник», «построй график» и т.п.), в САМОМ КОНЦЕ ответа добавь ровно один блок \`\`\`json с командой моста доски — клиент автоматически нарисует её на доске в реальном времени:
-{"action":"draw","shapes":[{"type":"triangle","x":300,"y":220,"size":160,"color":"#ef4444"}]}
-Допустимые "type": triangle, circle, rect, line, vector, point, text, graph; "x"/"y" — центр фигуры на холсте ≈1000×600 (y вниз), "size" — габарит в px, для rect допустимы "width"/"height", для line/vector — "x2"/"y2", для circle — "radius", для text обязателен "text", для graph — "fn":"parabola"|"sine"|"linear"|"cubic". Фигур — не больше 12, подписывай вершины через "label". Если рисовать НЕ просят — JSON-блок не добавляй.`;
+РИСОВАНИЕ НА ДОСКЕ: если учитель/админ просит НАРИСОВАТЬ/ПОСТРОИТЬ любую фигуру, иллюстрацию или схему («нарисуй домик / схему / график / систему координат / вектор / картинку / треугольник» и т.п.), ты РАЗРЕШЁН и ОБЯЗАН использовать "action":"draw": в САМОМ КОНЦЕ ответа добавь ровно один блок \`\`\`json с командой моста доски — клиент (AIWidget/WhiteboardBridge) автоматически и плавно нарисует её на доске в реальном времени (lineWidth: 3):
+{"action":"draw","title":"Иллюстрация: Домик","shapes":[{"type":"rect","x":150,"y":150,"w":120,"h":100,"color":"#3b82f6"},{"type":"polygon","points":[[140,150],[210,100],[280,150]],"color":"#ef4444"},{"type":"text","text":"Домик","x":210,"y":80,"color":"#ffffff"}]}
+Допустимые "type": rect, circle, ellipse, polygon, path, text, arc, triangle, line, vector, point, graph; "x"/"y" — центр фигуры на холсте ≈1000×600 (y вниз; для rect с "w"/"h" — левый верхний угол), "size" — габарит в px, для rect допустимы "w"/"h" и "width"/"height", для line/vector/path — "x2"/"y2" или "points", для polygon — "points" (минимум 3 точки), для ellipse — "radiusX"/"radiusY", для arc — "radius"/"startAngle"/"endAngle", для text обязателен "text", для graph — "fn":"parabola"|"sine"|"linear"|"cubic". Собирай СЛОЖНЫЕ иллюстрации из многих примитивов (домик = rect+polygon+text, система координат = line+line+text, график = line+graph+text). Фигур — не больше 12, подписывай вершины через "label". Если рисовать НЕ просят — JSON-блок не добавляй.`;
 
     case "summary":
       return `${ROLE_PREAMBLE}${lesson}${board}

@@ -58,7 +58,7 @@ export interface AIRequest {
    * PNG-фрагмент доски в формате data URL — для действия `formula`
    * («распознать формулу») и анализа доски. Запросы с изображением
    * маршрутизируются в мультимодальные провайдеры
-   * (Gemini 1.5 Flash Vision → Groq Vision → OpenRouter Vision).
+   * (Groq Vision llama-3.2-11b-vision-preview — основной → Gemini Vision → OpenRouter Vision).
    */
   imageDataUrl?: string;
   /** Контекст урока — помогает подобрать тему ответа. */
@@ -75,8 +75,12 @@ export interface AIRequest {
 export type DrawingShape =
   | "triangle"
   | "circle"
+  | "ellipse"
   | "line"
   | "rect"
+  | "polygon"
+  | "path"
+  | "arc"
   | "vector"
   | "graph"
   | "point"
@@ -136,6 +140,39 @@ export interface GraphInstruction extends DrawingBase {
   scale: number;
 }
 
+export interface EllipseInstruction extends DrawingBase {
+  shape: "ellipse";
+  center: [number, number];
+  radiusX: number;
+  radiusY: number;
+}
+
+export interface PolygonInstruction extends DrawingBase {
+  shape: "polygon";
+  /** Многоугольник (в т.ч. треугольник): минимум 3 точки [x, y]. */
+  points: [number, number][];
+  /** Заливка CSS-цветом (по умолчанию — прозрачная). */
+  fill?: string;
+}
+
+export interface PathInstruction extends DrawingBase {
+  shape: "path";
+  /** Произвольный контур/ломаная по точкам [x, y] (минимум 2). */
+  points: [number, number][];
+  /** Замкнуть контур обратно в первую точку. */
+  closed?: boolean;
+  fill?: string;
+}
+
+export interface ArcInstruction extends DrawingBase {
+  shape: "arc";
+  center: [number, number];
+  radius: number;
+  /** Углы дуги в градусах (0° — вправо, по часовой стрелке, y вниз). */
+  startAngle: number;
+  endAngle: number;
+}
+
 export interface PointInstruction extends DrawingBase {
   shape: "point";
   at: [number, number];
@@ -151,8 +188,12 @@ export interface TextInstruction extends DrawingBase {
 export type DrawingInstruction =
   | TriangleInstruction
   | CircleInstruction
+  | EllipseInstruction
   | LineInstruction
   | RectInstruction
+  | PolygonInstruction
+  | PathInstruction
+  | ArcInstruction
   | VectorInstruction
   | GraphInstruction
   | PointInstruction
