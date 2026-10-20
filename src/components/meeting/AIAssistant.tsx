@@ -255,6 +255,20 @@ export function AIAssistant({
 
   const voice = useVoiceInput({ lang: "ru-RU", onTranscript: handleTranscript });
 
+  /**
+   * Кнопка «Голос»: старт/остановка записи обёрнуты в try/catch.
+   * Web Speech API в разных браузерах бросает исключения на граничных
+   * состояниях (`recognition already started`, запрет микрофона, отсутствие
+   * устройства) — пользователь вместо аварии получает аккуратный тост.
+   */
+  const toggleVoice = useCallback(() => {
+    try {
+      voice.toggle();
+    } catch {
+      toast.error("Разрешите доступ к микрофону в настройках браузера.");
+    }
+  }, [voice]);
+
   // Ошибка голосового ввода (onerror / отказ в микрофоне) — toast + подпись
   // в футере. Показываем каждую новую ошибку один раз.
   const lastVoiceErrorRef = useRef<string | null>(null);
@@ -341,7 +355,12 @@ export function AIAssistant({
     setLoading(true);
     setError(null);
     setWarning(snapshotFailed ? "Не удалось снять копию доски — запрос уйдёт без снимка." : null);
-    voice.stop();
+    // Остановка записи не должна мешать отправке даже при сбое браузера.
+    try {
+      voice.stop();
+    } catch {
+      /* распознавание уже завершено — продолжаем отправку */
+    }
 
     setEntries((prev) => [
       ...prev,
@@ -426,7 +445,7 @@ export function AIAssistant({
     ],
   );
 
-  /** Кнопка «Проанализировать доску»: снимок → Gemini Vision → подробный разбор. */
+  /** Кнопка «Проанализировать доску»: снимок → Gemini/Groq Vision → подробный разбор. */
   const analyzeBoard = useCallback(() => {
     void send({ promptOverride: ANALYZE_BOARD_PROMPT, forceBoard: true });
   }, [send]);
@@ -683,7 +702,7 @@ export function AIAssistant({
 
           <button
             type="button"
-            onClick={voice.toggle}
+            onClick={toggleVoice}
             disabled={!voice.supported}
             aria-pressed={voice.listening}
             aria-label={voice.listening ? "Остановить голосовой ввод" : "Голосовой ввод"}
@@ -705,7 +724,7 @@ export function AIAssistant({
             disabled={!boardSupported || loading}
             title={
               boardSupported
-                ? "Снять снимок доски и получить подробный разбор (Gemini Vision): текст, формулы, геометрия, ошибки"
+                ? "Снять снимок доски и получить подробный разбор (Gemini Vision → Groq Vision): текст, формулы, геометрия, ошибки"
                 : "Откройте доску урока, чтобы проанализировать её содержимое"
             }
             className={cn(

@@ -56,8 +56,9 @@ export interface AIRequest {
   prompt: string;
   /**
    * PNG-фрагмент доски в формате data URL — для действия `formula`
-   * («распознать формулу»). Запросы с изображением маршрутизируются
-   * в мультимодальные провайдеры (Gemini Vision → OpenRouter Vision).
+   * («распознать формулу») и анализа доски. Запросы с изображением
+   * маршрутизируются в мультимодальные провайдеры
+   * (Gemini 1.5 Flash Vision → Groq Vision → OpenRouter Vision).
    */
   imageDataUrl?: string;
   /** Контекст урока — помогает подобрать тему ответа. */

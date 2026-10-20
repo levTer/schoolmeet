@@ -1,5 +1,5 @@
 /**
- * Groq Cloud — текстовый ИИ-движок Лицея Сингулярити (этап 8).
+ * Groq Cloud — текстовый и мультимодальный (Vision) ИИ-движок Лицея Сингулярити.
  *
  * Самый быстрый в мире бесплатный LLM-инференс (LPU): GPT-OSS 120B / 20B для
  * конспектов, формул, чертежей, пошаговых решений и проверки задач.
@@ -20,9 +20,14 @@
  * в браузер. Из РФ API Groq напрямую недоступен — поэтому запросы идут
  * через сервер Vercel (Европа), и пользователям VPN не нужен.
  *
- * Ограничение: Groq не принимает изображения. Запрос с `imageDataUrl`
- * (распознавание формулы с доски) немедленно пробрасывает `AIProviderError`,
- * и `AutoAIProvider` переключается на Gemini Vision.
+ * GROQ VISION (анализ снимка доски):
+ * Если к запросу приложен `imageDataUrl`, провайдер переключается на
+ * мультимодальные модели `llama-3.2-11b-vision-preview` /
+ * `llama-3.2-90b-vision-preview` и отправляет изображение в
+ * OpenAI-совместимом формате `image_url` (data URL). Это резервный
+ * Vision-провайдер: `AutoAIProvider` сначала пробует Gemini 1.5 Flash,
+ * а при отсутствии `GEMINI_API_KEY` или ошибке Gemini автоматически
+ * переходит сюда — учитель всё равно получает реальный разбор доски.
  */
 
 import {
@@ -33,6 +38,7 @@ import {
   buildUserPrompt,
   drawingFromModelJson,
   extractJsonObject,
+  extractLatex,
   splitDrawCommand,
   isModelUnavailableError,
   normalizeReviewDraft,
@@ -72,6 +78,24 @@ export const GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b";
 export const GROQ_DEFAULT_REASONING_MODEL = "openai/gpt-oss-120b";
 
 /**
+ * Модель Groq Vision по умолчанию — распознавание снимка доски.
+ *
+ * `llama-3.2-11b-vision-preview` быстрее и дешевле, её хватает для рукописного
+ * текста, формул и геометрии; при недоступности провайдер мгновенно
+ * переключается на `llama-3.2-90b-vision-preview`.
+ */
+export const GROQ_DEFAULT_VISION_MODEL = "llama-3.2-11b-vision-preview";
+
+/**
+ * Резервные Vision-модели Groq — перебираются по очереди, если текущая
+ * снята с обслуживания (404 `model_not_found` / `model_decommissioned`).
+ */
+export const GROQ_VISION_FALLBACK_MODELS: readonly string[] = [
+  "llama-3.2-11b-vision-preview",
+  "llama-3.2-90b-vision-preview",
+];
+
+/**
  * Резервные модели: их провайдер пробует по очереди, если текущая недоступна
  * (404 `model_not_found` или 400 `model_decommissioned`).
  *
@@ -104,6 +128,8 @@ export interface GroqProviderOptions {
   model?: string;
   /** Reasoning-модель; по умолчанию `GROQ_REASONING_MODEL` или GPT-OSS 120B. */
   reasoningModel?: string;
+  /** Vision-модель (анализ снимка доски); по умолчанию `GROQ_VISION_MODEL`. */
+  visionModel?: string;
   timeoutMs?: number;
   /** Внедряемый fetch (для тестов без сети). */
   fetchImpl?: FetchLike;
@@ -122,6 +148,8 @@ export class GroqProvider implements AIProvider {
 
   readonly model: string;
   readonly reasoningModel: string;
+  /** Мультимодальная модель для запросов со снимком доски. */
+  readonly visionModel: string;
 
   private readonly apiKey: string;
   private readonly timeoutMs?: number;
@@ -141,6 +169,9 @@ export class GroqProvider implements AIProvider {
     this.reasoningModel =
       (options.reasoningModel ?? process.env.GROQ_REASONING_MODEL ?? GROQ_DEFAULT_REASONING_MODEL).trim() ||
       GROQ_DEFAULT_REASONING_MODEL;
+    this.visionModel =
+      (options.visionModel ?? process.env.GROQ_VISION_MODEL ?? GROQ_DEFAULT_VISION_MODEL).trim() ||
+      GROQ_DEFAULT_VISION_MODEL;
     this.timeoutMs = options.timeoutMs;
     this.fetchImpl = options.fetchImpl;
 
@@ -168,22 +199,32 @@ export class GroqProvider implements AIProvider {
    * основную модель как последний шанс: окончательное решение — за API Groq.
    */
   modelsFor(action: AIRequest["action"]): string[] {
-    const primary = this.modelFor(action);
-    const unique = [primary, ...GROQ_FALLBACK_MODELS].filter((model, index, all) => all.indexOf(model) === index);
+    return this.aliveModels(this.modelFor(action), GROQ_FALLBACK_MODELS);
+  }
+
+  /**
+   * Список Vision-моделей для запроса со снимком доски: настроенная
+   * `GROQ_VISION_MODEL` (или `llama-3.2-11b-vision-preview`), затем
+   * `GROQ_VISION_FALLBACK_MODELS` — без дублей и снятых моделей.
+   */
+  visionModels(): string[] {
+    return this.aliveModels(this.visionModel, GROQ_VISION_FALLBACK_MODELS);
+  }
+
+  /** Уникальные «живые» модели: primary → резервные, минус снятые вендором. */
+  private aliveModels(primary: string, fallbacks: readonly string[]): string[] {
+    const unique = [primary, ...fallbacks].filter((model, index, all) => all.indexOf(model) === index);
     const alive = unique.filter((model) => !this.deadModels.has(model));
     return alive.length > 0 ? alive : [primary];
   }
 
   async complete(request: AIRequest): Promise<AIResponse> {
-    if (request.imageDataUrl) {
-      // Текстовые модели Groq не принимают изображения — пусть AutoAIProvider
-      // переключится на Gemini Vision.
-      throw new AIProviderError("Groq не поддерживает изображения (нужен Gemini Vision)", { retryable: false });
-    }
-
+    // Снимок доски → мультимодальные модели Groq Vision (image_url + base64).
+    const hasImage = Boolean(request.imageDataUrl);
     const wantsJson = request.action === "draw";
+    const models = hasImage ? this.visionModels() : this.modelsFor(request.action);
 
-    return this.runWithModelFallback(this.modelsFor(request.action), async (model) => {
+    return this.runWithModelFallback(models, async (model) => {
       const payload = await postJson(
         GROQ_API_URL,
         {
@@ -194,11 +235,27 @@ export class GroqProvider implements AIProvider {
           body: {
             model,
             temperature: request.action === "draw" ? 0.3 : 0.4,
-            max_completion_tokens: wantsJson ? 3000 : 4096,
-            ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
+            // Vision-модели Groq (llama-3.2-vision-preview) принимают max_tokens;
+            // новые текстовые модели — max_completion_tokens.
+            ...(hasImage
+              ? { max_tokens: 4096 }
+              : { max_completion_tokens: wantsJson ? 3000 : 4096 }),
+            // JSON-режим поддерживают текстовые модели; у vision-preview его нет.
+            ...(wantsJson && !hasImage ? { response_format: { type: "json_object" } } : {}),
             messages: [
-              { role: "system", content: buildSystemPrompt(request.action, request.context?.meetingTitle, Boolean(request.imageDataUrl)) },
-              { role: "user", content: buildUserPrompt(request) },
+              {
+                role: "system",
+                content: buildSystemPrompt(request.action, request.context?.meetingTitle, hasImage),
+              },
+              {
+                role: "user",
+                content: hasImage
+                  ? [
+                      { type: "text", text: buildUserPrompt(request) },
+                      { type: "image_url", image_url: { url: request.imageDataUrl } },
+                    ]
+                  : buildUserPrompt(request),
+              },
             ],
           },
         },
@@ -286,9 +343,17 @@ export class GroqProvider implements AIProvider {
     }
 
     if (request.action === "formula") {
-      // Без изображения Groq может лишь угадать формулу по тексту запроса —
-      // возвращаем её как есть, AutoAIProvider до этого шага обычно не доходит.
-      return { ...base, text: content, latex: content };
+      // Фрагмент доски распознан Groq Vision: вытаскиваем LaTeX из ответа
+      // (модель может обернуть его в ```latex или $...$) и показываем учителю
+      // человекочитаемый разбор, а не сырой ответ модели.
+      const latex = extractLatex(content) ?? content.trim();
+      return {
+        ...base,
+        latex,
+        text: request.imageDataUrl
+          ? `**Распознанная формула:**\n\n\`\`\`latex\n${latex}\n\`\`\`\n\n### Формула распознана\n\nСнимок доски обработан Groq Vision (${model}). Нажмите «Распознать формулу» ещё раз и выделите следующий фрагмент — так можно оцифровать всю доску.`
+          : content,
+      };
     }
 
     // Команда рисования {"action":"draw",…} в свободном ответе → `drawing` + чистый текст.
