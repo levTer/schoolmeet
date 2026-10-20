@@ -10,8 +10,11 @@
  * в клиентский бандл.
  *
  * ЦЕПОЧКА АВТО-ВЫБОРА (AutoAIProvider):
- *   • запрос с изображением доски (распознавание формулы)
- *       → Gemini Vision → OpenRouter Vision → Mock;
+ *   • запрос с изображением доски (анализ доски, распознавание формулы)
+ *       → Gemini 1.5 Flash Vision → Groq Vision (llama-3.2-11b/90b-vision)
+ *       → OpenRouter Vision → Mock;
+ *     если `GEMINI_API_KEY` не задан — Gemini пропускается, и снимок сразу
+ *     уходит в Groq Vision через существующий `GROQ_API_KEY`;
  *   • текстовый запрос (конспект, решение, чертёж, проверка ДЗ)
  *       → Groq (gpt-oss-120b/20b, бесплатный тариф) → OpenRouter :free
  *       → Gemini Flash → Mock;
@@ -47,6 +50,8 @@ export {
   GROQ_DEFAULT_MODEL,
   GROQ_DEFAULT_REASONING_MODEL,
   GROQ_FALLBACK_MODELS,
+  GROQ_DEFAULT_VISION_MODEL,
+  GROQ_VISION_FALLBACK_MODELS,
 } from "./ai-providers/groq";
 export {
   GeminiProvider,
@@ -89,7 +94,7 @@ export type ExternalProviderId = "groq" | "gemini" | "openrouter";
 /** Цепочка фоллбэка для текстовых запросов (задача, конспект, чертёж, ДЗ). */
 export const TEXT_CHAIN: readonly ExternalProviderId[] = ["groq", "openrouter", "gemini"];
 /** Цепочка фоллбэка для запросов с изображением доски (Vision). */
-export const VISION_CHAIN: readonly ExternalProviderId[] = ["gemini", "openrouter"];
+export const VISION_CHAIN: readonly ExternalProviderId[] = ["gemini", "groq", "openrouter"];
 
 export interface AutoAIProviderOptions {
   /** Таблица переменных окружения (по умолчанию `process.env`) — для тестов. */
@@ -190,7 +195,7 @@ export class AutoAIProvider implements AIProvider {
 
     return [
       describe("groq", this.registry.groq, this.modelOf("groq"), textIndex("groq"), visionIndex("groq"),
-        this.registry.groq ? undefined : "нет GROQ_API_KEY (console.groq.com — бесплатный тариф: openai/gpt-oss-120b)"),
+        this.registry.groq ? undefined : "нет GROQ_API_KEY (console.groq.com — бесплатно: openai/gpt-oss-120b + Vision llama-3.2)"),
       describe("gemini", this.registry.gemini, this.modelOf("gemini"), textIndex("gemini"), visionIndex("gemini"),
         this.registry.gemini ? undefined : "нет GEMINI_API_KEY (aistudio.google.com — бесплатно, без карты)"),
       describe("openrouter", this.registry.openrouter, this.modelOf("openrouter"), textIndex("openrouter"), visionIndex("openrouter"),
@@ -293,7 +298,8 @@ export class AutoAIProvider implements AIProvider {
   private modelOf(id: ExternalProviderId): string {
     const provider = this.registry[id];
     if (!provider) return "—";
-    if (provider instanceof GroqProvider) return `${provider.model} / ${provider.reasoningModel}`;
+    if (provider instanceof GroqProvider)
+      return `${provider.model} / ${provider.reasoningModel} / vision: ${provider.visionModel}`;
     if (provider instanceof GeminiProvider) return provider.model;
     if (provider instanceof OpenRouterProvider) return `${provider.model} / vision: ${provider.visionModel}`;
     return "—";

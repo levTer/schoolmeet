@@ -27,7 +27,9 @@ export const maxDuration = 60;
  * а API-ключи никогда не попадают в клиентский бандл.
  *
  * Провайдера выбирает `AutoAIProvider` (src/lib/ai-provider.ts):
- *   • изображение доски → Gemini Vision → OpenRouter Vision → Mock;
+ *   • изображение доски → Gemini Vision → Groq Vision (llama-3.2-vision)
+ *     → OpenRouter Vision → Mock; без GEMINI_API_KEY снимок сразу уходит
+ *     в Groq Vision через GROQ_API_KEY;
  *   • текст/задача      → Groq → OpenRouter :free → Gemini → Mock.
  * Сбой любого звена не роняет API — запрос автоматически уходит следующему.
  *

@@ -93,6 +93,11 @@
 2. Слева выберите **API Keys** → **Create API Key** → имя `schoolmeet` → **Submit**.
 3. Скопируйте ключ вида `gsk_...` — это `GROQ_API_KEY`. Ключ показывается один раз!
 
+Тот же ключ `GROQ_API_KEY` включает и **Groq Vision** — резервный анализ снимка доски
+(`llama-3.2-11b-vision-preview`, автоматический переход на `llama-3.2-90b-vision-preview`;
+переопределяется `GROQ_VISION_MODEL`). Если `GEMINI_API_KEY` не задан или Gemini вернул ошибку,
+снимок доски уходит в Groq Vision, и учитель всё равно получает реальный разбор.
+
 Модели уже настроены в коде (переопределяются переменными `GROQ_MODEL` / `GROQ_REASONING_MODEL`):
 - `openai/gpt-oss-120b` — конспекты, формулы, чертежи, пошаговые решения и проверка задач
   (reasoning), 500 t/s, 131k контекста;
@@ -109,7 +114,7 @@ ID движок запоминает и больше не опрашивает (
 1. Откройте **[aistudio.google.com](https://aistudio.google.com)** → войдите в Google-аккаунт (карта не требуется).
 2. Нажмите **Get API key** → **Create API key** → скопируйте ключ вида `AIza...` — это `GEMINI_API_KEY`.
 
-Gemini Vision распознаёт рукописные формулы с доски. Модель по умолчанию — `gemini-3.8-flash`
+Gemini Vision — основной провайдер распознавания доски (резервный — Groq Vision, см. шаг 2.1). Модель по умолчанию — `gemini-3.8-flash`
 (свежая стабильная Flash-модель); если в аккаунте её нет (404 `NOT_FOUND`), код
 **автоматически** — в том же запросе — перебирает `GEMINI_FALLBACK_MODELS`:
 `gemini-3.6-flash` → `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite` → `gemini-2.5-flash`
@@ -148,7 +153,7 @@ Gemini Vision распознаёт рукописные формулы с дос
 | `NEXTAUTH_SECRET` | случайный секрет, сгенерируйте: `openssl rand -base64 32` | ✅ да |
 | `NEXTAUTH_URL` | адрес деплоя, например `https://schoolmeet.vercel.app` | ✅ да |
 | `GROQ_API_KEY` | ключ `gsk_...` из шага 2.1 | ⭕ нет (без него ИИ → OpenRouter/Mock) |
-| `GEMINI_API_KEY` | ключ `AIza...` из шага 2.2 | ⭕ нет (без него распознавание доски → Mock) |
+| `GEMINI_API_KEY` | ключ `AIza...` из шага 2.2 | ⭕ нет (без него анализ доски → Groq Vision) |
 | `OPENROUTER_API_KEY` | ключ `sk-or-...` из шага 2.3 | ⭕ нет |
 | `NEXT_PUBLIC_SCHOOL_TIMEZONE` | `Europe/Moscow` (часовой пояс школы) | ⭕ рекомендуется |
 | `NEXT_PUBLIC_TURN_SERVERS` | JSON-массив TURN-серверов (см. раздел WebRTC ниже) | ⭕ нет |
@@ -336,10 +341,11 @@ bubblewrap build        # на выходе: app-release-signed.apk и .aab
 | `DATABASE_URL` | Neon.tech / Supabase (шаг 1) | PostgreSQL (pooled + SSL для облака) |
 | `NEXTAUTH_SECRET` | `openssl rand -base64 32` | подпись JWT-сессий |
 | `NEXTAUTH_URL` | адрес деплоя Vercel | колбэки NextAuth, OpenRouter-атрибуция |
-| `GROQ_API_KEY` | console.groq.com (шаг 2.1) | текстовый ИИ, бесплатный тариф |
-| `GEMINI_API_KEY` | aistudio.google.com (шаг 2.2) | Vision-распознавание формул |
+| `GROQ_API_KEY` | console.groq.com (шаг 2.1) | текстовый ИИ и резервный Groq Vision (анализ доски) |
+| `GEMINI_API_KEY` | aistudio.google.com (шаг 2.2) | основной Vision (Gemini 1.5 Flash): анализ доски и формул |
 | `OPENROUTER_API_KEY` | openrouter.ai (шаг 2.3) | резервные `:free` модели |
 | `GROQ_MODEL` / `GROQ_REASONING_MODEL` | — | переопределение моделей Groq (по умолчанию `openai/gpt-oss-120b`) |
+| `GROQ_VISION_MODEL` | — | Vision-модель Groq (по умолчанию `llama-3.2-11b-vision-preview`, резерв — `llama-3.2-90b-vision-preview`) |
 | `GEMINI_MODEL` | — | переопределение модели Gemini (по умолчанию `gemini-3.8-flash`) |
 | `OPENROUTER_MODEL` / `OPENROUTER_VISION_MODEL` | — | переопределение моделей OpenRouter |
 | `AI_PROVIDER` | — | `auto` (по умолчанию) / `groq` / `gemini` / `openrouter` / `mock` |
@@ -372,7 +378,7 @@ bubblewrap build        # на выходе: app-release-signed.apk и .aab
 | Groq отвечает ошибкой 429 | дневной/минутный лимит исчерпан | подождите; запросы уже уходят в OpenRouter/Mock автоматически |
 | Gemini 404 NOT_FOUND | модель недоступна в аккаунте | код сам откатится на `gemini-3.6-flash` и далее по `GEMINI_FALLBACK_MODELS`; либо задайте `GEMINI_MODEL` |
 | Groq 404 `model_not_found` / 400 `model_decommissioned` | модель снята вендором | код мгновенно переходит на следующую из `GROQ_FALLBACK_MODELS`; при желании задайте `GROQ_MODEL` (актуальные ID: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`) |
-| Формулы не распознаются | нет `GEMINI_API_KEY` | добавьте ключ; Vision-цепочка: Gemini → OpenRouter Vision → Mock |
+| Формулы/доска не распознаются | нет `GEMINI_API_KEY` и `GROQ_API_KEY` | добавьте `GROQ_API_KEY` (Gemini необязателен); Vision-цепочка: Gemini 1.5 Flash → Groq Vision (`llama-3.2-vision`) → OpenRouter Vision → Mock |
 | Видео не соединяется в школьной сети | симметричный NAT, нет TURN | задайте `NEXT_PUBLIC_TURN_SERVERS` (metered.ca или coturn) |
 
 Локальная проверка движка без сети и базы: `npm run test:ai` (84 смоук-проверки: парсинг

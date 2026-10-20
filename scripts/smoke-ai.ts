@@ -9,12 +9,13 @@
  *  2. `parseDrawingInstructions` отбрасывает некорректный JSON;
  *  3. `latexToReadableText` превращает LaTeX в читаемый Unicode-текст;
  *  4. утилиты парсинга ответов (extractJsonObject / extractLatex / stripThinkTags);
- *  5. GroqProvider: модель по действию, JSON-чертёж, отказ от изображений,
- *     мгновенный перебор моделей при 404/`model_decommissioned`;
+ *  5. GroqProvider: модель по действию, JSON-чертёж, Groq Vision для снимка
+ *     доски, мгновенный перебор моделей при 404/`model_decommissioned`;
  *  6. GeminiProvider: inline_data для Vision, LaTeX из ответа, v1beta REST-URL
  *     с ключом в `?key=`, перебор моделей при 404 NOT_FOUND;
  *  7. OpenRouterProvider: text/vision-модели, image_url в сообщении;
- *  8. AutoAIProvider: waterfall-цепочки (текст → Groq, изображение → Gemini),
+ *  8. AutoAIProvider: waterfall-цепочки (текст → Groq, изображение →
+ *     Gemini Vision → Groq Vision),
  *     авто-переключение при сбоях, работа БЕЗ ключей на локальном Mock;
  *  9. WebRTC-конфиг: STUN Google по умолчанию, NEXT_PUBLIC_TURN_SERVERS,
  *     legacy-override NEXT_PUBLIC_ICE_SERVERS, устойчивость к битому JSON.
@@ -26,6 +27,7 @@ import {
   AutoAIProvider,
   GEMINI_DEFAULT_MODEL,
   GEMINI_FALLBACK_MODELS,
+  GROQ_DEFAULT_VISION_MODEL,
   GROQ_FALLBACK_MODELS,
   GeminiProvider,
   GroqProvider,
@@ -37,6 +39,7 @@ import {
   latexToReadableText,
   resolveGeminiModel,
   setAIProvider,
+  VISION_CHAIN,
   type AIAction,
   type AIProvider,
   type AIRequest,
@@ -160,6 +163,20 @@ async function main(): Promise<void> {
     String(mockReview.suggestedGrade),
   );
   check("reviewHomework: непустой комментарий", mockReview.draftComment.length > 20);
+
+  // Локальный резерв больше не «отказывается» видеть доску: снимок уходит
+  // в Gemini/Groq Vision, а заглушки про неумение распознавать изображения нет.
+  const mockBoard = await mock.complete({
+    action: "ask",
+    prompt: "Что написано на доске?",
+    imageDataUrl: "data:image/png;base64,AAAA",
+  });
+  check("mock: снимок доски не роняет запрос", mockBoard.text.length > 50);
+  check(
+    "mock: нет заглушки «не умеет распознавать изображения»",
+    !/не умеет распознавать изображения/i.test(mockBoard.text),
+    mockBoard.text.slice(0, 80),
+  );
 
   console.log("2. parseDrawingInstructions: валидация JSON");
   const valid = parseDrawingInstructions([
@@ -306,15 +323,63 @@ async function main(): Promise<void> {
   check("reviewHomework: оценка распарсена", review.suggestedGrade === 4);
   check("reviewHomework: комментарий распарсен", review.draftComment.includes("Решение верное"));
 
-  let groqImageError: unknown = null;
-  try {
-    await groq.complete({ action: "formula", prompt: "распознай", imageDataUrl: "data:image/png;base64,AAAA" });
-  } catch (error) {
-    groqImageError = error;
-  }
+  // Groq Vision: снимок доски уходит в мультимодальную модель, а не «отказ».
+  const groqVisionCalls: FetchCall[] = [];
+  const groqVision = new GroqProvider({
+    apiKey: "gsk_test",
+    fetchImpl: stubFetch(
+      chatResponse("## Что на доске\n\n2x + 3 = 7, x = 2.\n\n## Подробный разбор\n\nПереносим 3 вправо…"),
+      groqVisionCalls,
+    ),
+  });
+  const visionAnswer = await groqVision.complete({
+    action: "ask",
+    prompt: "Проанализируй доску",
+    imageDataUrl: "data:image/png;base64,iVBORw0KGgo=",
+  });
+  check("изображение → Groq Vision (без отказа)", visionAnswer.providerId === "groq");
+  check("Groq Vision вернул реальный разбор доски", /Что на доске/.test(visionAnswer.text), visionAnswer.text.slice(0, 60));
+  const groqVisionBody = groqVisionCalls[0]?.body ?? {};
   check(
-    "изображение → отказ (Groq текстовый)",
-    groqImageError instanceof AIProviderError && groqImageError.retryable === false,
+    "Groq Vision: модель llama-3.2-11b-vision-preview",
+    groqVisionBody.model === GROQ_DEFAULT_VISION_MODEL,
+    String(groqVisionBody.model),
+  );
+  check(
+    "Groq Vision: изображение передано как image_url (data URL)",
+    JSON.stringify(groqVisionBody).includes('"type":"image_url"') &&
+      JSON.stringify(groqVisionBody).includes("data:image/png;base64,iVBORw0KGgo="),
+  );
+  check(
+    "Groq Vision: системный промпт требует разбор снимка",
+    JSON.stringify(groqVisionBody).includes("снимок классной доски"),
+  );
+
+  // Снятая vision-модель → мгновенный переход на 90b.
+  const groqVisionChainModels: string[] = [];
+  const groqVisionChain = new GroqProvider({
+    apiKey: "gsk_test",
+    fetchImpl: async (url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string };
+      groqVisionChainModels.push(String(body.model));
+      if (groqVisionChainModels.length === 1) {
+        return new Response(
+          '{"error":{"message":"The model `llama-3.2-11b-vision-preview` does not exist or you do not have access to it.","code":"model_not_found"}}',
+          { status: 404 },
+        );
+      }
+      return new Response(JSON.stringify(chatResponse("## Что на доске\n\nРезервная vision-модель")), { status: 200 });
+    },
+  });
+  const visionFallback = await groqVisionChain.complete({
+    action: "ask",
+    prompt: "Проанализируй доску",
+    imageDataUrl: "data:image/png;base64,AAAA",
+  });
+  check(
+    "Groq Vision: 404 → авто-переход на llama-3.2-90b-vision-preview",
+    visionFallback.model === "llama-3.2-90b-vision-preview" && groqVisionChainModels.length === 2,
+    groqVisionChainModels.join(" → "),
   );
 
   let rateLimited: unknown = null;
@@ -491,6 +556,32 @@ async function main(): Promise<void> {
   });
   await autoVision.complete({ action: "formula", prompt: "распознай", imageDataUrl: "data:image/png;base64,AAAA" });
   check("изображение → первым вызван Gemini (Groq пропущен)", log2[0] === "gemini" && !log2.includes("groq"), log2.join(","));
+
+  // 8.3b. Gemini Vision упал → снимок автоматически уходит в Groq Vision.
+  const log2b: string[] = [];
+  const autoVisionGroq = new AutoAIProvider({
+    env: {} as NodeJS.ProcessEnv,
+    registry: {
+      gemini: recordingProvider("gemini", log2b, true), // ошибка Gemini
+      groq: recordingProvider("groq", log2b), // сработает Groq Vision
+      openrouter: recordingProvider("openrouter", log2b),
+    },
+  });
+  const groqVisionAnswer = await autoVisionGroq.complete({
+    action: "ask",
+    prompt: "Проанализируй доску",
+    imageDataUrl: "data:image/png;base64,AAAA",
+  });
+  check(
+    "сбой Gemini Vision → авто-переключение на Groq Vision",
+    log2b.join(",") === "gemini,groq" && groqVisionAnswer.providerId === "groq",
+    log2b.join(","),
+  );
+  check(
+    "Vision-цепочка: Gemini → Groq → OpenRouter",
+    VISION_CHAIN.join(",") === "gemini,groq,openrouter",
+    VISION_CHAIN.join(","),
+  );
 
   // 8.4. Все внешние провайдеры упали → ответ всё равно есть (Mock).
   const log3: string[] = [];

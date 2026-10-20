@@ -364,6 +364,32 @@ describe("голосовой ввод ИИ (Web Speech API)", () => {
     assert.match(assistant, /voice\.listening &&/, "нет блока «слушаю»");
     assert.match(assistant, /animate-pulse rounded-full bg-rose-500/, "нет пульсирующей красной точки");
   });
+
+  it("старт и остановка записи обёрнуты в try/catch (без uncaught exception)", () => {
+    assert.match(hook, /function safeCall\(/, "нет безопасного вызова методов SpeechRecognition");
+    assert.match(hook, /try \{\s*recognition\.stop\(\);\s*\} catch/, "stop() не обёрнут в try/catch");
+    assert.match(hook, /safeCall\(\(\) => recognition\.start\(\)\)/, "start() не обёрнут в try/catch");
+    assert.match(hook, /recognition\.onerror = \(event\) => \{\s*try \{/, "onerror не защищён try/catch");
+    assert.match(assistant, /const toggleVoice = useCallback\(\(\) => \{\s*try \{/, "кнопка «Голос» не обёрнута в try/catch");
+    assert.match(assistant, /toast\.error\("Разрешите доступ к микрофону в настройках браузера\."\)/, "нет аккуратного тоста при сбое микрофона");
+  });
+
+  it("onerror перехватывает not-allowed / no-speech / audio-capture / network / aborted", () => {
+    for (const code of ["not-allowed", "no-speech", "audio-capture", "network", "aborted"]) {
+      assert.ok(hook.includes(`"${code}"`) || hook.includes(`${code}:`), `ошибка ${code} не обрабатывается`);
+    }
+    assert.match(
+      hook,
+      /Разрешите доступ к микрофону в настройках браузера/,
+      "нет понятной подсказки про разрешение микрофона",
+    );
+  });
+
+  it("listening сбрасывается при ошибке и завершении записи (нет «already started»)", () => {
+    assert.match(hook, /recognition\.onend = \(\) => \{[\s\S]{0,400}?setListening\(false\)/, "onend не сбрасывает listening");
+    assert.match(hook, /wantListeningRef\.current = false;\s*restartsRef\.current = 0;\s*setListening\(false\);/, "onerror не сбрасывает состояние записи");
+    assert.match(hook, /teardownRecognition\(true\)/, "повторный старт не закрывает прошлую сессию распознавания");
+  });
 });
 
 describe("Filmstrip: камеры участников при доске и демонстрации экрана", () => {
