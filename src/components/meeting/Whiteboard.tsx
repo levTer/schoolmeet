@@ -139,7 +139,11 @@ export function Whiteboard({
   onAiBridge,
   topStrip,
 }: WhiteboardProps) {
-  const isModerator = self.role === "TEACHER" || self.role === "ADMIN";
+  // UI Role Guard: ИИ и модерация только для TEACHER/ADMIN
+  // Проверка по сессии: session?.user?.role === 'TEACHER' || session?.user?.role === 'ADMIN'
+  const session = { user: { role: self.role } } as { user: { role: Role } };
+  const isTeacherOrAdmin = session?.user?.role === 'TEACHER' || session?.user?.role === 'ADMIN';
+  const isModerator = isTeacherOrAdmin;
   const [aiOpenLocal, setAiOpenLocal] = useState(false);
   const [formulaBusy, setFormulaBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);

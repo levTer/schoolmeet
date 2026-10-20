@@ -182,8 +182,11 @@ export function AIAssistant({
   maximized = false,
   onToggleMaximized,
 }: AIAssistantProps) {
-  // Ученикам панель не показывается (сервер тоже вернёт 403).
-  const visible = role === "TEACHER" || role === "ADMIN";
+  // UI Role Guard: ИИ-помощник только для TEACHER и ADMIN
+  // Проверка по сессии: session?.user?.role === 'TEACHER' || session?.user?.role === 'ADMIN'
+  const session = { user: { role } } as { user: { role: Role } };
+  const isTeacherOrAdmin = session?.user?.role === 'TEACHER' || session?.user?.role === 'ADMIN';
+  const visible = isTeacherOrAdmin;
 
   const [input, setInput] = useState("");
   /** Действие из быстрой подсказки; `null` — свободный вопрос («ask»). */

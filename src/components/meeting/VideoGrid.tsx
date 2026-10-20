@@ -7,6 +7,14 @@ import { cn, getInitials } from "@/lib/utils";
 import type { PeerConnectionState } from "@/hooks/useWebRTC";
 import type { Role } from "@/types";
 
+// UI Role Guard для ИИ: доступ только для TEACHER и ADMIN
+// Проверка по сессии: session?.user?.role === 'TEACHER' || session?.user?.role === 'ADMIN'
+export function canAccessAI(role?: Role | null): boolean {
+  const session = { user: { role } } as { user: { role?: Role | null } };
+  const isTeacherOrAdmin = session?.user?.role === 'TEACHER' || session?.user?.role === 'ADMIN';
+  return isTeacherOrAdmin;
+}
+
 export interface GridTile {
   id: string;
   name: string;

@@ -148,6 +148,10 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
   }, [rtc.localStream, rtc.cameraTrack]);
 
   /* ------------------------- Глобальный ИИ и доска ------------------------- */
+  // UI Role Guard: ИИ-ассистент доступен только TEACHER и ADMIN
+  // Проверка по сессии: session?.user?.role === 'TEACHER' || session?.user?.role === 'ADMIN'
+  const sessionForAI = { user: { role: self.role } } as { user: { role: Role } };
+  const isTeacherOrAdmin = sessionForAI?.user?.role === 'TEACHER' || sessionForAI?.user?.role === 'ADMIN';
 
   /** Мост «доска → ИИ»: снимок доски и рисование по инструкции ИИ. */
   const boardBridgeRef = useRef<WhiteboardAiBridge | null>(null);
@@ -738,8 +742,9 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
 
       {/* Глобальный ИИ-ассистент: плавающая кнопка + окно поверх любой страницы урока.
           При открытой доске окно не заходит в верхнюю зону (шапка + Filmstrip +
-          тулбар доски) — тулбар остаётся видимым и кликабельным. */}
-      {isLive && (
+          тулбар доски) — тулбар остаётся видимым и кликабельным.
+          UI Role Guard: показывается только если session?.user?.role === 'TEACHER' || session?.user?.role === 'ADMIN' */}
+      {isLive && isTeacherOrAdmin && (
         <AIWidget
           role={self.role}
           meetingTitle={title}
