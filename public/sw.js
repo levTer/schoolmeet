@@ -36,6 +36,9 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/socket.io")) return;
+  // APK забираем напрямую: при офлайне SW не должен подсовывать закэшированный
+  // HTML вместо бинарного файла (иначе скачается страница с расширением .apk).
+  if (url.pathname === "/eduflow.apk") return;
 
   event.respondWith(
     fetch(event.request).catch(async () => {

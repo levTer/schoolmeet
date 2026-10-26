@@ -14,14 +14,14 @@ import { usePwaInstall } from "@/hooks/usePwaInstall";
  *   А) «📲 Установить как приложение» — PWA-установка в 1 клик через браузер
  *      (вызывает beforeinstallprompt; если prompt не готов — откроется
  *      инструкция в шапочной кнопке через всплывающее меню).
- *   Б) «🤖 Скачать APK для Android» — прямая ссылка на /eduflow.apk,
- *      файл скачивается напрямую через атрибут download.
+ *   Б) «🤖 Скачать APK для Android» — ссылка строго на /eduflow.apk
+ *      (файл public/eduflow.apk, тот же origin), скачивается через download.
  *
  * Стиль: тёмно-сланцевый фон (#0F172A), скруглённые углы (squircle),
  * белая окантовка и золотистый акцент на иконках.
  */
 export function InstallBlock() {
-  const { isInstalled, isPrompting, apkUrl, triggerPrompt } = usePwaInstall();
+  const { isInstalled, isPrompting, triggerPrompt } = usePwaInstall();
   const [hint, setHint] = useState<string | null>(null);
 
   if (isInstalled) return null;
@@ -70,9 +70,9 @@ export function InstallBlock() {
           </span>
         </button>
 
-        {/* Кнопка Б: Прямая ссылка на APK */}
+        {/* Кнопка Б: APK из public/eduflow.apk — путь фиксирован, без env-переопределений. */}
         <a
-          href={apkUrl}
+          href="/eduflow.apk"
           download="EduFlow.apk"
           className={cn(squircleButton, "flex-1")}
           aria-label="Скачать APK для Android"
