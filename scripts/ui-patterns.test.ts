@@ -760,6 +760,130 @@ describe("раздача APK по фиксированному пути /eduflow
 });
 
 /* -------------------------------------------------------------------------- */
+/* Дистрибуция: APK для Android, MSIX для Windows, Safari для Mac / iPhone     */
+/* -------------------------------------------------------------------------- */
+
+type SwFetchEvent = {
+  request: { method: string; url: string };
+  respondWith: (response: unknown) => void;
+};
+
+/**
+ * Прогоняет `public/sw.js` в песочнице и сообщает, перехватил ли SW запрос.
+ *
+ * Событие `fetch` вызывается вручную: так проверяется реальное поведение SW
+ * (ранний `return` без `respondWith`), а не наличие строк в исходнике.
+ */
+function serviceWorkerIntercepts(source: string, pathname: string, method = "GET"): boolean {
+  const listeners = new Map<string, Array<(event: SwFetchEvent) => void>>();
+
+  const selfStub = {
+    location: { origin: "https://eduflow.test" },
+    addEventListener: (type: string, handler: (event: SwFetchEvent) => void) => {
+      listeners.set(type, [...(listeners.get(type) ?? []), handler]);
+    },
+    skipWaiting: () => undefined,
+    clients: { claim: () => undefined },
+  };
+  const cachesStub = {
+    open: async () => ({ addAll: async () => undefined }),
+    keys: async () => [],
+    delete: async () => true,
+    match: async () => undefined,
+  };
+  const fetchStub = async () => new Response(null, { status: 200 });
+
+  new Function("self", "caches", "fetch", source)(selfStub, cachesStub, fetchStub);
+
+  const fetchHandlers = listeners.get("fetch");
+  assert.ok(fetchHandlers && fetchHandlers.length > 0, "sw.js не подписан на событие fetch");
+
+  let intercepted = false;
+  const event: SwFetchEvent = {
+    request: { method, url: `https://eduflow.test${pathname}` },
+    respondWith: () => {
+      intercepted = true;
+    },
+  };
+  for (const handler of fetchHandlers) handler(event);
+  return intercepted;
+}
+
+describe("дистрибуция установщиков: APK, MSIX и Mac / iPhone", () => {
+  const installBlock = readSource("src/components/landing/install-block.tsx");
+  const sw = readSource("public/sw.js");
+
+  it("три кнопки: Android (.apk), Windows (.msix) и Mac / iPhone", () => {
+    assert.match(installBlock, /🤖 Скачать для Android \(\.apk\)/, "нет кнопки для Android");
+    assert.match(installBlock, /💻 Скачать для Windows \(\.msix\)/, "нет кнопки для Windows");
+    assert.match(installBlock, /🍏 Установить для Mac \/ iPhone/, "нет кнопки для Mac / iPhone");
+  });
+
+  it("ссылки ведут строго на локальные /eduflow.apk и /eduflow.msix с атрибутом download", () => {
+    assert.match(
+      installBlock,
+      /href="\/eduflow\.apk"[\s\S]{0,120}?download="EduFlow\.apk"/,
+      "кнопка Android должна скачивать /eduflow.apk с download=\"EduFlow.apk\"",
+    );
+    assert.match(
+      installBlock,
+      /href="\/eduflow\.msix"[\s\S]{0,120}?download="EduFlow\.msix"/,
+      "кнопка Windows должна скачивать /eduflow.msix с download=\"EduFlow.msix\"",
+    );
+  });
+
+  it("public/eduflow.msix существует и это валидный ZIP/MSIX с AppxManifest.xml", () => {
+    const msixPath = join(REPO_ROOT, "public/eduflow.msix");
+    assert.ok(existsSync(msixPath), "нет public/eduflow.msix — ссылка приведёт на 404");
+
+    const msix = readFileSync(msixPath);
+    assert.equal(msix.subarray(0, 4).toString("hex"), "504b0304", "public/eduflow.msix не является ZIP/MSIX");
+    assert.ok(msix.includes("AppxManifest.xml"), "в MSIX нет AppxManifest.xml");
+    assert.ok(msix.includes("[Content_Types].xml"), "в MSIX нет [Content_Types].xml");
+    assert.equal(
+      existsSync(join(REPO_ROOT, "public/Eduflow.msix")),
+      false,
+      "файл с заглавной буквы ломает скачивание на регистрозависимых ФС (Linux/Vercel)",
+    );
+  });
+
+  it("кнопка Mac / iPhone открывает инструкцию для Safari через общий <Modal>", () => {
+    assert.match(
+      installBlock,
+      /import \{ Modal \} from "@\/components\/ui\/modal"/,
+      "инструкция должна использовать общий каркас <Modal>",
+    );
+    assert.match(installBlock, /<Modal\b/, "модалка инструкции не рендерится");
+    assert.match(
+      installBlock,
+      /onClick=\{\(\) => setIsAppleHelpOpen\(true\)\}/,
+      "кнопка Mac / iPhone не открывает инструкцию",
+    );
+    assert.match(installBlock, /«Поделиться»/, "в инструкции нет шага «Поделиться»");
+    assert.match(installBlock, /На экран &quot;Домой&quot;/, "в инструкции нет шага «На экран Домой»");
+    assert.match(installBlock, /«Добавить»/, "в инструкции нет шага «Добавить»");
+  });
+
+  it("sw.js не перехватывает .apk и .msix — установщики скачиваются как бинарные данные", () => {
+    assert.match(sw, /BINARY_DOWNLOAD_EXTENSIONS/, "в sw.js нет списка исключений");
+    assert.match(sw, /"\.apk"/, "в исключениях SW нет .apk");
+    assert.match(sw, /"\.msix"/, "в исключениях SW нет .msix");
+
+    assert.equal(serviceWorkerIntercepts(sw, "/eduflow.apk"), false, "SW перехватывает APK");
+    assert.equal(serviceWorkerIntercepts(sw, "/eduflow.msix"), false, "SW перехватывает MSIX");
+    assert.equal(
+      serviceWorkerIntercepts(sw, "/downloads/EduFlow.MSIX"),
+      false,
+      "расширение установщика должно сравниваться без учёта регистра",
+    );
+
+    // Остальной трафик SW по-прежнему кэширует, а не-GET запросы пропускает.
+    assert.equal(serviceWorkerIntercepts(sw, "/dashboard"), true, "SW перестал обслуживать страницы");
+    assert.equal(serviceWorkerIntercepts(sw, "/eduflow.apk", "POST"), false, "SW вмешивается в POST");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* Ребрендинг: платформа называется EduFlow                                    */
 /* -------------------------------------------------------------------------- */
 
