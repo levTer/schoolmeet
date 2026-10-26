@@ -231,8 +231,8 @@ describe("локальная запись урока (WebM)", () => {
     assert.match(recorder, /MediaRecorder/, "запись идёт не через MediaRecorder");
   });
 
-  it("файл сохраняется на компьютер как schoolmeet-lesson-[дата].webm", () => {
-    assert.match(recorder, /schoolmeet-lesson-/, "нет шаблона имени файла");
+  it("файл сохраняется на компьютер как eduflow-lesson-[дата].webm", () => {
+    assert.match(recorder, /eduflow-lesson-/, "нет шаблона имени файла");
     assert.match(recorder, /\.webm/, "нет расширения .webm");
     assert.match(recorder, /download\s*=/, "файл не скачивается на компьютер");
   });
@@ -641,6 +641,7 @@ describe("мобильный Safe Area, 100dvh и PWA-манифест для с
     const manifest = JSON.parse(manifestRaw) as {
       name: string;
       short_name: string;
+      description: string;
       start_url: string;
       display: string;
       background_color: string;
@@ -648,8 +649,9 @@ describe("мобильный Safe Area, 100dvh и PWA-манифест для с
       orientation: string;
       icons: Array<{ src: string; sizes: string; type: string; purpose: string }>;
     };
-    assert.equal(manifest.name, "SchoolMeet — Образовательная платформа");
-    assert.equal(manifest.short_name, "SchoolMeet");
+    assert.equal(manifest.name, "EduFlow — Образовательная платформа");
+    assert.equal(manifest.short_name, "EduFlow");
+    assert.equal(manifest.description, "Платформа для онлайн-уроков, ДЗ и обучения с ИИ");
     assert.equal(manifest.start_url, "/");
     assert.equal(manifest.display, "standalone");
     assert.equal(manifest.background_color, "#0f172a");
@@ -673,6 +675,94 @@ describe("мобильный Safe Area, 100dvh и PWA-манифест для с
     assert.match(layout, /<meta name="theme-color" content="#0f172a"\s*\/>/, "нет meta theme-color #0f172a");
     assert.match(layout, /<meta name="apple-mobile-web-app-capable" content="yes"\s*\/>/, "нет apple-mobile-web-app-capable");
     assert.match(layout, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"\s*\/>/, "нет apple-mobile-web-app-status-bar-style");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Ребрендинг: платформа называется EduFlow                                    */
+/* -------------------------------------------------------------------------- */
+
+describe("ребрендинг платформы EduFlow", () => {
+  const layout = readSource("src/app/layout.tsx");
+  const manifestRaw = readSource("public/manifest.json");
+  const packageRaw = readSource("package.json");
+
+  /** Экраны и карточки, где раньше встречался старый бренд SchoolMeet. */
+  const BRAND_SOURCES = [
+    "src/components/layout/Navbar.tsx",
+    "src/components/layout/app-shell.tsx",
+    "src/components/layout/bottom-nav.tsx",
+    "src/components/landing/logo.tsx",
+    "src/components/landing/site-header.tsx",
+    "src/components/landing/site-footer.tsx",
+    "src/components/landing/hero.tsx",
+    "src/components/auth/auth-shell.tsx",
+    "src/app/login/page.tsx",
+    "src/app/auth/register/page.tsx",
+    "src/app/dashboard/page.tsx",
+    "src/components/meeting/AIAssistant.tsx",
+    "src/components/meeting/MeetingRoom.tsx",
+  ] as const;
+
+  it("SEO-метаданные, OpenGraph, Twitter и PWA-заголовки используют EduFlow", () => {
+    assert.match(
+      layout,
+      /default: "EduFlow — Интерактивная образовательная платформа с ИИ"/,
+      "нет нового title приложения",
+    );
+    assert.match(layout, /template: "%s · EduFlow"/, "шаблон title не обновлён");
+    assert.match(
+      layout,
+      /Онлайн-уроки, виртуальная доска, умные ДЗ и ИИ-помощник нового поколения/,
+      "нет нового description приложения",
+    );
+    assert.match(layout, /openGraph:\s*\{[\s\S]*title: "EduFlow/, "openGraph.title не обновлён");
+    assert.match(layout, /twitter:\s*\{[\s\S]*title: "EduFlow/, "twitter.title не обновлён");
+    assert.match(layout, /siteName: "EduFlow"/, "openGraph.siteName не обновлён");
+    assert.match(layout, /applicationName: "EduFlow"/, "application-name не обновлён");
+    assert.match(layout, /<meta name="application-name" content="EduFlow"\s*\/>/, "нет PWA-метатега с EduFlow");
+    assert.ok(!layout.includes("SchoolMeet"), "в метаданных остался старый бренд");
+
+    const manifest = JSON.parse(manifestRaw) as {
+      name: string;
+      short_name: string;
+      description: string;
+    };
+    assert.equal(manifest.name, "EduFlow — Образовательная платформа");
+    assert.equal(manifest.short_name, "EduFlow");
+    assert.equal(manifest.description, "Платформа для онлайн-уроков, ДЗ и обучения с ИИ");
+  });
+
+  it("имя проекта в package.json обновлено на eduflow", () => {
+    assert.equal((JSON.parse(packageRaw) as { name: string }).name, "eduflow");
+  });
+
+  it("во всех экранах используется EduFlow и нет старого бренда", () => {
+    for (const file of BRAND_SOURCES) {
+      const source = readSource(file);
+      assert.ok(source.includes("EduFlow"), `${file}: нет бренда EduFlow`);
+      assert.ok(!source.includes("SchoolMeet"), `${file}: остался старый бренд SchoolMeet`);
+    }
+  });
+
+  it("fallback-имя бренда, приветствие и копирайт обновлены", () => {
+    for (const file of [
+      "src/components/layout/Navbar.tsx",
+      "src/components/layout/app-shell.tsx",
+      "src/components/landing/logo.tsx",
+      "src/components/landing/site-footer.tsx",
+      "src/components/landing/site-header.tsx",
+      "src/app/auth/register/page.tsx",
+      "src/app/dashboard/page.tsx",
+    ]) {
+      assert.match(readSource(file), /\|\| "EduFlow"/, `${file}: fallback бренда не EduFlow`);
+    }
+    assert.match(readSource("src/app/login/page.tsx"), /Добро пожаловать в EduFlow/, "нет приветствия EduFlow");
+    assert.match(
+      readSource("src/components/landing/site-footer.tsx"),
+      /© 2026 EduFlow\. Все права защищены\./,
+      "копирайт футера не обновлён",
+    );
   });
 });
 

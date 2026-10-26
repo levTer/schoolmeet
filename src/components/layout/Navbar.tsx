@@ -63,7 +63,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
   const mobileProfileRef = useRef<HTMLDivElement>(null);
 
   const role: Role | null = user?.role ?? null;
-  const schoolName = user?.schoolName || "SchoolMeet";
+  const schoolName = user?.schoolName || "EduFlow";
   const isAuthenticated = Boolean(user && role);
 
   const visibleItems = NAV_ITEMS.filter((item) => {

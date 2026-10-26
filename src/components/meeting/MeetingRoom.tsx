@@ -791,7 +791,7 @@ function describeJoinError(error: unknown): string {
     case "UNAUTHORIZED":
       return "Сессия истекла. Войдите в систему заново.";
     case "FORBIDDEN_ORIGIN":
-      return "Соединение заблокировано: откройте урок с адреса приложения SchoolMeet.";
+      return "Соединение заблокировано: откройте урок с адреса приложения EduFlow.";
     case "ACCOUNT_BANNED":
       return "Аккаунт заблокирован администратором. Доступ к урокам закрыт.";
     case "RATE_LIMITED":

@@ -10,7 +10,7 @@ interface LogoProps {
   showWordmark?: boolean;
   /**
    * Название школы для вордмарка (из сессии: `session.user.schoolName`).
-   * Без названия показывается бренд платформы «SchoolMeet».
+   * Без названия показывается бренд платформы «EduFlow».
    */
   schoolName?: string | null;
 }
@@ -22,7 +22,7 @@ const sizes = {
 } as const;
 
 export function Logo({ className, size = "md", showWordmark = true, schoolName }: LogoProps) {
-  const brandName = schoolName || "SchoolMeet";
+  const brandName = schoolName || "EduFlow";
 
   return (
     <Link

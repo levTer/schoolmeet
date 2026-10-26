@@ -34,7 +34,7 @@ export function Hero() {
               <Sparkles className="h-3 w-3" />
               New
             </span>
-            ИИ-ассистент встроен прямо в урок
+            EduFlow · ИИ-ассистент встроен прямо в урок
           </div>
 
           {/* Заголовок */}

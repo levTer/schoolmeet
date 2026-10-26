@@ -1,5 +1,6 @@
-# Глобальный аудит SchoolMeet 360°
+# Глобальный аудит EduFlow 360°
 
+**Бренд:** EduFlow (до ребрендинга — SchoolMeet); технические идентификаторы в отчёте приведены в исходном виде.<br>
 **Дата:** 2026-10-16<br>
 **Обновление (статус исправлений):** 2026-10-17 — Critical и High закрыты в PR «security: fix critical multi-tenancy leaks, meeting authorization, and JWT fail-closed logic» (кроме H-04, требующей major-обновления Next.js; см. статус у находки).<br>
 **Объём:** безопасность, tenant isolation, производительность, код и зависимости, UX/accessibility, целостность БД, ИИ, WebSocket/realtime, тесты и архитектура.<br>

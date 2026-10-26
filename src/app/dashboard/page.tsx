@@ -67,7 +67,7 @@ export default async function DashboardPage({
   }
 
   const { id, name, email, role, schoolId, classId, schoolName } = session.user;
-  const displayName = schoolName || "SchoolMeet";
+  const displayName = schoolName || "EduFlow";
   const canOpenAdmin = canAccessAdminArea(role);
   const permissions = getPermissionLabels(role);
 

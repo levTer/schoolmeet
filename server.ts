@@ -1,5 +1,5 @@
 /**
- * Кастомный сервер SchoolMeet: Next.js (страницы, API) и Socket.IO (realtime)
+ * Кастомный сервер EduFlow: Next.js (страницы, API) и Socket.IO (realtime)
  * работают на одном HTTP-порту.
  *
  *   npm run dev    — разработка (NODE_ENV=development, HMR Next.js сохраняется)
@@ -45,7 +45,7 @@ async function main(): Promise<void> {
 
   server.listen(port, host, () => {
     const mode = dev ? "development" : "production";
-    console.log(`▲ SchoolMeet (${mode}) готов: http://${host}:${port}`);
+    console.log(`▲ EduFlow (${mode}) готов: http://${host}:${port}`);
     console.log(`  Socket.IO: ${"/socket.io"} (тот же порт)`);
   });
 

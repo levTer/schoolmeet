@@ -33,7 +33,7 @@ export async function AppShell({ children, className }: AppShellProps) {
 
   // Защита от неожиданной формы сессии: берём `user`, только если он реально есть.
   const user = session && 'user' in session ? session.user : null;
-  const schoolName = session?.user?.schoolName || "SchoolMeet";
+  const schoolName = session?.user?.schoolName || "EduFlow";
 
   // Заблокированный аккаунт не должен видеть внутренние разделы даже с живой
   // JWT-cookie: middleware проверяет токен, а здесь данные сессии уже сверены с БД.

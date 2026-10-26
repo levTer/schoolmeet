@@ -27,7 +27,7 @@ const COLUMNS = [
     links: [
       { label: "Документация", href: "/#features" },
       { label: "Вопросы и ответы", href: "/#features" },
-      { label: "Контакты", href: "mailto:support@schoolmeet.ai" },
+      { label: "Контакты", href: "mailto:support@eduflow.ai" },
       { label: "Политика конфиденциальности", href: "/#features" },
     ],
   },
@@ -37,15 +37,17 @@ const SOCIALS = [
   { icon: Send, label: "Telegram", href: "https://t.me" },
   { icon: MessageCircle, label: "Сообщество", href: "/#features" },
   { icon: GitBranch, label: "GitHub", href: "https://github.com/levTer/schoolmeet" },
-  { icon: Mail, label: "Почта", href: "mailto:support@schoolmeet.ai" },
+  { icon: Mail, label: "Почта", href: "mailto:support@eduflow.ai" },
 ] as const;
 
 export function SiteFooter({ schoolName }: { schoolName?: string | null }) {
-  const year = new Date().getFullYear();
-  const brandName = schoolName || "SchoolMeet";
+  const brandName = schoolName || "EduFlow";
 
   return (
-    <footer className="relative border-t border-white/10 bg-ink-950/60">
+    <footer
+      className="relative border-t border-white/10 bg-ink-950/60"
+      aria-label={`${brandName} — информация о платформе`}
+    >
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 -top-24 h-24 bg-gradient-to-t from-brand-600/5 to-transparent"
@@ -90,8 +92,7 @@ export function SiteFooter({ schoolName }: { schoolName?: string | null }) {
         {/* Нижняя строка */}
         <div className="mt-12 flex flex-col items-center justify-between gap-5 border-t border-white/10 pt-7 sm:flex-row">
           <p className="text-xs text-slate-500">
-            © {year} {brandName}. Все права защищены. Копирование материалов без разрешения
-            запрещено.
+            © 2026 EduFlow. Все права защищены.
           </p>
 
           <div className="flex items-center gap-2">

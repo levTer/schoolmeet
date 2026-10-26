@@ -229,7 +229,7 @@ const [boardAttached, setBoardAttached] = useState(false);
 const [summaryOpen, setSummaryOpen] = useState(false);
 const [summaryText, setSummaryText] = useState("");
 const [summaryCopying, setSummaryCopying] = useState(false);
-  const [providerName, setProviderName] = useState("ИИ-движок SchoolMeet");
+  const [providerName, setProviderName] = useState("ИИ-движок EduFlow");
   const [providerIsLocal, setProviderIsLocal] = useState(true);
   const [interim, setInterim] = useState("");
   /** Показывать ли свёрнутый блок «Идеи запросов» (вместо громких чипсов). */
