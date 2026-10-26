@@ -22,7 +22,7 @@
  * ответов провайдеров используют те же конвертеры фигур).
  */
 
-import type { DrawingInstruction } from "./ai-providers/types";
+import type { DrawingInstruction, ImageInstruction } from "./ai-providers/types";
 
 /* -------------------------------------------------------------------------- */
 /* Реестр моста                                                                */
@@ -143,6 +143,8 @@ export interface DrawShapeCommand {
   at?: unknown;
   /** Адрес картинки (Pollinations AI и др.) для примитива image. */
   url?: string;
+  /** Текстовое описание/промпт картинки для примитива image. */
+  prompt?: string;
   fn?: string;
   domain?: unknown;
   origin?: unknown;
@@ -276,6 +278,12 @@ const SHAPE_ALIASES: Record<string, string> = {
   график: "graph",
   function: "graph",
   функция: "graph",
+  image: "image",
+  картинка: "image",
+  иллюстрация: "image",
+  picture: "image",
+  photo: "image",
+  фото: "image",
 };
 
 /**
@@ -410,7 +418,17 @@ export function shapesToInstructions(shapes: unknown): DrawingInstruction[] {
         const rawXY: [number, number] | null =
           Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
         const topLeft = asPoint(raw.topLeft) ?? (rawXY ? rawXY : center);
-        result.push({ shape: "image", ...base, url, x: topLeft[0], y: topLeft[1], w: width, h: height });
+        const prompt = typeof raw.prompt === "string" && raw.prompt.trim() ? raw.prompt.trim() : undefined;
+        result.push({
+          shape: "image",
+          ...base,
+          url,
+          x: topLeft[0],
+          y: topLeft[1],
+          w: width,
+          h: height,
+          prompt,
+        } satisfies ImageInstruction);
         break;
       }
       case "graph": {

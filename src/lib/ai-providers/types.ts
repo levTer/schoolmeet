@@ -88,7 +88,7 @@ export type DrawingShape =
   | "image";
 
 /** Базовые поля любой фигуры. */
-interface DrawingBase {
+export interface BaseInstruction {
   shape: DrawingShape;
   /** Цвет обводки/заливки (CSS-цвет). */
   color?: string;
@@ -97,6 +97,8 @@ interface DrawingBase {
   /** Подпись рядом с фигурой (например «ABC»). */
   label?: string;
 }
+
+type DrawingBase = BaseInstruction;
 
 export interface TriangleInstruction extends DrawingBase {
   shape: "triangle";
@@ -187,7 +189,7 @@ export interface TextInstruction extends DrawingBase {
 }
 
 /** Картинка/иллюстрация по URL (Pollinations AI и др.). x/y — левый верхний угол. */
-export interface ImageInstruction extends DrawingBase {
+export interface ImageInstruction extends BaseInstruction {
   shape: "image";
   /** Адрес картинки (например Pollinations AI). */
   url: string;
@@ -197,6 +199,8 @@ export interface ImageInstruction extends DrawingBase {
   /** Ширина и высота в px. */
   w: number;
   h: number;
+  /** Исходный текстовый запрос/описание иллюстрации (опционально). */
+  prompt?: string;
 }
 
 export type DrawingInstruction =

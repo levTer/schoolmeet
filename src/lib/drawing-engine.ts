@@ -13,10 +13,12 @@ import { Circle, Ellipse, Group, Image, Line, Path, Polygon, Rect, Textbox, type
 import { commandToInstructions, shapesToInstructions } from "@/lib/whiteboard-bridge";
 import type {
   ArcInstruction,
+  BaseInstruction,
   CircleInstruction,
-  EllipseInstruction,
   DrawingInstruction,
+  EllipseInstruction,
   GraphInstruction,
+  ImageInstruction,
   LineInstruction,
   PathInstruction,
   PointInstruction,
@@ -26,6 +28,8 @@ import type {
   TriangleInstruction,
   VectorInstruction,
 } from "@/lib/ai-provider";
+
+export type { BaseInstruction, DrawingInstruction, ImageInstruction };
 
 /** Разрешённое количество фигур в одной инструкции. */
 const MAX_INSTRUCTIONS = 40;
@@ -215,8 +219,9 @@ export function parseDrawingInstructions(value: unknown): DrawingInstruction[] {
         const y = typeof raw.y === "number" && Number.isFinite(raw.y) ? raw.y : topLeft ? topLeft[1] : 0;
         const w = asNumber(raw.width, asNumber(raw.w, 0));
         const h = asNumber(raw.height, asNumber(raw.h, 0));
+        const prompt = asString(raw.prompt) || undefined;
         if (!url || w <= 0 || h <= 0) continue;
-        result.push({ shape: "image", ...base, url, x, y, w, h } satisfies ImageInstruction);
+        result.push({ shape: "image", ...base, url, x, y, w, h, prompt } satisfies ImageInstruction);
         break;
       }
       default:

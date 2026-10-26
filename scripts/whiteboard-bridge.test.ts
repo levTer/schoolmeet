@@ -225,14 +225,25 @@ describe("составное рисование ИИ: домик и новые �
     assert.equal(parseDrawingInstructions(instructions).length, 3);
   });
 
-  it("ellipse/path/arc нормализуются и проходят движок", () => {
+  it("ellipse/path/arc/image нормализуются и проходят движок", () => {
     const instructions = shapesToInstructions([
       { type: "ellipse", x: 200, y: 150, radiusX: 80, radiusY: 40 },
       { type: "path", points: [[0, 0], [60, 40], [120, 0]] },
       { type: "arc", x: 300, y: 300, radius: 60, startAngle: 0, endAngle: 180 },
+      {
+        type: "image",
+        url: "https://image.pollinations.ai/prompt/atom?width=512&height=512",
+        x: 300,
+        y: 200,
+        w: 320,
+        h: 320,
+        prompt: "atom",
+      },
     ]);
-    assert.deepEqual(instructions.map((i) => i.shape), ["ellipse", "path", "arc"]);
-    assert.equal(parseDrawingInstructions(instructions).length, 3);
+    assert.deepEqual(instructions.map((i) => i.shape), ["ellipse", "path", "arc", "image"]);
+    const img = instructions[3];
+    assert.equal(img?.shape === "image" ? img.prompt : undefined, "atom");
+    assert.equal(parseDrawingInstructions(instructions).length, 4);
   });
 
   it("промпт разрешает draw для домика/схемы/системы координат и описывает новые типы", () => {

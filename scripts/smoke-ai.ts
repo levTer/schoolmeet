@@ -196,6 +196,26 @@ async function main(): Promise<void> {
     { shape: "text", at: [210, 80], text: "Домик" },
   ]);
   check("составные примитивы rect/polygon/ellipse/path/arc/text проходят", composite.length === 6, `получено ${composite.length}`);
+  const imageInstructions = parseDrawingInstructions([
+    {
+      shape: "image",
+      url: "https://image.pollinations.ai/prompt/cell?width=512&height=512",
+      x: 300,
+      y: 200,
+      w: 320,
+      h: 320,
+      prompt: "cell",
+    },
+    { shape: "image", url: "", x: 0, y: 0, w: 100, h: 100 },
+    { shape: "image", url: "https://example.com/a.png", x: 0, y: 0, w: 0, h: 100 },
+  ]);
+  check(
+    "примитив image проходит валидацию с prompt и отсекает пустой url/размер",
+    imageInstructions.length === 1 &&
+      imageInstructions[0]?.shape === "image" &&
+      imageInstructions[0].prompt === "cell",
+    `получено ${imageInstructions.length}`,
+  );
   const badComposite = parseDrawingInstructions([
     { shape: "polygon", points: [[0, 0], [1, 1]] },
     { shape: "ellipse", center: [0, 0], radiusX: -1, radiusY: 10 },
