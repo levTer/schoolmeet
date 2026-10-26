@@ -782,7 +782,7 @@ const [summaryCopying, setSummaryCopying] = useState(false);
       </div>
 
       {/* Свободный ввод — главный элемент панели */}
-      <footer ref={ideasRef} className="relative border-t border-white/10 p-3">
+      <footer ref={ideasRef} className="safe-pb relative border-t border-white/10 p-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] md:pb-3">
         {voice.error && <p className="mb-2 text-[11px] text-amber-300">{voice.error}</p>}
         {!voice.supported && (
           <p className="mb-2 text-[11px] text-slate-500">

@@ -342,6 +342,13 @@
   .safe-bottom {
     padding-bottom: max(0px, env(safe-area-inset-bottom));
   }
+
+  .safe-pb {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .safe-mb {
+    margin-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
 }
 
 /* Доска: канва Fabric.js (1600x900) масштабируется под контейнер. */

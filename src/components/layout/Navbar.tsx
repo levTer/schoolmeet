@@ -283,7 +283,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
               {isMobileProfileOpen && (
                 <div
                   role="menu"
-                  className="animate-fade-up absolute right-0 top-full z-[70] mt-2 w-64 overflow-hidden rounded-2xl border border-white/10 bg-ink-900/95 shadow-glow backdrop-blur-2xl"
+                  className="animate-fade-up safe-pb absolute right-0 top-full z-[70] mt-2 w-64 overflow-hidden rounded-2xl border border-white/10 bg-ink-900/95 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-glow backdrop-blur-2xl"
                 >
                   <div className="border-b border-white/5 p-4">
                     <p className="truncate text-sm font-medium text-white">{user.name ?? "Пользователь"}</p>

@@ -30,7 +30,7 @@ export default async function BannedPage() {
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center px-5 py-16">
+    <main className="relative flex min-h-[100dvh] items-center justify-center px-5 py-16">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute inset-0 bg-grid mask-radial opacity-40" />
         <div className="absolute left-1/2 top-0 h-[22rem] w-[22rem] -translate-x-1/2 rounded-full bg-rose-500/10 blur-[140px]" />

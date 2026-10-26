@@ -20,7 +20,7 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-16">
+    <main className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 py-16">
       {/* Фоновые размытые пятна */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute left-1/3 top-1/4 h-[30rem] w-[30rem] rounded-full bg-rose-500/15 blur-[160px]" />

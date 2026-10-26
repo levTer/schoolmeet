@@ -6,7 +6,7 @@ import { ArrowLeft, Compass, Home } from "lucide-react";
  */
 export default function NotFound() {
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-16">
+    <main className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 py-16">
       {/* Фоновые размытые пятна */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute left-1/4 top-1/4 h-[32rem] w-[32rem] rounded-full bg-brand-600/20 blur-[160px]" />

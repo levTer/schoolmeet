@@ -575,7 +575,7 @@ export function Whiteboard({
       </main>
 
       {/* Статусная строка */}
-      <footer className="relative z-30 flex shrink-0 items-center justify-between gap-3 border-t border-white/10 bg-ink-950/90 px-4 py-2 text-[11px] text-slate-400">
+      <footer className="safe-pb relative z-30 flex shrink-0 items-center justify-between gap-3 border-t border-white/10 bg-ink-950/90 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[11px] text-slate-400 md:pb-2">
         <p className="truncate">
           {status ??
             (isModerator

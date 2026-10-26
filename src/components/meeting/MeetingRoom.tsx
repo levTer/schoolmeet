@@ -476,7 +476,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
     const isDanger = closure.tone === "danger";
 
     return (
-      <div className="relative flex h-dvh flex-col items-center justify-center overflow-hidden bg-ink-950 px-5">
+      <div className="relative flex h-dvh min-h-[100dvh] flex-col items-center justify-center overflow-hidden bg-ink-950 px-5">
         <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
           <div
             className={`absolute left-1/2 top-0 h-[24rem] w-[24rem] -translate-x-1/2 rounded-full blur-[150px] ${
@@ -525,7 +525,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
   }
 
   return (
-    <div className="relative flex h-dvh flex-col overflow-hidden bg-ink-950">
+    <div className="relative flex h-dvh min-h-[100dvh] flex-col overflow-hidden bg-ink-950">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute left-1/4 top-0 h-[28rem] w-[28rem] rounded-full bg-brand-600/20 blur-[150px]" />
         <div className="absolute right-0 top-1/3 h-[24rem] w-[24rem] rounded-full bg-accent-500/15 blur-[150px]" />
@@ -672,7 +672,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
 
             {/* Мобильный чат — поверх сетки */}
             {chatOpen && (
-              <div className="animate-fade-in fixed inset-x-3 bottom-24 top-20 z-40 md:hidden">
+              <div className="animate-fade-in safe-mb fixed inset-x-3 bottom-24 top-20 z-40 md:hidden">
                 <Chat
                   messages={messages}
                   selfUserId={self.id}
@@ -697,7 +697,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
 
       {/* Нижняя панель */}
       {isLive && (
-        <footer className="flex shrink-0 justify-center px-3 pb-4 pt-3">
+        <footer className="safe-pb flex shrink-0 justify-center px-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-3">
           <Controls
             micOn={rtc.media.audio}
             camOn={rtc.media.video}
