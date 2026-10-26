@@ -42,7 +42,7 @@ export async function AppShell({ children, className }: AppShellProps) {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-x-hidden">
+    <div className="relative flex min-h-[100dvh] flex-col overflow-x-hidden">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute inset-0 bg-grid mask-radial opacity-40" />
         <div className="absolute left-1/2 top-0 h-[24rem] w-[24rem] -translate-x-1/2 rounded-full bg-brand-600/15 blur-[140px]" />
@@ -52,7 +52,7 @@ export async function AppShell({ children, className }: AppShellProps) {
 
       <main
         className={cn(
-          "mx-auto w-full max-w-7xl flex-1 px-4 py-6 pb-24 sm:px-8 sm:py-9 sm:pb-24 md:pb-9",
+          "safe-pb mx-auto w-full max-w-7xl flex-1 px-4 py-6 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-8 sm:py-9 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-[calc(1.25rem+env(safe-area-inset-bottom))]",
           className,
         )}
       >

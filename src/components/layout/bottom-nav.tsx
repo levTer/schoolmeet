@@ -53,7 +53,7 @@ export function BottomNav({ role }: { role: Role | null }) {
   return (
     <nav
       aria-label="Нижняя навигация"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-ink-950/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl md:hidden safe-bottom"
+      className="safe-pb fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-ink-950/90 pb-[calc(1.25rem+env(safe-area-inset-bottom))] backdrop-blur-2xl md:hidden safe-bottom"
     >
       <div className="mx-auto flex h-16 max-w-2xl items-stretch justify-around px-1.5">
         {items.map((item) => {

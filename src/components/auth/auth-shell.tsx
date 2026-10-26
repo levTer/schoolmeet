@@ -34,7 +34,7 @@ export function AuthShell({
   footer,
 }: AuthShellProps) {
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-10 sm:px-8 lg:py-16">
+    <main className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 py-10 sm:px-8 lg:py-16">
       {/* Декоративный фон: сетка + размытые градиентные пятна */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute inset-0 bg-grid mask-radial opacity-60" />

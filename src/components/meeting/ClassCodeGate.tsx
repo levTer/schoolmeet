@@ -188,7 +188,7 @@ export function ClassCodeGate({ meetingCode, title, hostName, self }: ClassCodeG
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center bg-ink-950 px-5 py-16">
+    <main className="relative flex min-h-[100dvh] items-center justify-center bg-ink-950 px-5 py-16">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10"

@@ -88,13 +88,21 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#061F17",
+  themeColor: "#0f172a",
   colorScheme: "dark",
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
 };
+
+const serviceWorkerScript = `(() => {
+  if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    });
+  }
+})();`;
 
 export default function RootLayout({
   children,
@@ -111,15 +119,19 @@ export default function RootLayout({
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: appearanceBootstrapScript }} />
-        {/* iOS PWA: полноэкранный режим, иконка на рабочем столе */}
+        <script dangerouslySetInnerHTML={{ __html: serviceWorkerScript }} />
+        {/* PWA и iOS метатеги для сборки .apk и полноэкранного режима */}
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0f172a" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <link rel="apple-touch-icon" href="/icon-192.svg" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
         <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen font-sans antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-[100dvh] font-sans antialiased`}
       >
         <Providers>{children}</Providers>
       </body>

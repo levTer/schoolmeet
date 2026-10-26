@@ -325,7 +325,7 @@ export function AIWidget({
         aria-label={open ? "Скрыть ИИ-помощника" : "Открыть ИИ-помощника"}
         title="ИИ-помощник"
         className={cn(
-          "fixed bottom-24 right-4 z-[70] inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-glow transition md:bottom-6 md:right-6",
+          "fixed bottom-24 right-4 safe-mb z-[70] inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-glow transition md:bottom-6 md:right-6 md:mb-0",
           "focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/40",
           open
             ? "hidden border-brand-400/50 bg-brand-500/25 text-white md:inline-flex"
@@ -340,12 +340,12 @@ export function AIWidget({
         <div
           ref={windowRef}
           className={cn(
-            "fixed z-[200] overflow-hidden",
+            "fixed z-[200] overflow-hidden safe-pb pb-[calc(1.25rem+env(safe-area-inset-bottom))] md:pb-0",
             maximized
               ? "inset-4 h-auto w-auto md:inset-8"
               : frame
                 ? ""
-                : "bottom-24 right-4 h-[min(70vh,600px)] w-[min(92vw,420px)] md:bottom-6 md:right-24",
+                : "bottom-24 right-4 safe-mb h-[min(70vh,600px)] w-[min(92vw,420px)] md:bottom-6 md:right-24 md:mb-0",
             dragging && "shadow-2xl",
           )}
           style={windowStyle}

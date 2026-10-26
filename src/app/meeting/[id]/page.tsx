@@ -99,7 +99,7 @@ export default async function MeetingRoomPage({ params }: MeetingRoomPageProps) 
 
 function MeetingForbidden({ code, message }: { code: string; message: string }) {
   return (
-    <main className="relative flex min-h-screen items-center justify-center px-5 py-16">
+    <main className="relative flex min-h-[100dvh] items-center justify-center px-5 py-16">
       <div className="glass-strong animate-fade-up max-w-md rounded-3xl p-8 text-center shadow-glow">
         <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-gradient shadow-glow">
           <ShieldAlert className="h-6 w-6 text-white" />
@@ -122,7 +122,7 @@ function MeetingForbidden({ code, message }: { code: string; message: string }) 
 
 function MeetingNotFound({ code }: { code: string }) {
   return (
-    <main className="relative flex min-h-screen items-center justify-center px-5 py-16">
+    <main className="relative flex min-h-[100dvh] items-center justify-center px-5 py-16">
       <div className="glass-strong animate-fade-up max-w-md rounded-3xl p-8 text-center shadow-glow">
         <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-gradient shadow-glow">
           <SearchX className="h-6 w-6 text-white" />

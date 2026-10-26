@@ -1,25 +1,23 @@
 {
-  "name": "Лицей Сингулярити — видеоуроки с ИИ-доской",
-  "short_name": "Сингулярити",
-  "description": "Платформа видеозвонков и уроков Лицея Сингулярити: HD-видео, интерактивная ИИ-доска, расписание и защищённый чат.",
-  "start_url": "/dashboard",
+  "name": "SchoolMeet — Образовательная платформа",
+  "short_name": "SchoolMeet",
+  "description": "Платформа для онлайн-уроков, ДЗ и обучения с ИИ",
+  "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "background_color": "#061F17",
-  "theme_color": "#061F17",
-  "lang": "ru-RU",
-  "categories": ["education", "productivity"],
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "any",
   "icons": [
     {
-      "src": "/icon-192.svg",
+      "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.svg",
+      "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

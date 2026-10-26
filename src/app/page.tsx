@@ -8,7 +8,7 @@ import { SiteHeader } from "@/components/landing/site-header";
 
 export default function HomePage() {
   return (
-    <main className="relative min-h-screen overflow-x-hidden">
+    <main className="relative min-h-[100dvh] overflow-x-hidden">
       <SiteHeader />
 
       <Hero />

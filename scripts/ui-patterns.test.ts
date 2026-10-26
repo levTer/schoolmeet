@@ -611,3 +611,68 @@ describe("регистрация без класса в гибкой школе"
     assert.match(check, /strictClassIsolation: school\.strictClassIsolation/, "проверка школы не отдаёт политику клиенту");
   });
 });
+
+describe("мобильный Safe Area, 100dvh и PWA-манифест для сборки .apk", () => {
+  const css = readSource("src/app/globals.css");
+  const layout = readSource("src/app/layout.tsx");
+  const appShell = readSource("src/components/layout/app-shell.tsx");
+  const bottomNav = readSource("src/components/layout/bottom-nav.tsx");
+  const navbar = readSource("src/components/layout/Navbar.tsx");
+  const room = readSource("src/components/meeting/MeetingRoom.tsx");
+  const widget = readSource("src/components/meeting/AIWidget.tsx");
+  const manifestRaw = readSource("public/manifest.json");
+  const sw = readSource("public/sw.js");
+
+  it("в globals.css объявлены безопасные отступы .safe-pb и .safe-mb", () => {
+    assert.match(css, /\.safe-pb\s*\{\s*padding-bottom:\s*max\(1rem,\s*env\(safe-area-inset-bottom\)\);/, "нет класса .safe-pb");
+    assert.match(css, /\.safe-mb\s*\{\s*margin-bottom:\s*max\(1rem,\s*env\(safe-area-inset-bottom\)\);/, "нет класса .safe-mb");
+  });
+
+  it("контейнеры используют min-h-[100dvh] вместо min-h-screen, нижние панели защищены safe-area", () => {
+    assert.match(layout, /min-h-\[100dvh\]/, "RootLayout не использует min-h-[100dvh]");
+    assert.match(appShell, /min-h-\[100dvh\]/, "AppShell не использует min-h-[100dvh]");
+    assert.match(room, /pb-\[calc\(1\.25rem\+env\(safe-area-inset-bottom\)\)\]|safe-pb/, "панель управления MeetingRoom не учитывает safe-area");
+    assert.match(widget, /safe-mb|safe-pb|pb-\[calc\(1\.25rem\+env\(safe-area-inset-bottom\)\)\]/, "AIWidget не учитывает safe-area");
+    assert.match(bottomNav, /pb-\[calc\(1\.25rem\+env\(safe-area-inset-bottom\)\)\]|safe-pb/, "BottomNav не учитывает safe-area");
+    assert.match(navbar, /pb-\[calc\(1\.25rem\+env\(safe-area-inset-bottom\)\)\]|safe-pb/, "Navbar не учитывает safe-area");
+  });
+
+  it("PWA-манифест, иконки, sw.js и метатеги готовы для сборки .apk", () => {
+    const manifest = JSON.parse(manifestRaw) as {
+      name: string;
+      short_name: string;
+      start_url: string;
+      display: string;
+      background_color: string;
+      theme_color: string;
+      orientation: string;
+      icons: Array<{ src: string; sizes: string; type: string; purpose: string }>;
+    };
+    assert.equal(manifest.name, "SchoolMeet — Образовательная платформа");
+    assert.equal(manifest.short_name, "SchoolMeet");
+    assert.equal(manifest.start_url, "/");
+    assert.equal(manifest.display, "standalone");
+    assert.equal(manifest.background_color, "#0f172a");
+    assert.equal(manifest.theme_color, "#0f172a");
+    assert.equal(manifest.orientation, "any");
+    assert.equal(manifest.icons.length, 2);
+    assert.deepEqual(
+      manifest.icons.map((i) => i.src),
+      ["/icon-192.png", "/icon-512.png"],
+    );
+
+    const icon192 = readFileSync(join(REPO_ROOT, "public/icon-192.png"));
+    const icon512 = readFileSync(join(REPO_ROOT, "public/icon-512.png"));
+    assert.ok(icon192.length > 100 && icon192[0] === 0x89 && icon192[1] === 0x50, "icon-192.png не валидный PNG");
+    assert.ok(icon512.length > 100 && icon512[0] === 0x89 && icon512[1] === 0x50, "icon-512.png не валидный PNG");
+
+    assert.match(sw, /addEventListener\("install"/, "sw.js не обрабатывает install");
+    assert.match(sw, /addEventListener\("fetch"/, "sw.js не обрабатывает fetch");
+
+    assert.match(layout, /<link rel="manifest" href="\/manifest\.json"\s*\/>/, "нет ссылки на manifest.json в layout.tsx");
+    assert.match(layout, /<meta name="theme-color" content="#0f172a"\s*\/>/, "нет meta theme-color #0f172a");
+    assert.match(layout, /<meta name="apple-mobile-web-app-capable" content="yes"\s*\/>/, "нет apple-mobile-web-app-capable");
+    assert.match(layout, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"\s*\/>/, "нет apple-mobile-web-app-status-bar-style");
+  });
+});
+
