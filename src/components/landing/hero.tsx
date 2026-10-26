@@ -20,11 +20,16 @@ export function Hero() {
   return (
     <section className="relative overflow-hidden pb-28 pt-32 sm:pt-40">
       {/* Фоновые слои */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-20 bg-[linear-gradient(180deg,#0A1B3D_0%,#08142E_34%,#050B1C_68%,#000000_100%)]" />
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        {/* Золотое свечение по центру — иконки и кнопки «горят» на глубоком синем */}
+        <div className="absolute left-1/2 top-[6%] h-[30rem] w-[52rem] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(245,158,11,0.18),rgba(245,158,11,0.05),transparent)] blur-[70px]" />
         <div className="absolute inset-0 bg-grid mask-radial opacity-60" />
         <div className="absolute left-1/2 top-[-25%] h-[42rem] w-[42rem] -translate-x-1/2 animate-spin-slow rounded-full bg-brand-600/20 blur-[130px]" />
-        <div className="absolute right-[3%] top-[12%] h-[24rem] w-[24rem] animate-float rounded-full bg-accent-500/15 blur-[110px]" />
+        <div className="absolute right-[3%] top-[12%] h-[24rem] w-[24rem] animate-float rounded-full bg-amber-500/12 blur-[110px]" />
         <div className="absolute -left-[8%] top-[38%] h-[22rem] w-[22rem] rounded-full bg-brand-500/15 blur-[120px]" />
+        {/* Плавный переход в секцию ниже — в глубокий фон темы, без видимого шва */}
+        <div className="absolute inset-x-0 bottom-0 h-40 bg-[linear-gradient(180deg,transparent_0%,rgb(var(--bg-deep-rgb))_100%)]" />
       </div>
 
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
@@ -40,19 +45,24 @@ export function Hero() {
 
           {/* Заголовок */}
           <h1 className="mt-7 animate-fade-up text-balance text-4xl font-semibold leading-[1.08] tracking-tight text-white [animation-delay:80ms] sm:text-6xl lg:text-7xl">
-            Zoom нового поколения для школ
+            EduFlow — Образование будущего
             <br className="hidden sm:block" />{" "}
-            <span className="text-gradient-brand">с ИИ-ассистентом</span>
+            <span className="bg-[linear-gradient(100deg,#FDE68A_0%,#F59E0B_45%,#FCD34D_100%)] bg-clip-text text-transparent drop-shadow-[0_0_30px_rgba(245,158,11,0.25)]">
+              с ИИ
+            </span>
           </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl animate-fade-up text-base leading-relaxed text-slate-400 [animation-delay:140ms] sm:text-lg">
-            HD-видеозвонки, интерактивная доска с распознаванием формул, школьное расписание с
-            разграничением ролей и защищённый чат — в одной платформе, которую учитель запускает за
-            один клик.
+          <p className="mx-auto mt-6 max-w-2xl animate-fade-up text-pretty text-base leading-relaxed text-slate-300/90 [animation-delay:140ms] sm:text-lg">
+            Интерактивный холст, умные ИИ-ассистенты и видеосвязь в одном приложении. Учитесь
+            вместе, идите дальше.
           </p>
 
+          {/* Блок «Установить EduFlow» — сразу под подзаголовком, дизайн №9
+              (тёмно-сланцевый фон, squircle, белая окантовка, золотые иконки) */}
+          <InstallBlock />
+
           {/* Кнопки */}
-          <div className="mt-9 flex animate-fade-up flex-col items-center justify-center gap-3 [animation-delay:200ms] sm:flex-row">
+          <div className="mt-8 flex animate-fade-up flex-col items-center justify-center gap-3 [animation-delay:440ms] sm:flex-row">
             <Link
               href="/auth/register"
               className="group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-brand-gradient px-7 py-3.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02] sm:w-auto"
@@ -64,15 +74,12 @@ export function Hero() {
 
             <a
               href="#features"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-7 py-3.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/10 sm:w-auto"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-7 py-3.5 text-sm font-semibold text-white backdrop-blur transition hover:border-amber-300/40 hover:bg-white/10 sm:w-auto"
             >
-              <PlayCircle className="h-4 w-4" />
+              <PlayCircle className="h-4 w-4 text-amber-300" />
               Демонстрация
             </a>
           </div>
-
-          {/* Блок «Установить EduFlow» — дизайн №9 (тёмно-сланцевый фон, squircle, белая окантовка, золотые иконки) */}
-          <InstallBlock />
 
           {/* Бейджи безопасности */}
           <div className="mt-10 flex animate-fade-up flex-wrap items-center justify-center gap-3 [animation-delay:260ms]">

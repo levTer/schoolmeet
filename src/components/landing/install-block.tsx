@@ -45,58 +45,66 @@ export function InstallBlock() {
     "h-5 w-5 text-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.55)] transition-transform group-hover:scale-110";
 
   return (
-    <div className="animate-fade-up mt-8 flex w-full flex-col items-center gap-4 [animation-delay:380ms]">
-      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] font-medium uppercase tracking-widest text-slate-400 backdrop-blur">
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.8)]" />
-        Установить EduFlow
-      </div>
-
-      <div className="flex w-full max-w-xl flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
-        {/* Кнопка A: PWA-установка */}
-        <button
-          type="button"
-          onClick={() => void handlePwaClick()}
-          disabled={isPrompting}
-          className={cn(squircleButton, "flex-1", isPrompting && "cursor-wait opacity-70")}
-          aria-label="Установить EduFlow как приложение"
-        >
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent"
-          />
-          <Smartphone aria-hidden className={goldIcon} strokeWidth={2} />
-          <span className="relative">
-            {isPrompting ? "Установка…" : "📲 Установить как приложение"}
-          </span>
-        </button>
-
-        {/* Кнопка Б: APK из public/eduflow.apk — путь фиксирован, без env-переопределений. */}
-        <a
-          href="/eduflow.apk"
-          download="EduFlow.apk"
-          className={cn(squircleButton, "flex-1")}
-          aria-label="Скачать APK для Android"
-        >
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent"
-          />
-          <Download aria-hidden className={goldIcon} strokeWidth={2} />
-          <span className="relative">🤖 Скачать APK для Android</span>
-        </a>
-      </div>
-
-      <p className="text-center text-xs leading-relaxed text-slate-500">
-        <Image
-          src="/icon.svg"
-          alt=""
-          width={16}
-          height={16}
-          unoptimized
-          className="mr-1.5 inline-block h-4 w-4 align-[-2px]"
+    <div className="animate-fade-up mx-auto mt-9 flex w-full max-w-2xl flex-col items-center gap-3 [animation-delay:200ms]">
+      {/* Единый блок дизайна №9: тёмно-сланцевая панель, белая окантовка, золотой акцент */}
+      <div className="relative w-full rounded-[26px] border border-white/10 bg-[#0F172A]/70 px-4 py-6 shadow-[0_24px_70px_-40px_rgba(0,0,0,0.95),0_0_50px_-24px_rgba(245,158,11,0.35)] ring-1 ring-inset ring-white/[0.04] backdrop-blur sm:px-7">
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-amber-300/40 to-transparent"
         />
-        PWA работает в любом современном браузере · APK для Android 8+ · без ZIP-архивов
-      </p>
+
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] font-medium uppercase tracking-widest text-slate-400 backdrop-blur">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.8)]" />
+          Установить EduFlow
+        </div>
+
+        <div className="mt-4 flex w-full flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+          {/* Кнопка A: PWA-установка */}
+          <button
+            type="button"
+            onClick={() => void handlePwaClick()}
+            disabled={isPrompting}
+            className={cn(squircleButton, "flex-1", isPrompting && "cursor-wait opacity-70")}
+            aria-label="Установить EduFlow как приложение"
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent"
+            />
+            <Smartphone aria-hidden className={goldIcon} strokeWidth={2} />
+            <span className="relative">
+              {isPrompting ? "Установка…" : "📲 Установить как приложение"}
+            </span>
+          </button>
+
+          {/* Кнопка Б: APK из public/eduflow.apk — путь фиксирован, без env-переопределений. */}
+          <a
+            href="/eduflow.apk"
+            download="EduFlow.apk"
+            className={cn(squircleButton, "flex-1")}
+            aria-label="Скачать APK для Android"
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent"
+            />
+            <Download aria-hidden className={goldIcon} strokeWidth={2} />
+            <span className="relative">🤖 Скачать APK для Android</span>
+          </a>
+        </div>
+
+        <p className="mt-4 text-center text-xs leading-relaxed text-slate-500">
+          <Image
+            src="/icon.svg"
+            alt=""
+            width={16}
+            height={16}
+            unoptimized
+            className="mr-1.5 inline-block h-4 w-4 align-[-2px]"
+          />
+          PWA работает в любом современном браузере · APK для Android 8+ · без ZIP-архивов
+        </p>
+      </div>
 
       {hint && (
         <button
