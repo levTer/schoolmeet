@@ -40,7 +40,7 @@ let _listenersReady = false;
 const _subscribers = new Set<Subscriber>();
 
 function notify() {
-  for (const sub of _subscribers) sub();
+  _subscribers.forEach((sub) => sub());
 }
 
 function setupListeners() {
