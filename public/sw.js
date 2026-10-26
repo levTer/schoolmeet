@@ -1,4 +1,4 @@
-const CACHE_NAME = "eduflow-pwa-v4";
+const CACHE_NAME = "eduflow-pwa-v5";
 const PRECACHE_URLS = [
   "/",
   "/manifest.json",
@@ -8,6 +8,22 @@ const PRECACHE_URLS = [
   "/apple-touch-icon.png",
   "/favicon.ico",
 ];
+
+/**
+ * Расширения установщиков, которые Service Worker не перехватывает.
+ *
+ * `.apk` (Android) и `.msix` (Windows 10/11) — бинарные файлы. Если отдать их
+ * через `event.respondWith(fetch(...).catch(() => caches.match("/")))`, то при
+ * сбое сети или офлайне браузер получит закэшированный HTML главной страницы и
+ * сохранит его под именем `eduflow.apk` / `eduflow.msix` — установщик окажется
+ * битым. Поэтому такие запросы уходят напрямую в сеть, без кэша и подмены.
+ */
+const BINARY_DOWNLOAD_EXTENSIONS = [".apk", ".msix", ".msixbundle", ".appx"];
+
+function isBinaryDownload(pathname) {
+  const lowerPath = pathname.toLowerCase();
+  return BINARY_DOWNLOAD_EXTENSIONS.some((extension) => lowerPath.endsWith(extension));
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -36,9 +52,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/socket.io")) return;
-  // APK забираем напрямую: при офлайне SW не должен подсовывать закэшированный
-  // HTML вместо бинарного файла (иначе скачается страница с расширением .apk).
-  if (url.pathname === "/eduflow.apk") return;
+  // Установщики (.apk/.msix) забираем напрямую: при офлайне SW не должен
+  // подсовывать закэшированный HTML вместо бинарного файла (иначе скачается
+  // страница с расширением .apk или .msix).
+  if (isBinaryDownload(url.pathname)) return;
 
   event.respondWith(
     fetch(event.request).catch(async () => {
