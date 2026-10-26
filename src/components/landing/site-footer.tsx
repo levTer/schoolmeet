@@ -92,7 +92,8 @@ export function SiteFooter({ schoolName }: { schoolName?: string | null }) {
         {/* Нижняя строка */}
         <div className="mt-12 flex flex-col items-center justify-between gap-5 border-t border-white/10 pt-7 sm:flex-row">
           <p className="text-xs text-slate-500">
-            © 2026 EduFlow. Все права защищены.
+            © 2024 EduFlow. Сделано с любовью для{" "}
+            <span className="font-medium text-slate-300">Лицея Сингулярити</span>
           </p>
 
           <div className="flex items-center gap-2">

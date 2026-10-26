@@ -841,9 +841,57 @@ describe("ребрендинг платформы EduFlow", () => {
     assert.match(readSource("src/app/login/page.tsx"), /Добро пожаловать в EduFlow/, "нет приветствия EduFlow");
     assert.match(
       readSource("src/components/landing/site-footer.tsx"),
-      /© 2026 EduFlow\. Все права защищены\./,
+      /© 2024 EduFlow\. Сделано с любовью для/,
       "копирайт футера не обновлён",
+    );
+    assert.match(
+      readSource("src/components/landing/site-footer.tsx"),
+      /Лицея Сингулярити/,
+      "в копирайте футера нет Лицея Сингулярити",
     );
   });
 });
 
+
+/* -------------------------------------------------------------------------- */
+/* Главный экран: премиальная Hero-секция                                     */
+/* -------------------------------------------------------------------------- */
+
+describe("Hero-секция главной страницы", () => {
+  const hero = readSource("src/components/landing/hero.tsx");
+  const installBlock = readSource("src/components/landing/install-block.tsx");
+
+  it("H1 и подзаголовок несут новые тексты", () => {
+    assert.match(hero, /EduFlow — Образование будущего/, "в H1 нет нового заголовка");
+    assert.match(hero, /с ИИ/, "в H1 нет акцентного «с ИИ»");
+    assert.match(
+      hero,
+      /Интерактивный холст, умные ИИ-ассистенты и видеосвязь в одном приложении\./,
+      "нет нового подзаголовка",
+    );
+    assert.match(hero, /Учитесь\s+вместе, идите дальше\./, "подзаголовок обрезан");
+  });
+
+  it("блок установки идёт прямо под подзаголовком и до кнопок-призывов", () => {
+    const subtitleAt = hero.indexOf("Интерактивный холст");
+    const installAt = hero.indexOf("<InstallBlock />");
+    const ctaAt = hero.indexOf("Начать урок");
+
+    assert.ok(subtitleAt > -1, "нет подзаголовка");
+    assert.ok(installAt > subtitleAt, "InstallBlock не под подзаголовком");
+    assert.ok(ctaAt > installAt, "кнопки «Начать урок» стоят выше блока установки");
+  });
+
+  it("фон секции — градиент из глубокого тёмно-синего в чёрный", () => {
+    assert.match(hero, /linear-gradient\(180deg,#0A1B3D[_ ]0%/, "нет тёмно-синего старта градиента");
+    assert.match(hero, /#000000[_ ]100%/, "градиент не уходит в чёрный");
+    assert.match(hero, /rgba\(245,158,11/, "нет золотого свечения под иконки и кнопки");
+  });
+
+  it("InstallBlock центрирован и оформлен в едином дизайне №9", () => {
+    assert.match(installBlock, /mx-auto[^"]*max-w-2xl/, "блок установки не отцентрирован");
+    assert.match(installBlock, /bg-\[#0F172A\]/, "нет тёмно-сланцевого фона панели");
+    assert.match(installBlock, /border-white\/10/, "нет белой окантовки панели");
+    assert.match(installBlock, /text-amber-400/, "нет золотых иконок");
+  });
+});
