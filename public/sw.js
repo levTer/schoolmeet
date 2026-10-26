@@ -1,4 +1,4 @@
-const CACHE_NAME = "eduflow-pwa-v3";
+const CACHE_NAME = "eduflow-pwa-v4";
 const PRECACHE_URLS = [
   "/",
   "/manifest.json",

@@ -702,7 +702,7 @@ describe("кнопка установки PWA и иконки Slate & Gold", () 
 
   it("фирменный SVG и растровые иконки имеют нужные цвета и размеры", () => {
     const svg = readSource("public/icon.svg");
-    for (const color of ["#0F172A", "#F59E0B", "#EAB308"]) {
+    for (const color of ["#0F172A", "#FCD34D", "#F59E0B", "#D97706"]) {
       assert.ok(svg.includes(color), `в icon.svg нет ${color}`);
     }
 
