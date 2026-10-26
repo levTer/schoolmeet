@@ -35,6 +35,7 @@ type Subscriber = () => void;
 let _deferredPrompt: BeforeInstallPromptEvent | null = null;
 let _isInstalled = false;
 let _isIOS = false;
+let _isWindows = false;
 let _isPrompting = false;
 let _listenersReady = false;
 const _subscribers = new Set<Subscriber>();
@@ -59,6 +60,7 @@ function setupListeners() {
     (platform === "MacIntel" && maxTouchPoints > 1);
   const otherIosBrowser = /CriOS|FxiOS|EdgiOS|OPiOS|Mercury/i.test(userAgent);
   _isIOS = iosDevice && /Safari/i.test(userAgent) && !otherIosBrowser;
+  _isWindows = userAgent.includes("Win");
 
   const onBeforeInstallPrompt = (event: Event) => {
     event.preventDefault();
@@ -99,6 +101,8 @@ export interface PwaInstallState {
   isInstalled: boolean;
   /** Это iOS Safari — показываем ручную инструкцию «Поделиться → На экран Домой». */
   isIOS: boolean;
+  /** Это Windows — доступна установка веб-приложения на ПК. */
+  isWindows: boolean;
   /** Идёт вызов системного prompt — не давать нажимать ещё раз. */
   isPrompting: boolean;
   /** Прямая ссылка на локальный APK-файл (всегда `/eduflow.apk`). */
@@ -113,8 +117,10 @@ export function usePwaInstall(): PwaInstallState & {
   const [, setTick] = useState(0);
 
   useEffect(() => {
+    const unsubscribe = subscribe(() => setTick((t) => t + 1));
     setupListeners();
-    return subscribe(() => setTick((t) => t + 1));
+    notify();
+    return unsubscribe;
   }, []);
 
   const triggerPrompt = useCallback(async () => {
@@ -148,6 +154,7 @@ export function usePwaInstall(): PwaInstallState & {
     canPrompt: _deferredPrompt !== null,
     isInstalled: _isInstalled,
     isIOS: _isIOS,
+    isWindows: _isWindows,
     isPrompting: _isPrompting,
     apkUrl: APK_DOWNLOAD_URL,
     triggerPrompt,
