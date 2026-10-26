@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">EduFlow</title>
+  <desc id="description">Серебристая монограмма E с золотой волной на тёмно-сланцевом фоне</desc>
+  <defs>
+    <linearGradient id="slate" x1="72" y1="48" x2="440" y2="472" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1E293B"/>
+      <stop offset="0.48" stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(152 104) rotate(49) scale(396)">
+      <stop stop-color="#64748B" stop-opacity="0.24"/>
+      <stop offset="0.58" stop-color="#1E293B" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#0F172A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="silver" x1="176" y1="108" x2="304" y2="396" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="0.46" stop-color="#F1F5F9"/>
+      <stop offset="1" stop-color="#CBD5E1"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="142" y1="218" x2="370" y2="286" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F59E0B"/>
+      <stop offset="0.52" stop-color="#FBBF24"/>
+      <stop offset="1" stop-color="#EAB308"/>
+    </linearGradient>
+    <filter id="monogram-shadow" x="88" y="88" width="336" height="336" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#020617" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+
+  <!-- Мягкий squircle: безопасная форма для PWA, Android и iOS. -->
+  <path d="M256 20C366 20 426 26 460 52C486 86 492 146 492 256C492 366 486 426 460 460C426 486 366 492 256 492C146 492 86 486 52 460C26 426 20 366 20 256C20 146 26 86 52 52C86 26 146 20 256 20Z" fill="#0F172A"/>
+  <path d="M256 20C366 20 426 26 460 52C486 86 492 146 492 256C492 366 486 426 460 460C426 486 366 492 256 492C146 492 86 486 52 460C26 426 20 366 20 256C20 146 26 86 52 52C86 26 146 20 256 20Z" fill="url(#slate)"/>
+  <path d="M256 20C366 20 426 26 460 52C486 86 492 146 492 256C492 366 486 426 460 460C426 486 366 492 256 492C146 492 86 486 52 460C26 426 20 366 20 256C20 146 26 86 52 52C86 26 146 20 256 20Z" fill="url(#glow)"/>
+  <path d="M256 22C365 22 424 28 458 54C484 88 490 147 490 256C490 365 484 424 458 458C424 484 365 490 256 490C147 490 88 484 54 458C28 424 22 365 22 256C22 147 28 88 54 54C88 28 147 22 256 22Z" stroke="#FFFFFF" stroke-opacity="0.09" stroke-width="2"/>
+
+  <!-- Slate & Gold «E» Flow: серебристые верх/низ и янтарная центральная волна. -->
+  <g filter="url(#monogram-shadow)">
+    <path d="M150 136V376M150 136H354M150 376H354" stroke="url(#silver)" stroke-width="50" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M150 256C198 208 246 304 294 256C316 234 338 232 362 256" stroke="url(#gold)" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M153 252C199 213 245 298 292 253C315 232 337 233 358 253" stroke="#FDE68A" stroke-opacity="0.28" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>

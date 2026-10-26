@@ -1,5 +1,13 @@
-const CACHE_NAME = "eduflow-pwa-v2";
-const PRECACHE_URLS = ["/", "/manifest.json", "/icon-192.png", "/icon-512.png"];
+const CACHE_NAME = "eduflow-pwa-v3";
+const PRECACHE_URLS = [
+  "/",
+  "/manifest.json",
+  "/icon.svg",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/apple-touch-icon.png",
+  "/favicon.ico",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

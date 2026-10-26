@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { LayoutDashboard, Menu, ShieldCheck, X } from "lucide-react";
 
 import { AppearanceSettingsMenu } from "@/components/theme/AppearanceSettingsMenu";
+import { PwaInstallButton } from "@/components/pwa-install-button";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
 
@@ -53,6 +54,8 @@ export function SiteHeader() {
             </a>
           ))}
         </nav>
+
+        <PwaInstallButton className="ml-auto md:ml-0" />
 
         <div className="hidden items-center gap-3 md:flex">
           <AppearanceSettingsMenu />

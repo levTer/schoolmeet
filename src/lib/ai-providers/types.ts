@@ -188,20 +188,36 @@ export interface TextInstruction extends DrawingBase {
   fontSize?: number;
 }
 
-/** Картинка/иллюстрация по URL (Pollinations AI и др.). x/y — левый верхний угол. */
-export interface ImageInstruction extends BaseInstruction {
-  shape: "image";
-  /** Адрес картинки (например Pollinations AI). */
+/**
+ * Картинка на холсте в актуальном type-based формате.
+ * x/y — левый верхний угол, размеры задаются в пикселях холста.
+ */
+export interface ImageInstruction {
+  type: "image";
+  id?: string;
   url: string;
-  /** Левый верхний угол на холсте инструкции (холст ≈1000×600, y вниз). */
   x: number;
   y: number;
-  /** Ширина и высота в px. */
+  width: number;
+  height: number;
+  opacity?: number;
+}
+
+/**
+ * Прежний формат иллюстраций ИИ. Оставлен в союзном типе для обратной
+ * совместимости с уже сохранёнными ответами моделей; движок рендерит оба формата.
+ */
+export interface LegacyImageInstruction extends BaseInstruction {
+  shape: "image";
+  url: string;
+  x: number;
+  y: number;
   w: number;
   h: number;
-  /** Исходный текстовый запрос/описание иллюстрации (опционально). */
   prompt?: string;
 }
+
+export type AnyImageInstruction = ImageInstruction | LegacyImageInstruction;
 
 export type DrawingInstruction =
   | TriangleInstruction
@@ -216,6 +232,7 @@ export type DrawingInstruction =
   | GraphInstruction
   | PointInstruction
   | TextInstruction
+  | LegacyImageInstruction
   | ImageInstruction;
 
 /* -------------------------------------------------------------------------- */
