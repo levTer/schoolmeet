@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, KeyRound, Lock, PlayCircle, ShieldCheck, Sparkles } from "lucide-react";
 
 import { ProductPreview } from "./product-preview";
+import { InstallBlock } from "./install-block";
 
 const SECURITY_BADGES = [
   { icon: ShieldCheck, label: "AES-256", hint: "шифрование чата и материалов" },
@@ -69,6 +70,9 @@ export function Hero() {
               Демонстрация
             </a>
           </div>
+
+          {/* Блок «Установить EduFlow» — дизайн №9 (тёмно-сланцевый фон, squircle, белая окантовка, золотые иконки) */}
+          <InstallBlock />
 
           {/* Бейджи безопасности */}
           <div className="mt-10 flex animate-fade-up flex-wrap items-center justify-center gap-3 [animation-delay:260ms]">
