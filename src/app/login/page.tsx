@@ -12,7 +12,7 @@ import { sanitizeRedirectPath } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Вход",
-  description: "Вход в личный кабинет Лицея Сингулярити: администратор, учитель, ученик.",
+  description: "Вход в личный кабинет EduFlow: администратор, учитель, ученик.",
 };
 
 export const dynamic = "force-dynamic";
@@ -70,8 +70,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <AuthShell
-      eyebrow="Вход в аккаунт"
-      title="С возвращением!"
+      eyebrow="Вход в EduFlow"
+      title="Добро пожаловать в EduFlow"
       subtitle="Введите школьный email и пароль — сессия создаётся по JWT и хранится 30 дней."
       highlights={HIGHLIGHTS}
     >

@@ -1,4 +1,4 @@
-const CACHE_NAME = "schoolmeet-pwa-v1";
+const CACHE_NAME = "eduflow-pwa-v2";
 const PRECACHE_URLS = ["/", "/manifest.json", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

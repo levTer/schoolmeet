@@ -155,7 +155,7 @@ async function ensureGuaranteedAdmin(
   } as const;
 
   // Ищем без учёта регистра: аккаунт мог быть создан до нормализации email
-  // («Admin@SchoolMeet.ru») — его надо обновить, а не дублировать второй строкой.
+  // («admin@schoolmeet.ru») — его надо обновить, а не дублировать второй строкой.
   const existing = await db.user.findFirst({
     where: { email: { equals: email, mode: "insensitive" } },
     select: { id: true },

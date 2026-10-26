@@ -54,7 +54,7 @@ export function AuthShell({
           </h1>
 
           <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-400">
-            SchoolMeet — единая платформа видеоуроков: HD-трансляция, ИИ-доска с
+            EduFlow — единая платформа видеоуроков: HD-трансляция, ИИ-доска с
             распознаванием формул, расписание по ролям и защищённый чат на AES-256.
           </p>
 

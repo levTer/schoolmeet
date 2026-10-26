@@ -54,14 +54,15 @@ const appearanceBootstrapScript = `(() => {
 })();`;
 
 export const metadata: Metadata = {
+  applicationName: "EduFlow",
   title: {
-    default: "Лицей Сингулярити — видеоуроки с ИИ-доской",
-    template: "%s · Лицей Сингулярити",
+    default: "EduFlow — Интерактивная образовательная платформа с ИИ",
+    template: "%s · EduFlow",
   },
   description:
-    "Лицей Сингулярити — школьная платформа видеозвонков и уроков: HD-видео, интерактивная ИИ-доска с GPT-4o Vision, расписание с ролями и защищённый чат на AES-256.",
+    "Онлайн-уроки, виртуальная доска, умные ДЗ и ИИ-помощник нового поколения",
   keywords: [
-    "Лицей Сингулярити",
+    "EduFlow",
     "видеоуроки для школ",
     "онлайн-уроки",
     "ИИ-доска",
@@ -69,21 +70,27 @@ export const metadata: Metadata = {
     "расписание уроков",
     "шифрованный чат",
   ],
-  authors: [{ name: "Лицей Сингулярити" }],
+  authors: [{ name: "EduFlow" }],
   openGraph: {
-    title: "Лицей Сингулярити — Zoom нового поколения для школ с ИИ-ассистентом",
+    title: "EduFlow — Интерактивная образовательная платформа с ИИ",
     description:
-      "HD-видеозвонки, интерактивная доска с распознаванием формул, расписание с ролями и защищённый чат — в одной платформе.",
+      "Онлайн-уроки, виртуальная доска, умные ДЗ и ИИ-помощник нового поколения",
     type: "website",
     locale: "ru_RU",
-    siteName: "Лицей Сингулярити",
+    siteName: "EduFlow",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "EduFlow — Интерактивная образовательная платформа с ИИ",
+    description:
+      "Онлайн-уроки, виртуальная доска, умные ДЗ и ИИ-помощник нового поколения",
   },
   robots: { index: true, follow: true },
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Сингулярити",
+    title: "EduFlow",
   },
 };
 
@@ -126,6 +133,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="application-name" content="EduFlow" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
         <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />

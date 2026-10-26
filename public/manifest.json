@@ -1,6 +1,6 @@
 {
-  "name": "SchoolMeet — Образовательная платформа",
-  "short_name": "SchoolMeet",
+  "name": "EduFlow — Образовательная платформа",
+  "short_name": "EduFlow",
   "description": "Платформа для онлайн-уроков, ДЗ и обучения с ИИ",
   "start_url": "/",
   "display": "standalone",
