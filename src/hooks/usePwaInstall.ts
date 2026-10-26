@@ -4,8 +4,10 @@
  * Общий хук установки PWA EduFlow.
  *
  * Отвечает за перехват события `beforeinstallprompt` (браузеры Chromium/Edge/Samsung),
- * определение iOS Safari для показа инструкции, статуса standalone-приложения
- * и ссылки на APK для Android.
+ * определение iOS Safari для показа инструкции и статуса standalone-приложения.
+ *
+ * APK раздаётся из public/eduflow.apk по фиксированному пути `/eduflow.apk`:
+ * компоненты используют этот же origin, чтобы атрибут download работал.
  *
  * Используется и в шапке (Navbar/SiteHeader), и в Hero-блоке лендинга,
  * поэтому состояние хранится в модуле (singleton), а события раздаются
@@ -19,8 +21,13 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 }
 
-const APK_DOWNLOAD_URL =
-  process.env.NEXT_PUBLIC_APK_DOWNLOAD_URL || "/eduflow.apk";
+/**
+ * Канонический локальный путь к APK. Раньше он переопределялся переменной
+ * окружения на релиз GitHub, но cross-origin ссылка игнорирует download —
+ * поэтому путь зафиксирован. Константа оставлена для совместимости состояния
+ * хука и проверяется тестами на совпадение с href в обеих кнопках.
+ */
+const APK_DOWNLOAD_URL = "/eduflow.apk";
 
 type Subscriber = () => void;
 
@@ -94,7 +101,7 @@ export interface PwaInstallState {
   isIOS: boolean;
   /** Идёт вызов системного prompt — не давать нажимать ещё раз. */
   isPrompting: boolean;
-  /** Прямая ссылка на APK-файл. */
+  /** Прямая ссылка на локальный APK-файл (всегда `/eduflow.apk`). */
   apkUrl: string;
 }
 

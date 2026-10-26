@@ -17,9 +17,9 @@ import { usePwaInstall } from "@/hooks/usePwaInstall";
  *   - на iOS показываем инструкцию:
  *       Нажмите <strong className="…">«Поделиться»</strong> →
  *       На экран &quot;Домой&quot; → «Добавить»
- *   - для Android — ссылка «Скачать APK для Android»,
- *     адрес настраивается через NEXT_PUBLIC_APK_DOWNLOAD_URL
- *     (по умолчанию /eduflow.apk с атрибутом download="EduFlow.apk").
+ *   - для Android — ссылка «Скачать APK для Android» строго на /eduflow.apk
+ *     (файл public/eduflow.apk, тот же origin) с download="EduFlow.apk".
+ *     Путь намеренно фиксирован: на внешний URL атрибут download не работает.
  */
 // Перед установкой ждём beforeinstallprompt (хук usePwaInstall):
 //   window.addEventListener("beforeinstallprompt", …)
@@ -42,7 +42,7 @@ type _BeforeInstallPromptEvent = Event & {
  * В standalone режиме кнопка скрывается.
  */
 export function PwaInstallButton({ className }: { className?: string }) {
-  const { isInstalled, isPrompting, apkUrl, triggerPrompt } = usePwaInstall();
+  const { isInstalled, isPrompting, triggerPrompt } = usePwaInstall();
   const [isIOS, setIsIOS] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -159,7 +159,7 @@ export function PwaInstallButton({ className }: { className?: string }) {
 
           <div className="mt-6 border-t border-white/10 pt-5">
             <a
-              href={apkUrl}
+              href="/eduflow.apk"
               download="EduFlow.apk"
               className={cn(
                 "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[14px] border border-white/25 bg-[#0F172A] px-4 py-3",

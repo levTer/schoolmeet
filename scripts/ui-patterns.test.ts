@@ -9,7 +9,7 @@
  * собственной разметки оверлея.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -692,7 +692,7 @@ describe("кнопка установки PWA и иконки Slate & Gold", () 
     assert.match(pwaButton, /Нажмите <strong[^>]*>«Поделиться»/);
     assert.match(pwaButton, /На экран &quot;Домой&quot;/);
     assert.match(pwaButton, /Скачать APK для Android/);
-    assert.match(pwaButton, /NEXT_PUBLIC_APK_DOWNLOAD_URL/);
+    assert.match(pwaButton, /href="\/eduflow\.apk"/, "кнопка APK должна ссылаться на локальный файл");
   });
 
   it("доступна в шапке кабинета и на гостевом лендинге", () => {
@@ -717,6 +717,45 @@ describe("кнопка установки PWA и иконки Slate & Gold", () 
     assert.equal(favicon.readUInt16LE(4), 3, "favicon.ico должен содержать 16/32/48 px");
     assert.match(readSource("scripts/generate-icons.ts"), /sharp/);
     assert.match(readSource("package.json"), /"icons:generate"/);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* APK: фиксированный локальный путь /eduflow.apk                             */
+/* -------------------------------------------------------------------------- */
+
+describe("раздача APK по фиксированному пути /eduflow.apk", () => {
+  const installBlock = readSource("src/components/landing/install-block.tsx");
+  const pwaButton = readSource("src/components/pwa-install-button.tsx");
+  const hook = readSource("src/hooks/usePwaInstall.ts");
+
+  it("обе кнопки «Скачать APK» ссылаются строго на /eduflow.apk и содержат download", () => {
+    for (const [name, source] of [
+      ["install-block.tsx", installBlock],
+      ["pwa-install-button.tsx", pwaButton],
+    ] as const) {
+      assert.match(source, /href="\/eduflow\.apk"/, `${name}: ссылка должна быть строго /eduflow.apk`);
+      assert.match(source, /download="EduFlow\.apk"/, `${name}: нет атрибута download="EduFlow.apk"`);
+      assert.doesNotMatch(
+        source,
+        /href=\{apkUrl\}|NEXT_PUBLIC_APK_DOWNLOAD_URL/,
+        `${name}: путь к APK не должен переопределяться`,
+      );
+    }
+    assert.match(hook, /APK_DOWNLOAD_URL\s*=\s*"\/eduflow\.apk"/, "хук фиксирует локальный путь");
+    assert.doesNotMatch(hook, /process\.env\.NEXT_PUBLIC_APK_DOWNLOAD_URL/, "хук не читает URL из env");
+  });
+
+  it("public/eduflow.apk существует, это валидный ZIP/APK и нет дубля в другом регистре", () => {
+    const apk = readFileSync(join(REPO_ROOT, "public/eduflow.apk"));
+    assert.equal(apk.subarray(0, 4).toString("hex"), "504b0304", "public/eduflow.apk не является ZIP/APK");
+    assert.ok(apk.includes("AndroidManifest.xml"), "в APK нет AndroidManifest.xml");
+    assert.ok(apk.includes("classes.dex"), "в APK нет classes.dex");
+    assert.equal(
+      existsSync(join(REPO_ROOT, "public/Eduflow.apk")),
+      false,
+      "файл с заглавной буквы ломает скачивание на регистрозависимых ФС (Linux/Vercel)",
+    );
   });
 });
 
