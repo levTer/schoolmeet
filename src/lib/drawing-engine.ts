@@ -12,6 +12,7 @@ import { Circle, Ellipse, Group, Image, Line, Path, Polygon, Rect, Textbox, type
 
 import { commandToInstructions, shapesToInstructions } from "@/lib/whiteboard-bridge";
 import type {
+  AnyImageInstruction,
   ArcInstruction,
   BaseInstruction,
   CircleInstruction,
@@ -19,6 +20,7 @@ import type {
   EllipseInstruction,
   GraphInstruction,
   ImageInstruction,
+  LegacyImageInstruction,
   LineInstruction,
   PathInstruction,
   PointInstruction,
@@ -30,6 +32,12 @@ import type {
 } from "@/lib/ai-provider";
 
 export type { BaseInstruction, DrawingInstruction, ImageInstruction };
+
+/** Актуальный `type: "image"` и прежний `shape: "image"` рендерятся одинаково. */
+export function isImageInstruction(instruction: DrawingInstruction): instruction is AnyImageInstruction {
+  return ("type" in instruction && instruction.type === "image") ||
+    ("shape" in instruction && instruction.shape === "image");
+}
 
 /** Разрешённое количество фигур в одной инструкции. */
 const MAX_INSTRUCTIONS = 40;
@@ -83,6 +91,32 @@ export function parseDrawingInstructions(value: unknown): DrawingInstruction[] {
   for (const item of value.slice(0, MAX_INSTRUCTIONS)) {
     const raw = asRecord(item);
     if (!raw) continue;
+
+    // Актуальный формат изображения имеет собственный дискриминатор `type`,
+    // размеры width/height и не обязан имитировать shape-based фигуры.
+    if (!raw.shape && raw.type === "image") {
+      const url = asString(raw.url).trim();
+      const width = asNumber(raw.width, 0);
+      const height = asNumber(raw.height, 0);
+      const x = asNumber(raw.x, 0);
+      const y = asNumber(raw.y, 0);
+      if (!url || width <= 0 || height <= 0) continue;
+
+      const opacity = typeof raw.opacity === "number" && Number.isFinite(raw.opacity)
+        ? Math.min(1, Math.max(0, raw.opacity))
+        : undefined;
+      result.push({
+        type: "image",
+        id: asString(raw.id).trim() || undefined,
+        url,
+        x,
+        y,
+        width,
+        height,
+        opacity,
+      } satisfies ImageInstruction);
+      continue;
+    }
 
     // Компактная фигура {"type":"triangle","x":100,"y":100,"size":80} вместо
     // полной {"shape":"triangle","points":[…]} — приводим через мост ИИ↔доска.
@@ -221,7 +255,7 @@ export function parseDrawingInstructions(value: unknown): DrawingInstruction[] {
         const h = asNumber(raw.height, asNumber(raw.h, 0));
         const prompt = asString(raw.prompt) || undefined;
         if (!url || w <= 0 || h <= 0) continue;
-        result.push({ shape: "image", ...base, url, x, y, w, h, prompt } satisfies ImageInstruction);
+        result.push({ shape: "image", ...base, url, x, y, w, h, prompt } satisfies LegacyImageInstruction);
         break;
       }
       default:
@@ -238,20 +272,29 @@ export function parseDrawingInstructions(value: unknown): DrawingInstruction[] {
  * возвращается `null`, и движок продолжает работу с остальными фигурами.
  */
 export function buildImageObject(
-  instruction: ImageInstruction,
+  instruction: AnyImageInstruction,
   options: BuildOptions = {},
 ): Promise<FabricObject | null> {
   const offset = options.offset ?? { x: 0, y: 0 };
+  const width = "width" in instruction ? instruction.width : instruction.w;
+  const height = "height" in instruction ? instruction.height : instruction.h;
+  const opacity = "type" in instruction ? instruction.opacity : undefined;
+
   return Image.fromURL(instruction.url, { crossOrigin: "anonymous" }, {
     left: instruction.x + offset.x,
     top: instruction.y + offset.y,
-    width: instruction.w,
-    height: instruction.h,
+    width,
+    height,
+    opacity,
     objectCaching: false,
     selectable: false,
     evented: false,
   })
-    .then((image) => image as unknown as FabricObject)
+    .then((image) => {
+      const id = "type" in instruction ? instruction.id : undefined;
+      if (id) (image as unknown as { id: string }).id = id;
+      return image as unknown as FabricObject;
+    })
     .catch((error) => {
       console.warn("[drawing-engine] не удалось загрузить картинку:", instruction.url, error);
       return null;
@@ -318,6 +361,7 @@ function makeCenteredLabel(text: string, cx: number, cy: number): Textbox {
 function shapeCentroids(instructions: DrawingInstruction[]): Array<[number, number]> {
   const centroids: Array<[number, number]> = [];
   for (const instruction of instructions) {
+    if (isImageInstruction(instruction)) continue;
     if (instruction.shape === "triangle") {
       const count = instruction.points.length || 1;
       centroids.push([
@@ -472,6 +516,9 @@ export function buildObjectsFromInstructions(
   const centroids = shapeCentroids(instructions);
 
   for (const instruction of instructions) {
+    // Изображения загружаются асинхронно через buildImageObject.
+    if (isImageInstruction(instruction)) continue;
+
     const stroke = instruction.strokeWidth ?? DEFAULT_STROKE;
     const color = instruction.color ?? DEFAULT_COLOR;
 
@@ -686,6 +733,8 @@ export function buildObjectsFromInstructions(
 
 /**
  * Рисует инструкции прямо на канве Fabric.js (используется тестами и утилитами).
+ * Векторные объекты возвращаются синхронно; изображения обоих форматов
+ * добавляются на канву после загрузки, не блокируя остальной чертёж.
  * Обычный путь UI — `buildObjectsFromInstructions` + `useWhiteboard`, который
  * добавляет объекты со своим id и синхронизацией.
  */
@@ -696,6 +745,15 @@ export function drawInstructionsOnCanvas(
 ): FabricObject[] {
   const objects = buildObjectsFromInstructions(instructions, options);
   for (const object of objects) canvas.add(object);
+
+  for (const instruction of instructions.filter(isImageInstruction)) {
+    void buildImageObject(instruction, options).then((image) => {
+      if (!image) return;
+      canvas.add(image);
+      canvas.requestRenderAll();
+    });
+  }
+
   canvas.requestRenderAll();
   return objects;
 }

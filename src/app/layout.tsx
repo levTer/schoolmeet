@@ -134,9 +134,10 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="application-name" content="EduFlow" />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
-        <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+        <link rel="icon" type="image/svg+xml" href="/icon.svg" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-[100dvh] font-sans antialiased`}

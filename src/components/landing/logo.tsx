@@ -1,5 +1,5 @@
+import Image from "next/image";
 import Link from "next/link";
-import { GraduationCap } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -31,19 +31,20 @@ export function Logo({ className, size = "md", showWordmark = true, schoolName }
       aria-label={`${brandName} — на главную`}
     >
       <span className="relative inline-flex">
-        <span className="absolute -inset-1 rounded-2xl bg-brand-gradient opacity-40 blur-md transition group-hover:opacity-70" />
+        <span className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-slate-500/40 via-transparent to-amber-500/40 opacity-40 blur-md transition group-hover:opacity-70" />
         <span
           className={cn(
-            "relative inline-flex items-center justify-center bg-brand-gradient shadow-glow",
+            "relative inline-flex items-center justify-center overflow-hidden bg-[#0F172A] shadow-glow",
             sizes[size],
           )}
         >
-          <GraduationCap
-            className={cn(
-              "text-white",
-              size === "sm" ? "h-4 w-4" : size === "md" ? "h-5 w-5" : "h-6 w-6",
-            )}
-            strokeWidth={2.2}
+          <Image
+            src="/icon.svg"
+            alt=""
+            width={48}
+            height={48}
+            unoptimized
+            className="h-full w-full"
           />
         </span>
       </span>

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { Logo } from "@/components/landing/logo";
+import { PwaInstallButton } from "@/components/pwa-install-button";
 import { ClassSwitcher } from "@/components/layout/ClassSwitcher";
 import { AppearanceSettingsMenu } from "@/components/theme/AppearanceSettingsMenu";
 import { ROLE_LABELS, type Role } from "@/types";
@@ -153,6 +154,9 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
             );
           })}
         </nav>
+
+        {/* Установка PWA доступна гостям и всем ролям; в standalone скрыта. */}
+        <PwaInstallButton className="ml-auto md:ml-0" />
 
         {/* Настройки внешнего вида и профиль (десктоп) */}
         <div className="hidden items-center gap-3 md:flex">

@@ -37,9 +37,10 @@ import {
   buildImageObject,
   buildObjectsFromInstructions,
   createArrow,
+  isImageInstruction,
   parseDrawingInstructions,
 } from "@/lib/drawing-engine";
-import type { DrawingInstruction, ImageInstruction } from "@/lib/ai-provider";
+import type { DrawingInstruction } from "@/lib/ai-provider";
 import { Image as FabricImage } from "fabric";
 import {
   WHITEBOARD_CURSOR_TTL_MS,
@@ -1164,15 +1165,13 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
       };
 
       // Векторные фигуры — отрисовываем синхронно.
-      const vectorInstructions = safeInstructions.filter((i) => i.shape !== "image");
+      const vectorInstructions = safeInstructions.filter((instruction) => !isImageInstruction(instruction));
       const objects = buildObjectsFromInstructions(vectorInstructions, { offset: { x: 120, y: 60 } });
       for (const object of objects) addObject(object);
 
-      // Картинки загружаются по URL (Pollinations AI и др.) асинхронно — не
-      // блокируем остальной чертёж, а дорисовываем каждую по мере готовности.
-      for (const instruction of safeInstructions.filter(
-        (i): i is ImageInstruction => i.shape === "image",
-      )) {
+      // Картинки type/shape загружаются по URL асинхронно — не блокируем
+      // остальной чертёж, а дорисовываем каждую по мере готовности.
+      for (const instruction of safeInstructions.filter(isImageInstruction)) {
         const image = await buildImageObject(instruction, { offset: { x: 120, y: 60 } });
         if (image instanceof FabricImage) addObject(image);
       }

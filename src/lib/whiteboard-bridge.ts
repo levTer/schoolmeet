@@ -22,7 +22,7 @@
  * ответов провайдеров используют те же конвертеры фигур).
  */
 
-import type { DrawingInstruction, ImageInstruction } from "./ai-providers/types";
+import type { DrawingInstruction, ImageInstruction, LegacyImageInstruction } from "./ai-providers/types";
 
 /* -------------------------------------------------------------------------- */
 /* Реестр моста                                                                */
@@ -418,6 +418,24 @@ export function shapesToInstructions(shapes: unknown): DrawingInstruction[] {
         const rawXY: [number, number] | null =
           Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
         const topLeft = asPoint(raw.topLeft) ?? (rawXY ? rawXY : center);
+        const isTypedImage = raw.type === "image" && !raw.shape &&
+          (raw.width !== undefined || raw.height !== undefined) &&
+          raw.w === undefined && raw.h === undefined && raw.prompt === undefined;
+        if (isTypedImage) {
+          const rawOpacity = asNumber(raw.opacity, Number.NaN);
+          result.push({
+            type: "image",
+            id: typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : undefined,
+            url,
+            x: topLeft[0],
+            y: topLeft[1],
+            width,
+            height,
+            opacity: Number.isFinite(rawOpacity) ? clamp(rawOpacity, 0, 1) : undefined,
+          } satisfies ImageInstruction);
+          break;
+        }
+
         const prompt = typeof raw.prompt === "string" && raw.prompt.trim() ? raw.prompt.trim() : undefined;
         result.push({
           shape: "image",
@@ -428,7 +446,7 @@ export function shapesToInstructions(shapes: unknown): DrawingInstruction[] {
           w: width,
           h: height,
           prompt,
-        } satisfies ImageInstruction);
+        } satisfies LegacyImageInstruction);
         break;
       }
       case "graph": {

@@ -246,6 +246,28 @@ describe("составное рисование ИИ: домик и новые �
     assert.equal(parseDrawingInstructions(instructions).length, 4);
   });
 
+  it("type-based image проходит через мост без потери id/размеров/opacity", () => {
+    const instructions = shapesToInstructions([
+      {
+        type: "image",
+        id: "atom-modern",
+        url: "https://example.com/atom.png",
+        x: 24,
+        y: 32,
+        width: 640,
+        height: 360,
+        opacity: 0.8,
+      },
+    ]);
+    const image = instructions[0];
+    assert.ok(image && "type" in image && image.type === "image");
+    assert.equal(image.id, "atom-modern");
+    assert.equal(image.width, 640);
+    assert.equal(image.height, 360);
+    assert.equal(image.opacity, 0.8);
+    assert.equal(parseDrawingInstructions(instructions).length, 1);
+  });
+
   it("промпт разрешает draw для домика/схемы/системы координат и описывает новые типы", () => {
     const prompt = buildSystemPrompt("ask", "Геометрия");
     assert.match(prompt, /"action":"draw"/);

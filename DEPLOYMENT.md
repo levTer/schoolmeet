@@ -293,8 +293,14 @@ npx prisma db seed        # == npm run db:seed
 ## Шаг 5. Использование как мобильное приложение (PWA) и сборка APK
 
 Лицей Сингулярити — **Progressive Web App**: manifest, иконки и мобильная навигация уже в репозитории
-(`public/manifest.json`, `public/icon-192.svg`, `public/icon-512.svg`). PWA не требует публикации
-в сторах, обновляется вместе с сайтом и занимает ~1 МБ.
+(`public/manifest.json`, `public/icon.svg`, `public/icon-192.png`, `public/icon-512.png`). PWA не требует
+публикации в сторах, обновляется вместе с сайтом и занимает ~1 МБ.
+
+Фирменные PNG/ICO воспроизводимо генерируются из единого SVG:
+
+```bash
+npm run icons:generate # icon-192/512.png, apple-touch-icon.png и favicon.ico
+```
 
 ### 5.1. Android — «Добавить на главный экран»
 
@@ -331,6 +337,10 @@ bubblewrap build        # на выходе: app-release-signed.apk и .aab
 > 📌 Для TWA-оболочки сайт должен быть доступен по HTTPS (Vercel даёт его автоматически) и
 > отдавать заголовок `assetlinks.json` для подписи — PWABuilder подскажет, куда его положить
 > (`public/.well-known/assetlinks.json`). Для обычной раздачи APK тестовой подписи это не требуется.
+
+Кнопка «Скачать APK для Android» в окне установки использует прямой URL из
+`NEXT_PUBLIC_APK_DOWNLOAD_URL`. По умолчанию это `eduflow.apk` из latest-релиза GitHub:
+загрузите подписанный APK под этим именем в релиз либо задайте собственный HTTPS-URL при деплое.
 
 ---
 

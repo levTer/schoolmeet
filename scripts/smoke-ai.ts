@@ -216,6 +216,31 @@ async function main(): Promise<void> {
       imageInstructions[0].prompt === "cell",
     `получено ${imageInstructions.length}`,
   );
+  const typedImageInstructions = parseDrawingInstructions([
+    {
+      type: "image",
+      id: "diagram-1",
+      url: "https://example.com/diagram.png",
+      x: 40,
+      y: 60,
+      width: 480,
+      height: 270,
+      opacity: 0.65,
+    },
+    { type: "image", url: "https://example.com/broken.png", x: 0, y: 0, width: 0, height: 100 },
+  ]);
+  const typedImage = typedImageInstructions[0];
+  check(
+    "type-based image сохраняет id, width/height и opacity",
+    typedImageInstructions.length === 1 &&
+      typedImage !== undefined &&
+      "type" in typedImage &&
+      typedImage.type === "image" &&
+      typedImage.id === "diagram-1" &&
+      typedImage.width === 480 &&
+      typedImage.height === 270 &&
+      typedImage.opacity === 0.65,
+  );
   const badComposite = parseDrawingInstructions([
     { shape: "polygon", points: [[0, 0], [1, 1]] },
     { shape: "ellipse", center: [0, 0], radiusX: -1, radiusY: 10 },

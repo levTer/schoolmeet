@@ -678,6 +678,48 @@ describe("мобильный Safe Area, 100dvh и PWA-манифест для с
   });
 });
 
+describe("кнопка установки PWA и иконки Slate & Gold", () => {
+  const pwaButton = readSource("src/components/pwa-install-button.tsx");
+  const navbar = readSource("src/components/layout/Navbar.tsx");
+  const siteHeader = readSource("src/components/landing/site-header.tsx");
+
+  it("перехватывает install prompt, поддерживает iOS/standalone и предлагает APK", () => {
+    assert.match(pwaButton, /beforeinstallprompt/);
+    assert.match(pwaButton, /useState<BeforeInstallPromptEvent \| null>/);
+    assert.match(pwaButton, /await promptEvent\.prompt\(\)/);
+    assert.match(pwaButton, /appinstalled/);
+    assert.match(pwaButton, /display-mode: standalone/);
+    assert.match(pwaButton, /Нажмите <strong[^>]*>«Поделиться»/);
+    assert.match(pwaButton, /На экран &quot;Домой&quot;/);
+    assert.match(pwaButton, /Скачать APK для Android/);
+    assert.match(pwaButton, /NEXT_PUBLIC_APK_DOWNLOAD_URL/);
+  });
+
+  it("доступна в шапке кабинета и на гостевом лендинге", () => {
+    assert.match(navbar, /<PwaInstallButton/);
+    assert.match(siteHeader, /<PwaInstallButton/);
+  });
+
+  it("фирменный SVG и растровые иконки имеют нужные цвета и размеры", () => {
+    const svg = readSource("public/icon.svg");
+    for (const color of ["#0F172A", "#F59E0B", "#EAB308"]) {
+      assert.ok(svg.includes(color), `в icon.svg нет ${color}`);
+    }
+
+    for (const [file, size] of [["icon-192.png", 192], ["icon-512.png", 512], ["apple-touch-icon.png", 180]] as const) {
+      const png = readFileSync(join(REPO_ROOT, "public", file));
+      assert.equal(png.readUInt32BE(16), size, `${file}: неверная ширина`);
+      assert.equal(png.readUInt32BE(20), size, `${file}: неверная высота`);
+    }
+
+    const favicon = readFileSync(join(REPO_ROOT, "public/favicon.ico"));
+    assert.equal(favicon.readUInt16LE(2), 1, "favicon.ico имеет неверный тип ресурса");
+    assert.equal(favicon.readUInt16LE(4), 3, "favicon.ico должен содержать 16/32/48 px");
+    assert.match(readSource("scripts/generate-icons.ts"), /sharp/);
+    assert.match(readSource("package.json"), /"icons:generate"/);
+  });
+});
+
 /* -------------------------------------------------------------------------- */
 /* Ребрендинг: платформа называется EduFlow                                    */
 /* -------------------------------------------------------------------------- */
