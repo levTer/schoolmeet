@@ -683,19 +683,21 @@ describe("мобильный Safe Area, 100dvh и PWA-манифест для с
 
 describe("кнопка установки PWA и иконки Slate & Gold", () => {
   const pwaButton = readSource("src/components/pwa-install-button.tsx");
+  const hook = readSource("src/hooks/usePwaInstall.ts");
   const navbar = readSource("src/components/layout/Navbar.tsx");
   const siteHeader = readSource("src/components/landing/site-header.tsx");
 
-  it("перехватывает install prompt, поддерживает iOS/standalone и предлагает APK", () => {
-    assert.match(pwaButton, /beforeinstallprompt/);
-    assert.match(pwaButton, /useState<BeforeInstallPromptEvent \| null>/);
-    assert.match(pwaButton, /await promptEvent\.prompt\(\)/);
-    assert.match(pwaButton, /appinstalled/);
-    assert.match(pwaButton, /display-mode: standalone/);
-    assert.match(pwaButton, /Нажмите <strong[^>]*>«Поделиться»/);
+  it("использует общий install prompt, поддерживает ручную установку и предлагает APK", () => {
+    assert.match(hook, /window\.addEventListener\("beforeinstallprompt"/);
+    assert.match(hook, /let _deferredPrompt: BeforeInstallPromptEvent \| null/);
+    assert.match(hook, /await promptEvent\.prompt\(\)/);
+    assert.match(hook, /window\.addEventListener\("appinstalled"/);
+    assert.match(hook, /display-mode: standalone/);
+    assert.match(pwaButton, /«Поделиться»/);
     assert.match(pwaButton, /На экран &quot;Домой&quot;/);
-    assert.match(pwaButton, /Скачать APK для Android/);
+    assert.match(pwaButton, /Скачать файл APK напрямую/);
     assert.match(pwaButton, /href="\/eduflow\.apk"/, "кнопка APK должна ссылаться на локальный файл");
+    assert.match(pwaButton, /onClick=\{openModal\}/, "кнопка в шапке должна сначала показывать выбор");
   });
 
   it("доступна в шапке кабинета и на гостевом лендинге", () => {
@@ -732,13 +734,18 @@ describe("раздача APK по фиксированному пути /eduflow
   const pwaButton = readSource("src/components/pwa-install-button.tsx");
   const hook = readSource("src/hooks/usePwaInstall.ts");
 
-  it("обе кнопки «Скачать APK» ссылаются строго на /eduflow.apk и содержат download", () => {
+  it("обе ссылки APK указывают на локальный файл и не запускают PWA", () => {
     for (const [name, source] of [
       ["install-block.tsx", installBlock],
       ["pwa-install-button.tsx", pwaButton],
     ] as const) {
-      assert.match(source, /href="\/eduflow\.apk"/, `${name}: ссылка должна быть строго /eduflow.apk`);
-      assert.match(source, /download="EduFlow\.apk"/, `${name}: нет атрибута download="EduFlow.apk"`);
+      const anchor = source.match(/<a\s+href="\/eduflow\.apk"[^>]*>[\s\S]*?<\/a>/);
+      assert.ok(anchor, `${name}: ссылка должна быть строго /eduflow.apk`);
+      assert.match(anchor[0], /download="EduFlow\.apk"/, `${name}: нет download="EduFlow.apk"`);
+      assert.match(anchor[0], /target="_blank"/, `${name}: нет target="_blank"`);
+      assert.match(anchor[0], /rel="noopener noreferrer"/, `${name}: нет безопасного rel`);
+      assert.match(anchor[0], /🤖 Скачать файл APK напрямую/);
+      assert.doesNotMatch(anchor[0], /onClick=|disabled=/, `${name}: ссылка не должна вызывать PWA`);
       assert.doesNotMatch(
         source,
         /href=\{apkUrl\}|NEXT_PUBLIC_APK_DOWNLOAD_URL/,
@@ -763,7 +770,7 @@ describe("раздача APK по фиксированному пути /eduflow
 });
 
 /* -------------------------------------------------------------------------- */
-/* Дистрибуция: APK для Android, MSIX для Windows, Safari для Mac / iPhone     */
+/* Дистрибуция: APK для Android, .exe для Windows, DMG для Mac и PWA           */
 /* -------------------------------------------------------------------------- */
 
 type SwFetchEvent = {
@@ -816,8 +823,8 @@ describe("дистрибуция установщиков: APK, Electron-уст�
   const installBlock = readSource("src/components/landing/install-block.tsx");
   const sw = readSource("public/sw.js");
 
-  it("три кнопки: Android (.apk), Windows (.exe Установщик) и Mac / iPhone", () => {
-    assert.match(installBlock, /🤖 Скачать APK для Android/, "нет кнопки для Android");
+  it("файлы для Android (.apk), Windows (.exe) и Mac (.dmg)", () => {
+    assert.match(installBlock, /🤖 Скачать файл APK напрямую/, "нет кнопки для Android");
     assert.match(
       installBlock,
       /💻 Скачать для Windows \(\.exe Установщик\)/,
@@ -847,7 +854,7 @@ describe("дистрибуция установщиков: APK, Electron-уст�
     assert.doesNotMatch(installBlock, /href="https?:[^"]*eduflow-setup\.exe"/, "ссылка должна быть локальной");
   });
 
-  it("кнопка Mac / iPhone открывает инструкцию для Safari через общий <Modal>", () => {
+  it("кнопка инструкции PWA открывает справку через общий <Modal>", () => {
     assert.match(
       installBlock,
       /import \{ Modal \} from "@\/components\/ui\/modal"/,
@@ -856,8 +863,8 @@ describe("дистрибуция установщиков: APK, Electron-уст�
     assert.match(installBlock, /<Modal\b/, "модалка инструкции не рендерится");
     assert.match(
       installBlock,
-      /onClick=\{\(\) => setIsAppleHelpOpen\(true\)\}/,
-      "кнопка Mac / iPhone не открывает инструкцию",
+      /onClick=\{\(\) => setIsPwaHelpOpen\(true\)\}/,
+      "кнопка инструкции PWA не открывает справку",
     );
     assert.match(installBlock, /«Поделиться»/, "в инструкции нет шага «Поделиться»");
     assert.match(installBlock, /На экран &quot;Домой&quot;/, "в инструкции нет шага «На экран Домой»");
@@ -877,7 +884,9 @@ describe("дистрибуция установщиков: APK, Electron-уст�
     for (const path of ["/eduflow-setup.exe", "/EduFlow-Setup.EXE", "/eduflow-setup.exe?v=2"]) {
       assert.equal(serviceWorkerIntercepts(sw, path), false, `SW перехватывает ${path}`);
     }
-    assert.equal(serviceWorkerIntercepts(sw, "/eduflow.apk"), false, "SW перехватывает APK");
+    for (const path of ["/eduflow.apk", "/EduFlow.APK", "/eduflow.apk?download=1"]) {
+      assert.equal(serviceWorkerIntercepts(sw, path), false, `SW перехватывает APK ${path}`);
+    }
 
     // Остальной трафик SW по-прежнему кэширует, а не-GET запросы пропускает.
     assert.equal(serviceWorkerIntercepts(sw, "/dashboard"), true, "SW перестал обслуживать страницы");
@@ -1047,10 +1056,10 @@ describe("полноценный установщик EduFlow для Windows (El
 });
 
 /* -------------------------------------------------------------------------- */
-/* Все 3 варианта установки сразу: без авто-детекции ОС                        */
+/* Все варианты установки сразу: без авто-детекции ОС                          */
 /* -------------------------------------------------------------------------- */
 
-describe("установка без авто-детекции ОС: все 3 варианта видны сразу", () => {
+describe("установка без авто-детекции ОС: все варианты видны сразу", () => {
   const pwaButton = readSource("src/components/pwa-install-button.tsx");
   const installBlock = readSource("src/components/landing/install-block.tsx");
   const hook = readSource("src/hooks/usePwaInstall.ts");
@@ -1074,8 +1083,8 @@ describe("установка без авто-детекции ОС: все 3 в�
     }
   });
 
-  it("модалка установки показывает все 3 кнопки списком, а не только Android", () => {
-    assert.match(pwaButton, /Скачать APK для Android/, "в модалке нет кнопки Android");
+  it("модалка показывает APK, PWA, Windows и Mac отдельно", () => {
+    assert.match(pwaButton, /Скачать файл APK напрямую/, "в модалке нет кнопки Android");
     assert.match(
       pwaButton,
       /Скачать для Windows \(\.exe Установщик\)/,
@@ -1089,17 +1098,18 @@ describe("установка без авто-детекции ОС: все 3 в�
     );
     assert.match(
       pwaButton,
-      /onClick=\{\(\) => setShowAppleHelp\(true\)\}/,
-      "кнопка Mac / iPhone не открывает пошаговую подсказку",
+      /onClick=\{\(\) => setShowPwaHelp\(true\)\}/,
+      "кнопка инструкции PWA не открывает пошаговую подсказку",
     );
   });
 
-  it("главная страница и модалка используют одинаковые три варианта", () => {
+  it("главная страница и модалка используют одинаковые варианты установки", () => {
     for (const [name, source] of [
       ["install-block.tsx", installBlock],
       ["pwa-install-button.tsx", pwaButton],
     ] as const) {
-      assert.match(source, /Скачать APK для Android/, `${name}: нет варианта Android`);
+      assert.match(source, /Скачать файл APK напрямую/, `${name}: нет варианта Android`);
+      assert.match(source, /📲 Добавить иконку на экран \(PWA\)/, `${name}: нет отдельной кнопки PWA`);
       assert.match(
         source,
         /Скачать для Windows \(\.exe Установщик\)/,
@@ -1251,7 +1261,7 @@ describe("Hero-секция главной страницы", () => {
 describe("macOS DMG download", () => {
   it("both components expose all three direct download anchors", () => {
     const targets = [
-      { file: "eduflow.apk", download: "EduFlow.apk", label: "🤖 Скачать APK для Android" },
+      { file: "eduflow.apk", download: "EduFlow.apk", label: "🤖 Скачать файл APK напрямую" },
       {
         file: "eduflow-setup.exe",
         download: "EduFlow-Setup.exe",
