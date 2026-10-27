@@ -6,6 +6,8 @@
 #
 # Команда: npm run build:windows
 appId: com.eduflow.desktop
+# Облегчаем дистрибутив Chromium перед упаковкой в NSIS.
+afterPack: desktop/after-pack.js
 productName: EduFlow
 copyright: Copyright © 2026 EduFlow
 

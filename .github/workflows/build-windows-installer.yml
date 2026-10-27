@@ -74,6 +74,13 @@ jobs:
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # GitHub отклоняет файлы больше 100 МБ — такой установщик не опубликовать.
+          size=$(stat -c%s public/eduflow-setup.exe 2>/dev/null || wc -c < public/eduflow-setup.exe)
+          echo "eduflow-setup.exe: $size bytes ($((size / 1024 / 1024)) MB)" | tee -a windows-build.log
+          if [ "$size" -gt 97500000 ]; then
+            echo "Установщик больше лимита GitHub (100 МБ) — публикация пропущена" | tee -a windows-build.log
+            exit 1
+          fi
           git add public/eduflow-setup.exe
           if git diff --cached --quiet; then
             echo "Установщик не изменился — коммит не нужен"
@@ -92,6 +99,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           test -f windows-build.log || echo "сборка не дошла до лога" > windows-build.log
+          # В индексе мог остаться тяжёлый .exe — публикуем только отчёт.
+          git reset -q
           git add -f windows-build.log
           git commit -m "ci(windows): отчёт сборки установщика [skip ci]" || exit 0
           git push origin "HEAD:${GITHUB_REF_NAME}" || true
