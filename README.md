@@ -164,7 +164,7 @@ src/types/index.ts                 Интерфейсы User / Meeting / Schedul
 src/types/next-auth.d.ts           Расширение типов сессии NextAuth полем role
 electron-app/                      macOS-приложение EduFlow: Electron-обёртка над живым сайтом
                                    (main.js, экран загрузки, electron-builder → универсальный .dmg)
-.github/workflows/build-mac-dmg.yml Бесплатная сборка DMG на macos-latest: артефакт Actions,
+.github/workflows/build-mac-dmg.yml Бесплатная сборка DMG на macos-15-intel: артефакт Actions,
                                    по тегу v* — GitHub Release (см. electron-app/README.md)
 ```
 
