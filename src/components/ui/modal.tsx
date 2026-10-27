@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
@@ -43,6 +44,8 @@ export interface ModalProps {
   overlayClassName?: string;
   /** Дополнительные классы центрирующей обёртки. */
   containerClassName?: string;
+  /** Отрисовать оверлей в body, чтобы transform и backdrop-filter родителей его не обрезали. */
+  portal?: boolean;
 }
 
 /**
@@ -70,6 +73,7 @@ export function Modal({
   className,
   overlayClassName,
   containerClassName,
+  portal = false,
 }: ModalProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   // Элемент, на котором был фокус до открытия: возвращаем его при закрытии.
@@ -107,7 +111,7 @@ export function Modal({
     if (event.target === event.currentTarget) onClose();
   };
 
-  return (
+  const content = (
     <div className={cn("animate-fade-in", MODAL_OVERLAY_CLASS, overlayClassName)} onClick={handleBackdropClick}>
       <div className={cn(MODAL_CONTAINER_CLASS, containerClassName)} onClick={handleBackdropClick}>
         <div
@@ -125,4 +129,7 @@ export function Modal({
       </div>
     </div>
   );
+
+  if (portal) return typeof document === "undefined" ? null : createPortal(content, document.body);
+  return content;
 }

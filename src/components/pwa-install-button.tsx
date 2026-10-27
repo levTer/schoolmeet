@@ -10,64 +10,34 @@ import { cn } from "@/lib/utils";
 import { useIsApp } from "@/hooks/useIsApp";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
 
-/*
- * Установка EduFlow — БЕЗ авто-детекции ОС и фильтрации устройств:
- *   - перехватываем beforeinstallprompt (Chromium/Edge/Samsung Internet)
- *   - тип состояния: useState<BeforeInstallPromptEvent | null>
- *   - при клике — await promptEvent.prompt(), затем обрабатываем userChoice
- *   - слушаем appinstalled и (display-mode: standalone) для скрытия кнопки
- *   - модальное окно ВСЕГДА показывает все 3 варианта списком (дизайн №9):
- *       1) 🤖 Скачать APK для Android    → <a href="/eduflow.apk" download="EduFlow.apk">
- *       2) 💻 Скачать для Windows (.exe Установщик)
- *          → <a href="/eduflow-setup.exe" download="EduFlow-Setup.exe">
- *       3) 🍏 Скачать для Mac (.dmg) → /eduflow.dmg
- *     Одинаковый набор кнопок виден каждому — и на ПК, и на телефоне.
- *   - прямая ссылка на APK строго локальная: `/eduflow.apk` (тот же origin),
- *     иначе атрибут download не работает.
- */
-// Перед установкой ждём beforeinstallprompt (хук usePwaInstall):
-//   window.addEventListener("beforeinstallprompt", …)
-//   window.addEventListener("appinstalled", …)
-//   window.matchMedia("(display-mode: standalone)").addEventListener("change", …)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-};
-
 /**
- * Кнопка установки EduFlow для гостей и авторизованных пользователей.
- *
- * Стиль: тёмно-сланцевый фон (#0F172A), скругление rounded-[18px],
- * белая окантовка border-white/20 и золотисто-янтарные иконки (#F59E0B) — дизайн №9.
- *
- * Фильтрации по типу устройства НЕТ: в модалке одновременно показаны все три
- * варианта — Android (APK), Windows (Electron-установщик .exe) и Mac (DMG).
+ * Кнопка в шапке сначала показывает способы установки, не запуская PWA prompt.
+ * APK, Windows и Mac остаются прямыми ссылками; только отдельная кнопка PWA
+ * вызывает сохранённый beforeinstallprompt через общий хук usePwaInstall.
+ * Варианты доступны на всех устройствах без авто-детекции ОС.
  */
 export function PwaInstallButton({ className }: { className?: string }) {
   const isApp = useIsApp();
   const { isInstalled, isPrompting, triggerPrompt } = usePwaInstall();
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // false — список из всех 3 вариантов, true — пошаговая подсказка 🍏.
-  const [showAppleHelp, setShowAppleHelp] = useState(false);
+  // false — способы установки, true — ручная установка PWA через браузер.
+  const [showPwaHelp, setShowPwaHelp] = useState(false);
 
   const openModal = useCallback(() => {
-    setShowAppleHelp(false);
+    setShowPwaHelp(false);
     setIsModalOpen(true);
   }, []);
 
   const closeModal = useCallback(() => {
     setIsModalOpen(false);
-    setShowAppleHelp(false);
+    setShowPwaHelp(false);
   }, []);
 
-  const handleInstall = async () => {
+  const handlePwaInstall = async () => {
     if (isInstalled || isPrompting) return;
     const outcome = await triggerPrompt();
-    if (outcome === "manual" || outcome === "dismissed") {
-      // Если нативный prompt не доступен / отклонён — показываем все 3 варианта.
-      openModal();
-    }
+    if (outcome === "manual") setShowPwaHelp(true);
+    if (outcome === "accepted") closeModal();
   };
 
   if (isApp || isInstalled) return null;
@@ -76,7 +46,7 @@ export function PwaInstallButton({ className }: { className?: string }) {
     <>
       <button
         type="button"
-        onClick={() => void handleInstall()}
+        onClick={openModal}
         disabled={isPrompting}
         aria-label="Установить EduFlow"
         title="Установить EduFlow"
@@ -105,7 +75,9 @@ export function PwaInstallButton({ className }: { className?: string }) {
         </span>
       </button>
 
+      {/* Шапка может иметь backdrop-filter: портал не даёт ей обрезать fixed-оверлей. */}
       <Modal
+        portal
         open={isModalOpen}
         onClose={closeModal}
         labelledBy="pwa-install-title"
@@ -128,17 +100,19 @@ export function PwaInstallButton({ className }: { className?: string }) {
               <h2 id="pwa-install-title" className="text-lg font-semibold text-white">
                 Установить EduFlow
               </h2>
-              <p className="text-xs text-amber-300">Все 3 варианта — для любой платформы</p>
+              <p id="pwa-install-description" className="text-xs text-amber-300">
+                Скачайте файл или установите PWA через браузер
+              </p>
             </div>
           </div>
 
-          <div id="pwa-install-description" className="mt-6">
-            {showAppleHelp ? (
-              /* 🍏 Пошаговая подсказка для Safari / Chrome. */
+          <div className="mt-6">
+            {showPwaHelp ? (
+              /* Ручная установка PWA, если нативный prompt недоступен. */
               <div className="space-y-4">
                 <button
                   type="button"
-                  onClick={() => setShowAppleHelp(false)}
+                  onClick={() => setShowPwaHelp(false)}
                   className="-ml-1.5 inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs font-semibold text-slate-400 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
                 >
                   <ArrowLeft aria-hidden className="h-3.5 w-3.5" />
@@ -150,56 +124,72 @@ export function PwaInstallButton({ className }: { className?: string }) {
                     aria-hidden
                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-white/10 bg-amber-500/10 text-xl ring-1 ring-inset ring-amber-400/20"
                   >
-                    🍏
+                    📲
                   </span>
                   <div>
-                    <p className="text-sm font-semibold text-white">Установить для Mac / iPhone</p>
+                    <p className="text-sm font-semibold text-white">Добавить PWA через браузер</p>
                     <p className="text-xs text-amber-300">
-                      Safari и Chrome — «Поделиться» или «Установить»
+                      Если браузер не предлагает установку автоматически
                     </p>
                   </div>
                 </div>
 
                 <ol className="space-y-3">
                   <InstallStep number={1} icon={<Share className="h-4 w-4" />}>
-                    Нажмите <strong className="font-semibold text-white">«Поделиться»</strong> в
-                    Safari или <strong className="font-semibold text-white">«Установить»</strong> в
-                    Chrome
+                    На iPhone / iPad нажмите <strong className="font-semibold text-white">«Поделиться»</strong>{" "}
+                    в Safari; на Android откройте меню <strong className="font-semibold text-white">«⋮»</strong>{" "}
+                    в Chrome
                   </InstallStep>
                   <InstallStep number={2} icon={<Plus className="h-4 w-4" />}>
                     Выберите{" "}
                     <strong className="font-semibold text-white">«На экран &quot;Домой&quot;»</strong>{" "}
-                    на iPhone / iPad — или{" "}
-                    <strong className="font-semibold text-white">«Добавить на главный экран»</strong>
+                    на iPhone / iPad — или <strong className="font-semibold text-white">«Установить приложение»</strong>{" "}
+                    / <strong className="font-semibold text-white">«Добавить на главный экран»</strong> на Android
                   </InstallStep>
                   <InstallStep number={3} icon={<Check className="h-4 w-4" />}>
-                    Нажмите <strong className="font-semibold text-white">«Добавить»</strong> —
-                    иконка EduFlow появится на экране или в Dock
+                    Нажмите <strong className="font-semibold text-white">«Добавить»</strong> или{" "}
+                    <strong className="font-semibold text-white">«Установить»</strong> — иконка EduFlow
+                    появится на домашнем экране
                   </InstallStep>
                 </ol>
 
                 <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-xs leading-5 text-slate-400">
                   <strong className="font-semibold text-slate-200">Safari на Mac:</strong> «Файл» →{" "}
-                  <strong className="font-semibold text-slate-200">«Добавить в Dock»</strong>.{" "}
-                  <strong className="font-semibold text-slate-200">Chrome на Android:</strong> меню
-                  «⋮» → «Установить».
+                  <strong className="font-semibold text-slate-200">«Добавить в Dock»</strong>.
                 </p>
               </div>
             ) : (
-              /* Все 3 варианта списком — одинаково для ПК, Android, Mac и iPhone. */
+              /* APK и PWA разделены; установщики Windows / Mac также доступны всем. */
               <div className="flex flex-col gap-3">
                 <a
                   href="/eduflow.apk"
                   download="EduFlow.apk"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className={installerTile}
-                  aria-label="Скачать установщик для Android (APK)"
                 >
                   <span aria-hidden className={tileShine} />
                   <span className="relative text-sm font-semibold leading-snug text-white">
-                    🤖 Скачать APK для Android
+                    🤖 Скачать файл APK напрямую
                   </span>
                   <Download aria-hidden className={goldIcon} strokeWidth={2} />
                 </a>
+
+                <button
+                  type="button"
+                  onClick={() => void handlePwaInstall()}
+                  disabled={isPrompting}
+                  className={cn(
+                    installerTile,
+                    "border-amber-400/40 bg-amber-500/10 hover:border-amber-300/70 hover:bg-amber-500/20 disabled:cursor-wait disabled:opacity-60",
+                  )}
+                >
+                  <span aria-hidden className={tileShine} />
+                  <span className="relative text-sm font-semibold leading-snug text-white">
+                    📲 Добавить иконку на экран (PWA)
+                  </span>
+                  <Plus aria-hidden className={goldIcon} strokeWidth={2} />
+                </button>
 
                 <a
                   href="/eduflow-setup.exe"
@@ -226,8 +216,8 @@ export function PwaInstallButton({ className }: { className?: string }) {
                   </span>
                   <Download aria-hidden className={goldIcon} strokeWidth={2} />
                 </a>
-                <button type="button" onClick={() => setShowAppleHelp(true)} className="text-xs text-slate-400 underline hover:text-white">
-                  Установка через браузер на Mac / iPhone
+                <button type="button" onClick={() => setShowPwaHelp(true)} className="text-xs text-slate-400 underline hover:text-white">
+                  Как добавить PWA через браузер
                 </button>
 
                 {/* Windows: неподписанный .exe → предупреждение SmartScreen. */}
@@ -250,9 +240,9 @@ export function PwaInstallButton({ className }: { className?: string }) {
             )}
           </div>
 
-          {!showAppleHelp && (
+          {!showPwaHelp && (
             <p className="mt-4 text-center text-xs leading-5 text-slate-500">
-              APK для Android · Установщик .exe для Windows 10/11 · DMG для Mac (неподписанный веб-лаунчер, открывает EduFlow в браузере)
+              APK для Android · PWA через браузер · .exe для Windows · DMG для Mac (неподписанный веб-лаунчер)
             </p>
           )}
         </div>

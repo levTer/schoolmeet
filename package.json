@@ -13,6 +13,7 @@
     "test:ai": "tsx scripts/smoke-ai.ts",
     "test:rules": "tsx --test scripts/rules.test.ts",
     "test:ui": "tsx --test scripts/ui-patterns.test.ts",
+    "test:pwa": "tsx --test scripts/pwa-install.test.tsx",
     "test:chat": "tsx --test scripts/chat-rules.test.ts",
     "test:security": "tsx --test scripts/security-rules.test.ts",
     "db:generate": "prisma generate",
@@ -21,7 +22,7 @@
     "db:migrate": "prisma migrate dev --name init",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "test": "npm run test:ai && npm run test:rules && npm run test:ui && npm run test:chat && npm run test:security && npm run test:bridge",
+    "test": "npm run test:ai && npm run test:rules && npm run test:ui && npm run test:pwa && npm run test:chat && npm run test:security && npm run test:bridge",
     "test:bridge": "tsx --test scripts/whiteboard-bridge.test.ts"
   },
   "dependencies": {
@@ -50,6 +51,7 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/crypto-js": "^4.2.2",
+    "@types/jsdom": "^21.1.7",
     "@types/node": "^20.19.43",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
@@ -57,6 +59,7 @@
     "electron-builder": "^26.18.0",
     "eslint": "^8",
     "eslint-config-next": "^14.2.35",
+    "jsdom": "^26.1.0",
     "postcss": "^8.5.29",
     "prisma": "^6.19.3",
     "sharp": "^0.34.5",

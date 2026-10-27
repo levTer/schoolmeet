@@ -6,7 +6,9 @@ import { Check, Download, Plus, Share, X } from "lucide-react";
 
 import { Modal } from "@/components/ui/modal";
 import { useIsApp } from "@/hooks/useIsApp";
+import { usePwaInstall } from "@/hooks/usePwaInstall";
 import { WINDOWS_SMARTSCREEN_NOTE } from "@/lib/install-copy";
+import { cn } from "@/lib/utils";
 
 /**
  * Кнопка-плитка установщика в дизайне №9: тёмно-сланцевый фон `#0F172A`,
@@ -30,12 +32,9 @@ const tileShine =
 /**
  * Блок установки EduFlow (дизайн №9).
  *
- * Три нативных пути установки (все три кнопки видны всегда, без авто-детекции ОС):
- *  1. Android — прямая ссылка на `public/eduflow.apk` с атрибутом `download`;
- *  2. Windows 10/11 — полноценный Electron-установщик `public/eduflow-setup.exe`
- *     (~80–100 МБ, движок Chromium, иконка №9) с атрибутом `download`;
- *  3. Mac — прямая ссылка на `public/eduflow.dmg`; отдельная инструкция для браузера:
- *     «Поделиться» / «Установить» → «На экран "Домой"» или «Добавить в Dock».
+ * Отдельные варианты без авто-детекции ОС: прямое скачивание APK для Android,
+ * установка PWA через браузер и установщики Windows / Mac. Системный PWA prompt
+ * вызывается только кнопкой PWA; ссылка на APK не содержит обработчика клика.
  *
  * Все три файла лежат в `public/`, поэтому ссылки относительные: атрибут `download`
  * работает только для того же origin. Service Worker (`public/sw.js`) не
@@ -45,8 +44,15 @@ const tileShine =
  */
 export function InstallBlock() {
   const isApp = useIsApp();
-  const [isAppleHelpOpen, setIsAppleHelpOpen] = useState(false);
+  const { isInstalled, isPrompting, triggerPrompt } = usePwaInstall();
+  const [isPwaHelpOpen, setIsPwaHelpOpen] = useState(false);
   const [isInstallerHelpOpen, setIsInstallerHelpOpen] = useState(false);
+
+  const handlePwaInstall = async () => {
+    if (isInstalled || isPrompting) return;
+    const outcome = await triggerPrompt();
+    if (outcome === "manual") setIsPwaHelpOpen(true);
+  };
 
   if (isApp) return null;
 
@@ -64,22 +70,40 @@ export function InstallBlock() {
         </div>
 
         <p className="mt-3 text-left text-sm leading-relaxed text-slate-400">
-          Скачайте приложение для своей платформы — установщик загрузится сразу.
+          Скачайте установочный файл или добавьте веб-приложение через браузер.
         </p>
 
-        <div className="mt-4 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
           <a
             href="/eduflow.apk"
             download="EduFlow.apk"
+            target="_blank"
+            rel="noopener noreferrer"
             className={installerTile}
-            aria-label="Скачать установщик для Android (APK)"
           >
             <span aria-hidden className={tileShine} />
             <span className="relative text-sm font-semibold leading-snug text-white">
-              🤖 Скачать APK для Android
+              🤖 Скачать файл APK напрямую
             </span>
             <Download aria-hidden className={goldIcon} strokeWidth={2} />
           </a>
+
+          <button
+            type="button"
+            onClick={() => void handlePwaInstall()}
+            disabled={isPrompting || isInstalled}
+            className={cn(
+              installerTile,
+              "border-amber-400/40 bg-amber-500/10 hover:border-amber-300/70 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+          >
+            <span aria-hidden className={tileShine} />
+            <span className="relative text-sm font-semibold leading-snug text-white">
+              📲 Добавить иконку на экран (PWA)
+              {isInstalled && <span className="mt-1 block text-xs text-amber-200">PWA уже установлено</span>}
+            </span>
+            <Plus aria-hidden className={goldIcon} strokeWidth={2} />
+          </button>
 
           <a
             href="/eduflow-setup.exe"
@@ -117,10 +141,10 @@ export function InstallBlock() {
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
           <button
             type="button"
-            onClick={() => setIsAppleHelpOpen(true)}
+            onClick={() => setIsPwaHelpOpen(true)}
             className="text-xs text-slate-400 underline hover:text-white"
           >
-            Установка через браузер на Mac / iPhone
+            Как добавить PWA через браузер
           </button>
           <button
             type="button"
@@ -140,13 +164,15 @@ export function InstallBlock() {
             unoptimized
             className="inline-block h-4 w-4 align-[-2px]"
           />
-          <span>APK для Android · Установщик .exe для Windows 10/11 · DMG для Mac</span>
+          <span>APK для Android · PWA через браузер · .exe для Windows · DMG для Mac</span>
         </p>
       </div>
 
+      {/* Анимированный блок создаёт stacking context — оверлеям нужен портал в body. */}
       <Modal
-        open={isAppleHelpOpen}
-        onClose={() => setIsAppleHelpOpen(false)}
+        portal
+        open={isPwaHelpOpen}
+        onClose={() => setIsPwaHelpOpen(false)}
         labelledBy="install-help-title"
         describedBy="install-help-description"
         className="border-white/10 bg-[#0F172A] shadow-[0_24px_90px_rgba(2,6,23,0.75)] sm:max-w-md"
@@ -154,7 +180,7 @@ export function InstallBlock() {
         <div className="relative p-6 sm:p-7">
           <button
             type="button"
-            onClick={() => setIsAppleHelpOpen(false)}
+            onClick={() => setIsPwaHelpOpen(false)}
             className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/5 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
             aria-label="Закрыть инструкцию"
           >
@@ -172,62 +198,44 @@ export function InstallBlock() {
             />
             <div>
               <h2 id="install-help-title" className="text-lg font-semibold text-white">
-                Как установить EduFlow
+                Как добавить EduFlow на экран
               </h2>
-              <p className="text-xs text-amber-300">Windows (.exe), Mac и iPhone</p>
+              <p className="text-xs text-amber-300">PWA через браузер · Android, iPhone и Mac</p>
             </div>
           </div>
 
-          <div className="mt-5 rounded-2xl border border-amber-400/25 bg-amber-500/10 p-4">
-            <p className="text-xs font-semibold uppercase tracking-widest text-amber-300">
-              💻 Windows — установщик .exe
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-200">
-              {WINDOWS_SMARTSCREEN_NOTE}
-            </p>
-            <a
-              href="/eduflow-setup.exe"
-              download="EduFlow-Setup.exe"
-              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-bold text-slate-950 transition hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
-            >
-              Скачать EduFlow-Setup.exe
-            </a>
-          </div>
-
           <p id="install-help-description" className="mt-5 text-sm leading-relaxed text-slate-300">
-            Mac / iPhone: откройте EduFlow в Safari (iPhone, iPad, Mac) или Chrome — установка
-            веб-приложения выполняется через меню «Поделиться» или «Установить».
+            Если браузер не предлагает установку автоматически, добавьте веб-приложение через его меню.
           </p>
 
           <ol className="mt-4 space-y-3">
             <InstallStep icon={<Share className="h-4 w-4" />}>
-              Нажмите <strong className="font-semibold text-white">«Поделиться»</strong> в панели
-              Safari — или <strong className="font-semibold text-white">«Установить»</strong> в меню
-              Chrome
+              На iPhone / iPad нажмите <strong className="font-semibold text-white">«Поделиться»</strong>{" "}
+              в Safari; на Android откройте меню <strong className="font-semibold text-white">«⋮»</strong>{" "}
+              в Chrome
             </InstallStep>
             <InstallStep icon={<Plus className="h-4 w-4" />}>
               Выберите{" "}
               <strong className="font-semibold text-white">«На экран &quot;Домой&quot;»</strong> на
-              iPhone / iPad — или{" "}
-              <strong className="font-semibold text-white">«Добавить на главный экран»</strong>
+              iPhone / iPad — или <strong className="font-semibold text-white">«Установить приложение»</strong>{" "}
+              / <strong className="font-semibold text-white">«Добавить на главный экран»</strong> на Android
             </InstallStep>
             <InstallStep icon={<Check className="h-4 w-4" />}>
-              Нажмите <strong className="font-semibold text-white">«Добавить»</strong> — иконка
-              EduFlow появится на домашнем экране или в Dock
+              Нажмите <strong className="font-semibold text-white">«Добавить»</strong> или{" "}
+              <strong className="font-semibold text-white">«Установить»</strong> — иконка EduFlow
+              появится на домашнем экране
             </InstallStep>
           </ol>
 
           <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-xs leading-5 text-slate-400">
             <strong className="font-semibold text-slate-200">Safari на Mac:</strong> вместо этого →{" "}
             <strong className="font-semibold text-slate-200">Файл</strong> →{" "}
-            <strong className="font-semibold text-slate-200">Добавить в Dock</strong>.{" "}
-            <strong className="font-semibold text-slate-200">Chrome на Android:</strong> меню «⋮» →{" "}
-            <strong className="font-semibold text-slate-200">Установить</strong>.
+            <strong className="font-semibold text-slate-200">Добавить в Dock</strong>.
           </p>
 
           <button
             type="button"
-            onClick={() => setIsAppleHelpOpen(false)}
+            onClick={() => setIsPwaHelpOpen(false)}
             className="mt-6 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
           >
             Понятно
@@ -236,6 +244,7 @@ export function InstallBlock() {
       </Modal>
 
       <Modal
+        portal
         open={isInstallerHelpOpen}
         onClose={() => setIsInstallerHelpOpen(false)}
         labelledBy="windows-install-title"
@@ -272,6 +281,10 @@ export function InstallBlock() {
           <p id="windows-install-description" className="mt-4 text-sm leading-relaxed text-slate-300">
             Скачайте файл <strong className="font-semibold text-white">EduFlow-Setup.exe</strong>{" "}
             (~90 МБ) и запустите его двойным щелчком — установка занимает меньше минуты.
+          </p>
+
+          <p className="mt-3 rounded-xl border border-amber-400/25 bg-amber-500/10 p-3 text-xs leading-5 text-amber-100/90">
+            {WINDOWS_SMARTSCREEN_NOTE}
           </p>
 
           <ol className="mt-4 space-y-3">
