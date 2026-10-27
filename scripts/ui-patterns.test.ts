@@ -15,6 +15,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
+import { renderIco } from "./lib/ico";
+import { inspectEduFlowIcon, readGroupIcon, readPeResources } from "./lib/pe";
+import { extractZipEntry, readZipEntries } from "./lib/zip";
+
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function readSource(relativePath: string): string {
@@ -810,17 +814,26 @@ function serviceWorkerIntercepts(source: string, pathname: string, method = "GET
   return intercepted;
 }
 
-describe("дистрибуция установщиков: APK, MSIX и Mac / iPhone", () => {
+describe("дистрибуция установщиков: APK, портативный .exe для Windows и Mac / iPhone", () => {
   const installBlock = readSource("src/components/landing/install-block.tsx");
   const sw = readSource("public/sw.js");
 
-  it("три кнопки: Android (.apk), Windows (.msix) и Mac / iPhone", () => {
+  it("три кнопки: Android (.apk), Windows (.exe / portable) и Mac / iPhone", () => {
     assert.match(installBlock, /🤖 Скачать APK для Android/, "нет кнопки для Android");
-    assert.match(installBlock, /💻 Скачать для Windows \(\.msix\)/, "нет кнопки для Windows");
+    assert.match(
+      installBlock,
+      /💻 Скачать для Windows \(\.exe \/ portable\)/,
+      "нет кнопки портативной версии для Windows",
+    );
     assert.match(installBlock, /🍏 Скачать для Mac \(\.dmg\)/, "нет кнопки для Mac / iPhone");
+    assert.doesNotMatch(
+      installBlock,
+      /Скачать для Windows \(\.msix\)/,
+      "кнопка MSIX должна быть заменена портативной версией: неподписанный MSIX даёт 0x800B010A",
+    );
   });
 
-  it("ссылки ведут строго на локальные /eduflow.apk и /eduflow.msix с атрибутом download", () => {
+  it("ссылки ведут строго на локальные /eduflow.apk и /eduflow-windows.zip с атрибутом download", () => {
     assert.match(
       installBlock,
       /href="\/eduflow\.apk"[\s\S]{0,120}?download="EduFlow\.apk"/,
@@ -828,8 +841,13 @@ describe("дистрибуция установщиков: APK, MSIX и Mac / iP
     );
     assert.match(
       installBlock,
-      /href="\/eduflow\.msix"[\s\S]{0,120}?download="EduFlow\.msix"/,
-      "кнопка Windows должна скачивать /eduflow.msix с download=\"EduFlow.msix\"",
+      /href="\/eduflow-windows\.zip"[\s\S]{0,120}?download="EduFlow-windows\.zip"/,
+      "кнопка Windows должна скачивать /eduflow-windows.zip с download=\"EduFlow-windows.zip\"",
+    );
+    assert.doesNotMatch(
+      installBlock,
+      /href="\/eduflow\.msix"/,
+      "прямая ссылка на MSIX снова появилась в блоке установки",
     );
   });
 
@@ -865,22 +883,169 @@ describe("дистрибуция установщиков: APK, MSIX и Mac / iP
     assert.match(installBlock, /«Добавить»/, "в инструкции нет шага «Добавить»");
   });
 
-  it("sw.js не перехватывает .apk и .msix — установщики скачиваются как бинарные данные", () => {
+  it("sw.js не перехватывает .apk, .zip и .exe — установщики скачиваются как бинарные данные", () => {
     assert.match(sw, /BINARY_DOWNLOAD_EXTENSIONS/, "в sw.js нет списка исключений");
     assert.match(sw, /"\.apk"/, "в исключениях SW нет .apk");
     assert.match(sw, /"\.msix"/, "в исключениях SW нет .msix");
+    assert.match(sw, /"\.zip"/, "в исключениях SW нет .zip — архив Windows-версии подменится HTML");
+    assert.match(sw, /"\.exe"/, "в исключениях SW нет .exe");
 
     assert.equal(serviceWorkerIntercepts(sw, "/eduflow.apk"), false, "SW перехватывает APK");
     assert.equal(serviceWorkerIntercepts(sw, "/eduflow.msix"), false, "SW перехватывает MSIX");
+    assert.equal(
+      serviceWorkerIntercepts(sw, "/eduflow-windows.zip"),
+      false,
+      "SW перехватывает ZIP с портативной версией",
+    );
+    assert.equal(
+      serviceWorkerIntercepts(sw, "/eduflow-portable.exe"),
+      false,
+      "SW перехватывает .exe",
+    );
     assert.equal(
       serviceWorkerIntercepts(sw, "/downloads/EduFlow.MSIX"),
       false,
       "расширение установщика должно сравниваться без учёта регистра",
     );
+    assert.equal(
+      serviceWorkerIntercepts(sw, "/downloads/EduFlow-Windows.ZIP"),
+      false,
+      "ZIP в верхнем регистре тоже должен обходить SW",
+    );
 
     // Остальной трафик SW по-прежнему кэширует, а не-GET запросы пропускает.
     assert.equal(serviceWorkerIntercepts(sw, "/dashboard"), true, "SW перестал обслуживать страницы");
     assert.equal(serviceWorkerIntercepts(sw, "/eduflow.apk", "POST"), false, "SW вмешивается в POST");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Портативная Windows-версия: eduflow-portable.exe в public/eduflow-windows.zip */
+/* -------------------------------------------------------------------------- */
+
+describe("портативная версия EduFlow для Windows", () => {
+  const ZIP_PATH = join(REPO_ROOT, "public/eduflow-windows.zip");
+  const SMARTS_CEEN_PHRASE =
+    "Если Windows покажет синее окно, нажмите 'Подробнее' -> 'Выполнить в любом случае'";
+
+  it("public/eduflow-windows.zip — валидный ZIP из .exe и инструкции, имена в UTF-8", () => {
+    assert.ok(existsSync(ZIP_PATH), "нет public/eduflow-windows.zip — ссылка приведёт на 404");
+    const zip = readFileSync(ZIP_PATH);
+    assert.equal(zip.subarray(0, 4).toString("hex"), "504b0304", "это не ZIP-архив");
+
+    const entries = readZipEntries(zip);
+    assert.deepEqual(
+      entries.map((entry) => entry.name).sort(),
+      ["eduflow-portable.exe", "Как запустить.txt"].sort(),
+      "в архиве должны быть ровно .exe и инструкция",
+    );
+    for (const entry of entries) {
+      assert.equal(entry.utf8, true, `${entry.name}: имя без флага UTF-8 — Windows покажет кракозябры`);
+      assert.ok(entry.size > 0, `${entry.name}: пустая запись`);
+    }
+    assert.equal(
+      existsSync(join(REPO_ROOT, "public/Eduflow-windows.zip")),
+      false,
+      "файл с заглавной буквы ломает скачивание на регистрозависимых ФС (Linux/Vercel)",
+    );
+  });
+
+  it("eduflow-portable.exe — GUI-приложение без консоли, с иконкой EduFlow и свойствами файла", async () => {
+    const exe = extractZipEntry(readFileSync(ZIP_PATH), "eduflow-portable.exe");
+    assert.equal(exe.subarray(0, 2).toString("ascii"), "MZ", "это не Windows-исполняемый файл");
+
+    const peOffset = exe.readUInt32LE(0x3c);
+    assert.equal(exe.toString("ascii", peOffset, peOffset + 4), "PE\0\0");
+    const optionalHeader = peOffset + 24;
+    assert.equal(
+      exe.readUInt16LE(optionalHeader + 68),
+      2,
+      "подсистема должна быть WINDOWS (2), иначе при запуске откроется консоль",
+    );
+
+    const icon = inspectEduFlowIcon(exe);
+    for (const size of [16, 32, 48, 256]) {
+      assert.ok(icon.sizes.includes(size), `в иконке .exe нет слоя ${size}×${size}`);
+    }
+    assert.ok(icon.hasVersionInfo, "нет VERSIONINFO: в «Свойствах» файла не будет EduFlow");
+
+    // Иконка окна и файла — та же иконка №9, что и в public/icon.svg.
+    const expected = await renderIco(readFileSync(join(REPO_ROOT, "public/icon.svg")), [32]);
+    const resources = readPeResources(exe);
+    const group = resources.find((resource) => resource.type === 14);
+    assert.ok(group, "нет RT_GROUP_ICON");
+    const layer = readGroupIcon(group.data).find((entry) => entry.width === 32);
+    assert.ok(layer, "в группе иконок нет слоя 32×32");
+    const iconData = resources.find((resource) => resource.type === 3 && resource.id === layer.iconId);
+    assert.ok(iconData, "RT_GROUP_ICON ссылается на отсутствующий RT_ICON");
+    assert.ok(
+      iconData.data.equals(expected.subarray(22)),
+      "иконка .exe не совпадает с public/icon.svg — пересоберите: npm run build:windows",
+    );
+  });
+
+  it("инструкция «Как запустить.txt» объясняет предупреждение SmartScreen", () => {
+    const instruction = extractZipEntry(readFileSync(ZIP_PATH), "Как запустить.txt").toString("utf8");
+    assert.ok(instruction.includes(SMARTS_CEEN_PHRASE), "нет фразы про синее окно и «Выполнить в любом случае»");
+    assert.match(instruction, /распаку/i, "нет шага «распакуйте архив»");
+    assert.match(instruction, /eduflow-portable\.exe/, "инструкция не называет файл запуска");
+  });
+
+  it("модальные окна установки показывают текст про SmartScreen и ведут на .zip", () => {
+    const copy = readSource("src/lib/install-copy.ts");
+    const note = copy.replace(/"\s*\+\s*\n\s*"/g, "");
+    assert.ok(
+      note.includes(
+        "Для Windows: Если появится предупреждение SmartScreen, нажмите 'Подробнее' -> " +
+          "'Выполнить в любом случае'. Это безопасно, так как приложение не подписано " +
+          "платным сертификатом.",
+      ),
+      "текст предупреждения SmartScreen изменён",
+    );
+
+    for (const name of [
+      "src/components/landing/install-block.tsx",
+      "src/components/pwa-install-button.tsx",
+    ]) {
+      const source = readSource(name);
+      assert.match(source, /WINDOWS_SMARTSCREEN_NOTE/, `${name}: в модалке нет текста про SmartScreen`);
+      assert.match(source, /href="\/eduflow-windows\.zip"/, `${name}: нет ссылки на архив Windows-версии`);
+    }
+  });
+
+  it("лаунчер и сборка воспроизводимы: zig, Win32-окно приложения, инструкция", () => {
+    const launcher = readSource("windows-portable/launcher.c");
+    assert.match(launcher, /WinMain/, "лаунчер должен быть нативным Win32-приложением");
+    assert.match(launcher, /--app=/, "окно приложения открывается режимом --app");
+    assert.match(launcher, /CreateProcessW/, "браузер запускается через CreateProcessW");
+    assert.match(launcher, /ShellExecuteW/, "нужен запасной путь — браузер по умолчанию");
+    assert.match(launcher, /eduflow\.url/, "адрес должен переопределяться файлом eduflow.url");
+
+    const build = readSource("scripts/build-windows-portable.ts");
+    assert.match(build, /"rc"/, "ресурсы (иконка) собираются через zig rc");
+    assert.match(build, /subsystem:windows/, "сборка должна включать GUI-подсистему");
+    assert.match(build, /public\/eduflow-windows\.zip/, "результат сборки — public/eduflow-windows.zip");
+    assert.match(build, /eduflow-portable\.exe/, "в архиве должен лежать eduflow-portable.exe");
+    assert.match(build, /Как запустить\.txt/, "в архиве должна быть инструкция");
+
+    const packageJson = JSON.parse(readSource("package.json")) as { scripts: Record<string, string> };
+    assert.equal(packageJson.scripts["build:windows"], "tsx scripts/build-windows-portable.ts");
+    assert.match(readSource(".gitignore"), /windows-portable\/build/, "артефакты сборки не должны попадать в git");
+  });
+
+  it("иконка №9 (public/icon.svg) — источник favicon.ico в окне браузера", async () => {
+    const svg = readFileSync(join(REPO_ROOT, "public/icon.svg"));
+    assert.ok(svg.includes(Buffer.from("Option #9")), "public/icon.svg больше не описывает дизайн №9");
+
+    const expected = await renderIco(svg, [16, 32, 48]);
+    assert.ok(
+      readFileSync(join(REPO_ROOT, "public/favicon.ico")).equals(expected),
+      "favicon.ico устарел — запустите npm run icons:generate",
+    );
+
+    const layout = readSource("src/app/layout.tsx");
+    assert.match(layout, /href="\/favicon\.ico"/, "окно приложения не получает favicon");
+    assert.match(layout, /href="\/icon\.svg"/, "нет векторной иконки приложения");
   });
 });
 
@@ -914,12 +1079,16 @@ describe("установка без авто-детекции ОС: все 3 в�
 
   it("модалка установки показывает все 3 кнопки списком, а не только Android", () => {
     assert.match(pwaButton, /Скачать APK для Android/, "в модалке нет кнопки Android");
-    assert.match(pwaButton, /Скачать для Windows \(\.msix\)/, "в модалке нет кнопки Windows");
+    assert.match(
+      pwaButton,
+      /Скачать для Windows \(\.exe \/ portable\)/,
+      "в модалке нет кнопки портативной версии Windows",
+    );
     assert.match(pwaButton, /Скачать для Mac \(\.dmg\)/, "в модалке нет кнопки Mac / iPhone");
     assert.match(
       pwaButton,
-      /href="\/eduflow\.msix"[^>]*download="EduFlow\.msix"/,
-      "кнопка Windows должна ссылаться на /eduflow.msix с download",
+      /href="\/eduflow-windows\.zip"[^>]*download="EduFlow-windows\.zip"/,
+      "кнопка Windows должна ссылаться на /eduflow-windows.zip с download",
     );
     assert.match(
       pwaButton,
@@ -934,7 +1103,11 @@ describe("установка без авто-детекции ОС: все 3 в�
       ["pwa-install-button.tsx", pwaButton],
     ] as const) {
       assert.match(source, /Скачать APK для Android/, `${name}: нет варианта Android`);
-      assert.match(source, /Скачать для Windows \(\.msix\)/, `${name}: нет варианта Windows`);
+      assert.match(
+        source,
+        /Скачать для Windows \(\.exe \/ portable\)/,
+        `${name}: нет варианта портативной версии Windows`,
+      );
       assert.match(source, /Скачать для Mac \(\.dmg\)/, `${name}: нет варианта Mac / iPhone`);
     }
   });
@@ -1080,14 +1253,26 @@ describe("Hero-секция главной страницы", () => {
 /* Real Mac download: no HTML placeholders or signature-only dummy files. */
 describe("macOS DMG download", () => {
   it("both components expose all three direct download anchors", () => {
+    const targets = [
+      { file: "eduflow.apk", download: "EduFlow.apk", label: "🤖 Скачать APK для Android" },
+      {
+        file: "eduflow-windows.zip",
+        download: "EduFlow-windows.zip",
+        label: "💻 Скачать для Windows (.exe / portable)",
+      },
+      { file: "eduflow.dmg", download: "EduFlow.dmg", label: "🍏 Скачать для Mac (.dmg)" },
+    ];
+
     for (const path of ["src/components/landing/install-block.tsx", "src/components/pwa-install-button.tsx"]) {
       const source = readSource(path).replace(/\/\*[\s\S]*?\*\//g, "");
-      for (const ext of ["apk", "msix", "dmg"]) {
-        const anchor = source.match(new RegExp(`<a\\s+href="/eduflow\\.${ext}"[^>]*>[\\s\\S]*?</a>`));
-        assert.ok(anchor, `${path}: missing ${ext} anchor`);
-        assert.ok(anchor[0].includes(`download="EduFlow.${ext}"`));
+      for (const target of targets) {
+        const anchor = source.match(
+          new RegExp(`<a\\s+href="/${target.file.replace(/\./g, "\\.")}"[^>]*>[\\s\\S]*?</a>`),
+        );
+        assert.ok(anchor, `${path}: missing ${target.file} anchor`);
+        assert.ok(anchor[0].includes(`download="${target.download}"`), `${path}: ${target.file} без download`);
         assert.doesNotMatch(anchor[0], /onClick=|disabled=/);
-        if (ext === "dmg") assert.ok(anchor[0].includes("🍏 Скачать для Mac (.dmg)"));
+        assert.ok(anchor[0].includes(target.label), `${path}: ${target.file} без подписи «${target.label}»`);
       }
     }
   });

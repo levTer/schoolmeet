@@ -1,4 +1,4 @@
-const CACHE_NAME = "eduflow-pwa-v6";
+const CACHE_NAME = "eduflow-pwa-v7";
 const PRECACHE_URLS = [
   "/",
   "/manifest.json",
@@ -12,13 +12,23 @@ const PRECACHE_URLS = [
 /**
  * Расширения установщиков, которые Service Worker не перехватывает.
  *
- * `.apk` (Android), `.dmg` (Mac) и `.msix` (Windows 10/11) — бинарные файлы. Если отдать их
- * через `event.respondWith(fetch(...).catch(() => caches.match("/")))`, то при
- * сбое сети или офлайне браузер получит закэшированный HTML главной страницы и
- * сохранит его под именем `eduflow.apk` / `eduflow.msix` — установщик окажется
- * битым. Поэтому такие запросы уходят напрямую в сеть, без кэша и подмены.
+ * `.apk` (Android), `.dmg` (Mac), `.zip` + `.exe` (портативная Windows-версия) и
+ * `.msix` (Windows 10/11) — бинарные файлы. Если отдать их через
+ * `event.respondWith(fetch(...).catch(() => caches.match("/")))`, то при сбое
+ * сети или офлайне браузер получит закэшированный HTML главной страницы и
+ * сохранит его под именем `eduflow.apk` / `eduflow-windows.zip` — установщик
+ * окажется битым. Поэтому такие запросы уходят напрямую в сеть, без кэша и
+ * подмены.
  */
-const BINARY_DOWNLOAD_EXTENSIONS = [".apk", ".dmg", ".msix", ".msixbundle", ".appx"];
+const BINARY_DOWNLOAD_EXTENSIONS = [
+  ".apk",
+  ".dmg",
+  ".exe",
+  ".msix",
+  ".msixbundle",
+  ".appx",
+  ".zip",
+];
 
 function isBinaryDownload(pathname) {
   const lowerPath = pathname.toLowerCase();
@@ -52,9 +62,9 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/socket.io")) return;
-  // Установщики (.apk/.msix/.dmg) забираем напрямую: при офлайне SW не должен
-  // подсовывать закэшированный HTML вместо бинарного файла (иначе скачается
-  // страница с расширением .apk или .msix).
+  // Установщики (.apk/.msix/.dmg/.zip/.exe) забираем напрямую: при офлайне SW
+  // не должен подсовывать закэшированный HTML вместо бинарного файла (иначе
+  // скачается страница с расширением .apk, .zip или .exe).
   if (isBinaryDownload(url.pathname)) return;
 
   event.respondWith(

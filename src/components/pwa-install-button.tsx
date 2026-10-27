@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 import { ArrowLeft, Check, Download, Plus, Share, X } from "lucide-react";
 
 import { Modal } from "@/components/ui/modal";
+import { WINDOWS_SMARTSCREEN_NOTE } from "@/lib/install-copy";
 import { cn } from "@/lib/utils";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
 
@@ -16,7 +17,8 @@ import { usePwaInstall } from "@/hooks/usePwaInstall";
  *   - слушаем appinstalled и (display-mode: standalone) для скрытия кнопки
  *   - модальное окно ВСЕГДА показывает все 3 варианта списком (дизайн №9):
  *       1) 🤖 Скачать APK для Android    → <a href="/eduflow.apk" download="EduFlow.apk">
- *       2) 💻 Скачать для Windows (.msix) → <a href="/eduflow.msix" download="EduFlow.msix">
+ *       2) 💻 Скачать для Windows (.exe / portable)
+ *          → <a href="/eduflow-windows.zip" download="EduFlow-windows.zip">
  *       3) 🍏 Скачать для Mac (.dmg) → /eduflow.dmg
  *     Одинаковый набор кнопок виден каждому — и на ПК, и на телефоне.
  *   - прямая ссылка на APK строго локальная: `/eduflow.apk` (тот же origin),
@@ -39,7 +41,7 @@ type _BeforeInstallPromptEvent = Event & {
  * белая окантовка border-white/20 и золотисто-янтарные иконки (#F59E0B) — дизайн №9.
  *
  * Фильтрации по типу устройства НЕТ: в модалке одновременно показаны все три
- * варианта — Android (APK), Windows (MSIX) и Mac (DMG).
+ * варианта — Android (APK), Windows (портативный .exe) и Mac (DMG).
  */
 export function PwaInstallButton({ className }: { className?: string }) {
   const { isInstalled, isPrompting, triggerPrompt } = usePwaInstall();
@@ -198,14 +200,14 @@ export function PwaInstallButton({ className }: { className?: string }) {
                 </a>
 
                 <a
-                  href="/eduflow.msix"
-                  download="EduFlow.msix"
+                  href="/eduflow-windows.zip"
+                  download="EduFlow-windows.zip"
                   className={installerTile}
-                  aria-label="Скачать установщик для Windows (MSIX)"
+                  aria-label="Скачать портативную версию для Windows (.exe в ZIP-архиве)"
                 >
                   <span aria-hidden className={tileShine} />
                   <span className="relative text-sm font-semibold leading-snug text-white">
-                    💻 Скачать для Windows (.msix)
+                    💻 Скачать для Windows (.exe / portable)
                   </span>
                   <Download aria-hidden className={goldIcon} strokeWidth={2} />
                 </a>
@@ -225,13 +227,21 @@ export function PwaInstallButton({ className }: { className?: string }) {
                 <button type="button" onClick={() => setShowAppleHelp(true)} className="text-xs text-slate-400 underline hover:text-white">
                   Установка через браузер на Mac / iPhone
                 </button>
+
+                {/* Windows: неподписанный .exe → предупреждение SmartScreen. */}
+                <p
+                  id="windows-smartscreen-note"
+                  className="rounded-xl border border-amber-400/25 bg-amber-500/10 px-3.5 py-3 text-xs leading-5 text-amber-100/90"
+                >
+                  {WINDOWS_SMARTSCREEN_NOTE}
+                </p>
               </div>
             )}
           </div>
 
           {!showAppleHelp && (
             <p className="mt-4 text-center text-xs leading-5 text-slate-500">
-              APK для Android · MSIX для Windows 10/11 · DMG для Mac (неподписанный веб-лаунчер, открывает EduFlow в браузере)
+              APK для Android · Portable (.exe) для Windows 10/11 · DMG для Mac (неподписанный веб-лаунчер, открывает EduFlow в браузере)
             </p>
           )}
         </div>

@@ -41,3 +41,6 @@ next-env.d.ts
 
 # user uploads (homework attachments)
 /storage
+
+# windows portable build artifacts (public/eduflow-windows.zip коммитится)
+/windows-portable/build
