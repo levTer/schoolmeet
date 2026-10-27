@@ -7,8 +7,8 @@
  * и обновления всегда приходят с сервера, DMG не нужно пересобирать при
  * изменениях сайта. Окно — без лишних рамок и полос меню.
  *
- * Безопасность: удалённый контент работает без Node.js и preload-скриптов
- * (`nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`),
+ * Безопасность: удалённый контент работает без Node.js, с минимальным preload-мостом
+ * только для безопасной настройки окна (`nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`),
  * навигация ограничена origin'ом платформы, внешние ссылки уходят
  * в системный браузер, разрешения камеры/микрофона/экрана выдаются
  * только нашему сайту.
@@ -24,6 +24,7 @@ const {
   clipboard,
   desktopCapturer,
   Menu,
+  ipcMain,
   nativeImage,
   screen,
   session,
@@ -159,12 +160,19 @@ function createWindow() {
     icon: ICON_PATH,
     // Тёмный фон в фирменном цвете — без белой вспышки при загрузке.
     backgroundColor: '#0F172A',
+    ...(process.platform !== 'darwin'
+      ? {
+          titleBarStyle: 'hidden',
+          titleBarOverlay: { color: '#0F172A', symbolColor: '#F8FAFC', height: 38 },
+        }
+      : {}),
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
       webSecurity: true,
       allowRunningInsecureContent: false,
       spellcheck: true,
@@ -366,6 +374,19 @@ if (!hasSingleInstanceLock) {
 
       buildAppMenu();
       setupSession();
+      ipcMain.on('update-titlebar-theme', (_event, { backgroundColor, symbolColor } = {}) => {
+        if (mainWindow && !mainWindow.isDestroyed() && process.platform !== 'darwin') {
+          try {
+            mainWindow.setTitleBarOverlay({
+              color: backgroundColor || '#0F172A',
+              symbolColor: symbolColor || '#F8FAFC',
+              height: 38,
+            });
+          } catch (error) {
+            console.error('Failed to update titleBarOverlay theme', error);
+          }
+        }
+      });
       createWindow();
 
       app.on('activate', () => {

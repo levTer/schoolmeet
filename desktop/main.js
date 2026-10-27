@@ -99,6 +99,12 @@ function createMainWindow() {
     show: false,
     title: APP_NAME,
     backgroundColor: BACKGROUND_COLOR,
+    ...(process.platform !== "darwin"
+      ? {
+          titleBarStyle: "hidden",
+          titleBarOverlay: { color: BACKGROUND_COLOR, symbolColor: "#F8FAFC", height: 38 },
+        }
+      : {}),
     icon: iconPath(),
     autoHideMenuBar: true,
     menuBarVisible: false,
@@ -174,6 +180,19 @@ function showOfflinePage(reason) {
 }
 
 function registerIpc() {
+  ipcMain.on("update-titlebar-theme", (_event, { backgroundColor, symbolColor } = {}) => {
+    if (mainWindow && !mainWindow.isDestroyed() && process.platform !== "darwin") {
+      try {
+        mainWindow.setTitleBarOverlay({
+          color: backgroundColor || "#0F172A",
+          symbolColor: symbolColor || "#F8FAFC",
+          height: 38,
+        });
+      } catch (e) {
+        console.error("Failed to update titleBarOverlay theme", e);
+      }
+    }
+  });
   ipcMain.handle("eduflow:open-external", (_event, url) => openExternal(String(url)));
   ipcMain.handle("eduflow:reload", () => {
     isOfflinePageShown = false;

@@ -1402,3 +1402,61 @@ describe("десктопный интерфейс Windows без верхнег�
   });
 });
 
+
+/* -------------------------------------------------------------------------- */
+/* Динамическая тема title bar Electron и drag-region шапок                    */
+/* -------------------------------------------------------------------------- */
+
+describe("динамическая тема окна Electron и перетаскивание шапки", () => {
+  const desktopMain = readSource("desktop/main.js");
+  const desktopPreload = readSource("desktop/preload.js");
+  const electronMain = readSource("electron-app/main.js");
+  const electronPreload = readSource("electron-app/preload.js");
+  const navbar = readSource("src/components/layout/Navbar.tsx");
+  const siteHeader = readSource("src/components/landing/site-header.tsx");
+
+  it("оба preload безопасно передают тему через update-titlebar-theme", () => {
+    for (const [name, source] of [
+      ["desktop/preload.js", desktopPreload],
+      ["electron-app/preload.js", electronPreload],
+    ] as const) {
+      assert.match(
+        source,
+        /setTheme:\s*\(themeColors\)\s*=>\s*ipcRenderer\.send\(["']update-titlebar-theme["'],\s*themeColors\)/,
+        `${name}: нет метода setTheme в contextBridge`,
+      );
+      assert.match(source, /contextBridge\.exposeInMainWorld\(["']eduflowDesktop["']/, `${name}: мост не изолирован`);
+    }
+  });
+
+  it("оба главных процесса обновляют overlay только для живого окна вне macOS и имеют fallback-цвета", () => {
+    for (const [name, source] of [
+      ["desktop/main.js", desktopMain],
+      ["electron-app/main.js", electronMain],
+    ] as const) {
+      assert.match(source, /ipcMain\.on\(['"]update-titlebar-theme['"]/, `${name}: нет IPC-обработчика темы`);
+      assert.match(source, /mainWindow && !mainWindow\.isDestroyed\(\) && process\.platform !== ['"]darwin['"]/, `${name}: нет проверки живого окна/платформы`);
+      assert.match(source, /setTitleBarOverlay\(/, `${name}: не обновляется нативная полоса заголовка`);
+      assert.match(source, /backgroundColor \|\| ['"]#0F172A['"]/, `${name}: нет fallback фона`);
+      assert.match(source, /symbolColor \|\| ['"]#F8FAFC['"]/, `${name}: нет fallback цвета символов`);
+      assert.match(source, /height:\s*38/, `${name}: высота overlay не равна 38px`);
+      assert.match(source, /Failed to update titleBarOverlay theme/, `${name}: ошибки не обрабатываются`);
+    }
+  });
+
+  it("оба хедера синхронизируют активные цвета темы и резервируют место для системных кнопок", () => {
+    for (const [name, source] of [
+      ["Navbar.tsx", navbar],
+      ["site-header.tsx", siteHeader],
+    ] as const) {
+      assert.match(source, /useTheme\(\)/, `${name}: не наблюдает за активной темой`);
+      assert.match(source, /window\.eduflowDesktop\?\.setTheme\?\.\(/, `${name}: не отправляет тему в Electron`);
+      assert.match(source, /backgroundColor:\s*currentTheme\.background/, `${name}: не передаёт фон темы`);
+      assert.match(source, /symbolColor:\s*currentTheme\.accent/, `${name}: не передаёт цвет символов темы`);
+      assert.match(source, /paddingRight:\s*["']env\(titlebar-area-width, 140px\)["']/, `${name}: нет отступа для кнопок окна`);
+      assert.match(source, /WebkitAppRegion:\s*["']drag["']/, `${name}: область шапки не перетаскивается`);
+      const noDragCount = (source.match(/WebkitAppRegion:\s*["']no-drag["']/g) ?? []).length + (source.match(/style=\{NO_DRAG_STYLE\}/g) ?? []).length;
+      assert.ok(noDragCount >= 5, `${name}: интерактивные элементы не исключены из drag-region`);
+    }
+  });
+});

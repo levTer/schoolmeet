@@ -28,6 +28,7 @@
     },
     "files": [
       "main.js",
+      "preload.js",
       "loading.html",
       "assets/icon.png",
       "package.json"

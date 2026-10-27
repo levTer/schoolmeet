@@ -24,4 +24,6 @@ contextBridge.exposeInMainWorld("eduflowDesktop", {
   reload: () => ipcRenderer.invoke("eduflow:reload"),
   /** Информация о приложении для окна «О программе». */
   getAppInfo: () => ipcRenderer.invoke("eduflow:app-info"),
+  /** Обновить цвета нативной полосы заголовка окна. */
+  setTheme: (themeColors) => ipcRenderer.send("update-titlebar-theme", themeColors),
 });
