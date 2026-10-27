@@ -1,0 +1,74 @@
+{
+  "name": "eduflow-desktop",
+  "version": "1.0.0",
+  "description": "EduFlow — десктопная Electron-обёртка школьной платформы для macOS (DMG-установщик)",
+  "main": "main.js",
+  "author": "EduFlow",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir --publish never",
+    "dist:mac": "electron-builder --mac dmg --publish never"
+  },
+  "devDependencies": {
+    "electron": "^44.9.3",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.eduflow.app",
+    "productName": "EduFlow",
+    "copyright": "Copyright © 2026 EduFlow",
+    "asar": true,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "loading.html",
+      "assets/icon.png",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.education",
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "extendInfo": {
+        "NSCameraUsageDescription": "EduFlow использует камеру для видео на онлайн-уроках.",
+        "NSMicrophoneUsageDescription": "EduFlow использует микрофон для голоса на онлайн-уроках."
+      }
+    },
+    "dmg": {
+      "title": "EduFlow ${version}",
+      "window": {
+        "width": 560,
+        "height": 400
+      },
+      "contents": [
+        {
+          "x": 150,
+          "y": 200,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  }
+}

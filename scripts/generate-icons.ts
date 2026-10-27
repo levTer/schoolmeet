@@ -4,9 +4,13 @@
  * Запуск: npm run icons:generate
  * SVG рендерится векторно через libvips в каждом целевом размере, без апскейла
  * готового растра. favicon.ico содержит независимые PNG-слои 16/32/48 px.
+ * Отдельно пишется иконка 1024×1024 для macOS-приложения в двух экземплярах:
+ * electron-app/build/icon.png (electron-builder делает из неё .icns) и
+ * electron-app/assets/icon.png (runtime-иконка окна и экрана загрузки —
+ * каталог build/ внутрь приложения electron-builder не упаковывает).
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +18,8 @@ import sharp from "sharp";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC_DIR = path.join(ROOT, "public");
+const ELECTRON_BUILD_DIR = path.join(ROOT, "electron-app", "build");
+const ELECTRON_ASSETS_DIR = path.join(ROOT, "electron-app", "assets");
 const SOURCE_PATH = path.join(PUBLIC_DIR, "icon.svg");
 
 interface IcoImage {
@@ -61,18 +67,27 @@ async function main() {
       .toBuffer();
   };
 
-  const [icon192, icon512, appleTouchIcon, favicon16, favicon32, favicon48] = await Promise.all([
-    renderPng(192),
-    renderPng(512),
-    renderPng(180, true),
-    renderPng(16),
-    renderPng(32),
-    renderPng(48),
-  ]);
+  const [icon192, icon512, appleTouchIcon, favicon16, favicon32, favicon48, electronIcon] =
+    await Promise.all([
+      renderPng(192),
+      renderPng(512),
+      renderPng(180, true),
+      renderPng(16),
+      renderPng(32),
+      renderPng(48),
+      // macOS: electron-builder собирает .icns из PNG не меньше 512×512; 1024 — ретина-мастер.
+      renderPng(1024),
+    ]);
 
+  await Promise.all([
+    mkdir(ELECTRON_BUILD_DIR, { recursive: true }),
+    mkdir(ELECTRON_ASSETS_DIR, { recursive: true }),
+  ]);
   await Promise.all([
     writeFile(path.join(PUBLIC_DIR, "icon-192.png"), icon192),
     writeFile(path.join(PUBLIC_DIR, "icon-512.png"), icon512),
+    writeFile(path.join(ELECTRON_BUILD_DIR, "icon.png"), electronIcon),
+    writeFile(path.join(ELECTRON_ASSETS_DIR, "icon.png"), electronIcon),
     writeFile(path.join(PUBLIC_DIR, "apple-touch-icon.png"), appleTouchIcon),
     writeFile(
       path.join(PUBLIC_DIR, "favicon.ico"),
@@ -90,6 +105,7 @@ async function main() {
   console.log("EduFlow icons generated from public/icon.svg:");
   console.log("  icon-192.png, icon-512.png, apple-touch-icon.png (180×180)");
   console.log("  favicon.ico (16×16, 32×32, 48×48), icon-192.svg, icon-512.svg");
+  console.log("  electron-app/build/icon.png + assets/icon.png (1024×1024, macOS DMG)");
 }
 
 void main().catch((error: unknown) => {
