@@ -1,0 +1,87 @@
+# Сборка macOS-установщика EduFlow (.dmg) на бесплатном macOS-раннере GitHub.
+#
+# Приложение — тонкая Electron-обёртка над живым сайтом (electron-app/main.js),
+# поэтому DMG нужен только когда меняется сама обёртка. Запуск:
+#   - push в main / тег v*         — автоматическая сборка;
+#   - pull request с изменениями в electron-app/** — проверка, что DMG собирается;
+#   - вручную: Actions → Build macOS DMG → Run workflow.
+#
+# Результат: артефакт «EduFlow-macOS-dmg» на странице запуска (хранится 90 дней),
+# а для тегов вида v1.2.3 — ещё и GitHub Release с файлом eduflow.dmg
+# (постоянная ссылка: /releases/latest/download/eduflow.dmg).
+# В git сам DMG не коммитится: универсальный Electron-образ весит ~100 МБ,
+# а лимит GitHub на файл в репозитории — 100 МБ.
+name: Build macOS DMG
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "electron-app/**"
+      - ".github/workflows/build-mac-dmg.yml"
+  workflow_dispatch:
+
+# Релиз по тегу создаёт softprops/action-gh-release — ему нужен contents: write.
+permissions:
+  contents: write
+
+concurrency:
+  group: build-mac-dmg-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-dmg:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Electron 44 требует Node >= 22.12 (engines в electron-app/package.json).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: electron-app/package-lock.json
+
+      # Сборка без подписи: сертификата Apple Developer у проекта нет,
+      # поэтому отключаем авто-поиск identity, чтобы electron-builder
+      # не искал несуществующий ключ подписи на раннере.
+      # --publish never: DMG публикуем шагами ниже, а не из electron-builder.
+      - name: Build Electron DMG
+        working-directory: electron-app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm ci
+          npx electron-builder --mac dmg --publish never
+
+      # Нормализуем имя файла: дальнейшие шаги и ссылка релиза ждут eduflow.dmg.
+      # Без `|| true` — отсутствие DMG должно валить сборку, а не маскироваться.
+      - name: Copy DMG to public
+        run: |
+          mkdir -p public
+          cp electron-app/dist/*.dmg public/eduflow.dmg
+          ls -lh public/eduflow.dmg
+          {
+            echo "### EduFlow for macOS"
+            echo
+            echo "- Файл: \`eduflow.dmg\` (universal: Intel + Apple Silicon)"
+            echo "- SHA-256: \`$(shasum -a 256 public/eduflow.dmg | cut -d' ' -f1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduFlow-macOS-dmg
+          path: public/eduflow.dmg
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attach DMG to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: public/eduflow.dmg
+          fail_on_unmatched_files: true

@@ -162,6 +162,10 @@ src/components/landing/            Секции лендинга (шапка, he
 src/lib/utils.ts                   cn(), sanitizeRedirectPath(), код комнаты, инициалы, время
 src/types/index.ts                 Интерфейсы User / Meeting / Schedule / ChatMessage, роли, права
 src/types/next-auth.d.ts           Расширение типов сессии NextAuth полем role
+electron-app/                      macOS-приложение EduFlow: Electron-обёртка над живым сайтом
+                                   (main.js, экран загрузки, electron-builder → универсальный .dmg)
+.github/workflows/build-mac-dmg.yml Бесплатная сборка DMG на macos-latest: артефакт Actions,
+                                   по тегу v* — GitHub Release (см. electron-app/README.md)
 ```
 
 ## Авторизация и роли

@@ -41,3 +41,8 @@ next-env.d.ts
 
 # user uploads (homework attachments)
 /storage
+
+# electron desktop wrapper (macOS DMG): сам DMG ~100 МБ — только артефакты CI и релизы
+electron-app/node_modules/
+electron-app/dist/
+public/eduflow.dmg
