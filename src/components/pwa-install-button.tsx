@@ -1,25 +1,26 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
-import { Check, Download, Plus, Share, Smartphone, X } from "lucide-react";
+import { useCallback, useState } from "react";
+import { ArrowLeft, Check, Download, Plus, Share, X } from "lucide-react";
 
 import { Modal } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
 
 /*
- * Установка EduFlow:
+ * Установка EduFlow — БЕЗ авто-детекции ОС и фильтрации устройств:
  *   - перехватываем beforeinstallprompt (Chromium/Edge/Samsung Internet)
  *   - тип состояния: useState<BeforeInstallPromptEvent | null>
  *   - при клике — await promptEvent.prompt(), затем обрабатываем userChoice
  *   - слушаем appinstalled и (display-mode: standalone) для скрытия кнопки
- *   - на iOS показываем инструкцию:
- *       Нажмите <strong className="…">«Поделиться»</strong> →
- *       На экран &quot;Домой&quot; → «Добавить»
- *   - для Android — ссылка «Скачать APK для Android» строго на /eduflow.apk
- *     (файл public/eduflow.apk, тот же origin) с download="EduFlow.apk".
- *     Путь намеренно фиксирован: на внешний URL атрибут download не работает.
+ *   - модальное окно ВСЕГДА показывает все 3 варианта списком (дизайн №9):
+ *       1) 🤖 Скачать APK для Android    → <a href="/eduflow.apk" download="EduFlow.apk">
+ *       2) 💻 Скачать для Windows (.msix) → <a href="/eduflow.msix" download="EduFlow.msix">
+ *       3) 🍏 Установить для Mac / iPhone → пошаговая подсказка для Safari и Chrome
+ *     Одинаковый набор кнопок виден каждому — и на ПК, и на телефоне.
+ *   - прямая ссылка на APK строго локальная: `/eduflow.apk` (тот же origin),
+ *     иначе атрибут download не работает.
  */
 // Перед установкой ждём beforeinstallprompt (хук usePwaInstall):
 //   window.addEventListener("beforeinstallprompt", …)
@@ -34,36 +35,34 @@ type _BeforeInstallPromptEvent = Event & {
 /**
  * Кнопка установки EduFlow для гостей и авторизованных пользователей.
  *
- * Стиль: тёмно-сланцевый фон (#0F172A), скруглённые углы (squircle),
- * белая окантовка и золотистый акцент на иконках — дизайн №9.
+ * Стиль: тёмно-сланцевый фон (#0F172A), скругление rounded-[18px],
+ * белая окантовка border-white/20 и золотисто-янтарные иконки (#F59E0B) — дизайн №9.
  *
- * Android/Chromium использует native beforeinstallprompt (через общий хук),
- * iOS Safari — модальную инструкцию «Поделиться → На экран "Домой"».
- * В standalone режиме кнопка скрывается.
+ * Фильтрации по типу устройства НЕТ: в модалке одновременно показаны все три
+ * варианта — Android (APK), Windows (MSIX) и Mac / iPhone (подсказка Safari / Chrome).
  */
 export function PwaInstallButton({ className }: { className?: string }) {
   const { isInstalled, isPrompting, triggerPrompt } = usePwaInstall();
-  const [isIOS, setIsIOS] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // false — список из всех 3 вариантов, true — пошаговая подсказка 🍏.
+  const [showAppleHelp, setShowAppleHelp] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const { userAgent, platform, maxTouchPoints } = window.navigator;
-    const iosDevice =
-      /iPad|iPhone|iPod/i.test(userAgent) ||
-      (platform === "MacIntel" && maxTouchPoints > 1);
-    const otherIosBrowser = /CriOS|FxiOS|EdgiOS|OPiOS|Mercury/i.test(userAgent);
-    setIsIOS(iosDevice && /Safari/i.test(userAgent) && !otherIosBrowser);
+  const openModal = useCallback(() => {
+    setShowAppleHelp(false);
+    setIsModalOpen(true);
   }, []);
 
-  const closeModal = useCallback(() => setIsModalOpen(false), []);
+  const closeModal = useCallback(() => {
+    setIsModalOpen(false);
+    setShowAppleHelp(false);
+  }, []);
 
   const handleInstall = async () => {
     if (isInstalled || isPrompting) return;
     const outcome = await triggerPrompt();
     if (outcome === "manual" || outcome === "dismissed") {
-      // Если нативный prompt не доступен / отклонён — показываем инструкцию.
-      setIsModalOpen(true);
+      // Если нативный prompt не доступен / отклонён — показываем все 3 варианта.
+      openModal();
     }
   };
 
@@ -125,61 +124,138 @@ export function PwaInstallButton({ className }: { className?: string }) {
               <h2 id="pwa-install-title" className="text-lg font-semibold text-white">
                 Установить EduFlow
               </h2>
-              <p className="text-xs text-amber-300">Быстрый доступ с главного экрана</p>
+              <p className="text-xs text-amber-300">Все 3 варианта — для любой платформы</p>
             </div>
           </div>
 
           <div id="pwa-install-description" className="mt-6">
-            {isIOS ? (
-              <ol className="space-y-3">
-                <InstallStep number={1} icon={<Share className="h-4 w-4" />}>
-                  Нажмите <strong className="font-semibold text-white">«Поделиться»</strong> в Safari
-                </InstallStep>
-                <InstallStep number={2} icon={<Plus className="h-4 w-4" />}>
-                  Выберите{" "}
-                  <strong className="font-semibold text-white">«На экран &quot;Домой&quot;»</strong>
-                </InstallStep>
-                <InstallStep number={3} icon={<Check className="h-4 w-4" />}>
-                  Нажмите <strong className="font-semibold text-white">«Добавить»</strong>
-                </InstallStep>
-              </ol>
-            ) : (
-              <div className="rounded-2xl border border-amber-400/15 bg-amber-500/[0.07] p-4">
-                <div className="flex gap-3">
-                  <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
-                  <p className="text-sm leading-6 text-slate-300">
-                    Откройте меню браузера и выберите{" "}
-                    <strong className="font-semibold text-white">«Установить приложение»</strong> или{" "}
-                    <strong className="font-semibold text-white">«Добавить на главный экран»</strong>.
-                  </p>
+            {showAppleHelp ? (
+              /* 🍏 Пошаговая подсказка для Safari / Chrome. */
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAppleHelp(false)}
+                  className="-ml-1.5 inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs font-semibold text-slate-400 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                >
+                  <ArrowLeft aria-hidden className="h-3.5 w-3.5" />
+                  Ко всем вариантам установки
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <span
+                    aria-hidden
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-white/10 bg-amber-500/10 text-xl ring-1 ring-inset ring-amber-400/20"
+                  >
+                    🍏
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Установить для Mac / iPhone</p>
+                    <p className="text-xs text-amber-300">
+                      Safari и Chrome — «Поделиться» или «Установить»
+                    </p>
+                  </div>
                 </div>
+
+                <ol className="space-y-3">
+                  <InstallStep number={1} icon={<Share className="h-4 w-4" />}>
+                    Нажмите <strong className="font-semibold text-white">«Поделиться»</strong> в
+                    Safari или <strong className="font-semibold text-white">«Установить»</strong> в
+                    Chrome
+                  </InstallStep>
+                  <InstallStep number={2} icon={<Plus className="h-4 w-4" />}>
+                    Выберите{" "}
+                    <strong className="font-semibold text-white">«На экран &quot;Домой&quot;»</strong>{" "}
+                    на iPhone / iPad — или{" "}
+                    <strong className="font-semibold text-white">«Добавить на главный экран»</strong>
+                  </InstallStep>
+                  <InstallStep number={3} icon={<Check className="h-4 w-4" />}>
+                    Нажмите <strong className="font-semibold text-white">«Добавить»</strong> —
+                    иконка EduFlow появится на экране или в Dock
+                  </InstallStep>
+                </ol>
+
+                <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-xs leading-5 text-slate-400">
+                  <strong className="font-semibold text-slate-200">Safari на Mac:</strong> «Файл» →{" "}
+                  <strong className="font-semibold text-slate-200">«Добавить в Dock»</strong>.{" "}
+                  <strong className="font-semibold text-slate-200">Chrome на Android:</strong> меню
+                  «⋮» → «Установить».
+                </p>
+              </div>
+            ) : (
+              /* Все 3 варианта списком — одинаково для ПК, Android, Mac и iPhone. */
+              <div className="flex flex-col gap-3">
+                <a
+                  href="/eduflow.apk"
+                  download="EduFlow.apk"
+                  className={installerTile}
+                  aria-label="Скачать установщик для Android (APK)"
+                >
+                  <span aria-hidden className={tileShine} />
+                  <span className="relative text-sm font-semibold leading-snug text-white">
+                    🤖 Скачать APK для Android
+                  </span>
+                  <Download aria-hidden className={goldIcon} strokeWidth={2} />
+                </a>
+
+                <a
+                  href="/eduflow.msix"
+                  download="EduFlow.msix"
+                  className={installerTile}
+                  aria-label="Скачать установщик для Windows (MSIX)"
+                >
+                  <span aria-hidden className={tileShine} />
+                  <span className="relative text-sm font-semibold leading-snug text-white">
+                    💻 Скачать для Windows (.msix)
+                  </span>
+                  <Download aria-hidden className={goldIcon} strokeWidth={2} />
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAppleHelp(true)}
+                  className={installerTile}
+                  aria-label="Инструкция по установке на Mac и iPhone"
+                >
+                  <span aria-hidden className={tileShine} />
+                  <span className="relative text-sm font-semibold leading-snug text-white">
+                    🍏 Установить для Mac / iPhone
+                  </span>
+                  <Share aria-hidden className={goldIcon} strokeWidth={2} />
+                </button>
               </div>
             )}
           </div>
 
-          <div className="mt-6 border-t border-white/10 pt-5">
-            <a
-              href="/eduflow.apk"
-              download="EduFlow.apk"
-              className={cn(
-                "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[14px] border border-white/25 bg-[#0F172A] px-4 py-3",
-                "text-sm font-semibold text-white shadow-[0_8px_24px_-8px_rgba(0,0,0,0.55)]",
-                "transition hover:-translate-y-0.5 hover:border-white/40 hover:bg-[#111a2f] hover:shadow-[0_10px_28px_-8px_rgba(0,0,0,0.7),0_0_22px_-4px_rgba(245,158,11,0.35)]",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60",
-              )}
-            >
-              <Download className="h-4 w-4 text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.45)]" />
-              Скачать APK для Android
-            </a>
-            <p className="mt-2.5 text-center text-xs leading-5 text-slate-500">
-              После скачивания откройте APK и разрешите установку из этого источника.
+          {!showAppleHelp && (
+            <p className="mt-4 text-center text-xs leading-5 text-slate-500">
+              APK для Android · MSIX для Windows 10/11 · Safari / Chrome для Mac и iPhone
             </p>
-          </div>
+          )}
         </div>
       </Modal>
     </>
   );
 }
+
+/**
+ * Плитка варианта установки в модалке — дизайн №9:
+ * фон `#0F172A`, скругление `rounded-[18px]`, окантовка `border-white/20`,
+ * золотисто-янтарная иконка `#F59E0B` (amber-500).
+ */
+const installerTile =
+  "group relative flex min-h-[76px] w-full items-center justify-between gap-2.5 overflow-hidden " +
+  "rounded-[18px] border border-white/20 bg-[#0F172A] px-4 py-3.5 text-left " +
+  "shadow-[0_10px_30px_-10px_rgba(0,0,0,0.65)] ring-1 ring-white/5 " +
+  "transition duration-200 hover:-translate-y-0.5 hover:border-white/40 hover:bg-[#111a2f] " +
+  "hover:shadow-[0_14px_36px_-10px_rgba(0,0,0,0.8),0_0_28px_-6px_rgba(245,158,11,0.4)] " +
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70";
+
+const goldIcon =
+  "relative h-5 w-5 shrink-0 text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.55)] " +
+  "transition-transform group-hover:scale-110";
+
+const tileShine =
+  "pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent";
 
 function InstallStep({
   number,

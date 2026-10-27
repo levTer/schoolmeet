@@ -3,8 +3,10 @@
 /**
  * Общий хук установки PWA EduFlow.
  *
- * Отвечает за перехват события `beforeinstallprompt` (браузеры Chromium/Edge/Samsung),
- * определение iOS Safari для показа инструкции и статуса standalone-приложения.
+ * Отвечает за перехват события `beforeinstallprompt` (браузеры Chromium/Edge/Samsung)
+ * и статус standalone-приложения. Никакой авто-детекции ОС здесь НЕТ:
+ * все 3 варианта установки (Android APK, Windows MSIX, Mac / iPhone)
+ * компоненты показывают каждому пользователю без фильтрации устройств.
  *
  * APK раздаётся из public/eduflow.apk по фиксированному пути `/eduflow.apk`:
  * компоненты используют этот же origin, чтобы атрибут download работал.
@@ -34,8 +36,6 @@ type Subscriber = () => void;
 // Синглтон-состояние на уровне модуля.
 let _deferredPrompt: BeforeInstallPromptEvent | null = null;
 let _isInstalled = false;
-let _isIOS = false;
-let _isWindows = false;
 let _isPrompting = false;
 let _listenersReady = false;
 const _subscribers = new Set<Subscriber>();
@@ -48,19 +48,13 @@ function setupListeners() {
   if (_listenersReady || typeof window === "undefined") return;
   _listenersReady = true;
 
+  // Только статус установленного приложения — без авто-детекции ОС и
+  // фильтрации устройств: варианты установки рисуются все всегда.
   const iosNavigator = window.navigator as Navigator & { standalone?: boolean };
   _isInstalled =
     window.matchMedia("(display-mode: standalone)").matches ||
     iosNavigator.standalone === true ||
     document.referrer.startsWith("android-app://");
-
-  const { userAgent, platform, maxTouchPoints } = window.navigator;
-  const iosDevice =
-    /iPad|iPhone|iPod/i.test(userAgent) ||
-    (platform === "MacIntel" && maxTouchPoints > 1);
-  const otherIosBrowser = /CriOS|FxiOS|EdgiOS|OPiOS|Mercury/i.test(userAgent);
-  _isIOS = iosDevice && /Safari/i.test(userAgent) && !otherIosBrowser;
-  _isWindows = userAgent.includes("Win");
 
   const onBeforeInstallPrompt = (event: Event) => {
     event.preventDefault();
@@ -99,10 +93,6 @@ export interface PwaInstallState {
   canPrompt: boolean;
   /** Приложение уже установлено в standalone-режиме — кнопку лучше скрыть. */
   isInstalled: boolean;
-  /** Это iOS Safari — показываем ручную инструкцию «Поделиться → На экран Домой». */
-  isIOS: boolean;
-  /** Это Windows — доступна установка веб-приложения на ПК. */
-  isWindows: boolean;
   /** Идёт вызов системного prompt — не давать нажимать ещё раз. */
   isPrompting: boolean;
   /** Прямая ссылка на локальный APK-файл (всегда `/eduflow.apk`). */
@@ -153,8 +143,6 @@ export function usePwaInstall(): PwaInstallState & {
   return {
     canPrompt: _deferredPrompt !== null,
     isInstalled: _isInstalled,
-    isIOS: _isIOS,
-    isWindows: _isWindows,
     isPrompting: _isPrompting,
     apkUrl: APK_DOWNLOAD_URL,
     triggerPrompt,
