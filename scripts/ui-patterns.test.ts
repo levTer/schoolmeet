@@ -9,6 +9,7 @@
  * собственной разметки оверлея.
  */
 import assert from "node:assert/strict";
+import { inflateSync } from "node:zlib";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -816,7 +817,7 @@ describe("дистрибуция установщиков: APK, MSIX и Mac / iP
   it("три кнопки: Android (.apk), Windows (.msix) и Mac / iPhone", () => {
     assert.match(installBlock, /🤖 Скачать APK для Android/, "нет кнопки для Android");
     assert.match(installBlock, /💻 Скачать для Windows \(\.msix\)/, "нет кнопки для Windows");
-    assert.match(installBlock, /🍏 Установить для Mac \/ iPhone/, "нет кнопки для Mac / iPhone");
+    assert.match(installBlock, /🍏 Скачать для Mac \(\.dmg\)/, "нет кнопки для Mac / iPhone");
   });
 
   it("ссылки ведут строго на локальные /eduflow.apk и /eduflow.msix с атрибутом download", () => {
@@ -914,7 +915,7 @@ describe("установка без авто-детекции ОС: все 3 в�
   it("модалка установки показывает все 3 кнопки списком, а не только Android", () => {
     assert.match(pwaButton, /Скачать APK для Android/, "в модалке нет кнопки Android");
     assert.match(pwaButton, /Скачать для Windows \(\.msix\)/, "в модалке нет кнопки Windows");
-    assert.match(pwaButton, /Установить для Mac \/ iPhone/, "в модалке нет кнопки Mac / iPhone");
+    assert.match(pwaButton, /Скачать для Mac \(\.dmg\)/, "в модалке нет кнопки Mac / iPhone");
     assert.match(
       pwaButton,
       /href="\/eduflow\.msix"[^>]*download="EduFlow\.msix"/,
@@ -934,7 +935,7 @@ describe("установка без авто-детекции ОС: все 3 в�
     ] as const) {
       assert.match(source, /Скачать APK для Android/, `${name}: нет варианта Android`);
       assert.match(source, /Скачать для Windows \(\.msix\)/, `${name}: нет варианта Windows`);
-      assert.match(source, /Установить для Mac \/ iPhone/, `${name}: нет варианта Mac / iPhone`);
+      assert.match(source, /Скачать для Mac \(\.dmg\)/, `${name}: нет варианта Mac / iPhone`);
     }
   });
 });
@@ -1073,5 +1074,56 @@ describe("Hero-секция главной страницы", () => {
     assert.match(installBlock, /bg-\[#0F172A\]/, "нет тёмно-сланцевого фона панели");
     assert.match(installBlock, /border-white\/10/, "нет белой окантовки панели");
     assert.match(installBlock, /text-amber-400/, "нет золотых иконок");
+  });
+});
+
+/* Real Mac download: no HTML placeholders or signature-only dummy files. */
+describe("macOS DMG download", () => {
+  it("both components expose all three direct download anchors", () => {
+    for (const path of ["src/components/landing/install-block.tsx", "src/components/pwa-install-button.tsx"]) {
+      const source = readSource(path).replace(/\/\*[\s\S]*?\*\//g, "");
+      for (const ext of ["apk", "msix", "dmg"]) {
+        const anchor = source.match(new RegExp(`<a\\s+href="/eduflow\\.${ext}"[^>]*>[\\s\\S]*?</a>`));
+        assert.ok(anchor, `${path}: missing ${ext} anchor`);
+        assert.ok(anchor[0].includes(`download="EduFlow.${ext}"`));
+        assert.doesNotMatch(anchor[0], /onClick=|disabled=/);
+        if (ext === "dmg") assert.ok(anchor[0].includes("🍏 Скачать для Mac (.dmg)"));
+      }
+    }
+  });
+
+  it("contains a complete UDIF v4 trailer, zlib block map and mountable filesystem payload", () => {
+    const dmg = readFileSync(join(REPO_ROOT, "public/eduflow.dmg"));
+    const trailer = dmg.subarray(-512);
+    assert.equal(trailer.toString("ascii", 0, 4), "koly");
+    assert.equal(trailer.readUInt32BE(4), 4);
+    assert.equal(trailer.readUInt32BE(8), 512);
+    const xmlOffset = Number(trailer.readBigUInt64BE(216));
+    const xmlLength = Number(trailer.readBigUInt64BE(224));
+    assert.equal(xmlOffset + xmlLength + 512, dmg.length);
+    assert.equal(Number(trailer.readBigUInt64BE(32)), xmlOffset);
+    const xml = dmg.toString("utf8", xmlOffset, xmlOffset + xmlLength);
+    const data = xml.match(/<data>([\s\S]*?)<\/data>/);
+    assert.ok(data, "missing blkx data");
+    const blkx = Buffer.from(data[1].replace(/\s/g, ""), "base64");
+    assert.equal(blkx.toString("ascii", 0, 4), "mish");
+    assert.equal(blkx.readUInt32BE(200), 2);
+    assert.equal(blkx.readUInt32BE(204), 0x80000005, "must be a UDZO zlib run");
+    assert.equal(blkx.readUInt32BE(244), 0xffffffff);
+    const raw = inflateSync(dmg.subarray(0, xmlOffset));
+    assert.equal(raw.length, Number(trailer.readBigUInt64BE(492)) * 512);
+    assert.equal(raw.toString("ascii", 32769, 32774), "CD001");
+    assert.ok(raw.includes(Buffer.from("CFBundleExecutable")));
+    assert.ok(raw.includes(Buffer.from("#!/bin/sh")));
+    assert.ok(raw.includes(Buffer.from("NOT a native")), "payload must disclose launcher limitations");
+  });
+
+  it("SW bypasses DMG downloads online and offline, including uppercase extensions and queries", () => {
+    const sw = readSource("public/sw.js");
+    assert.match(sw, /BINARY_DOWNLOAD_EXTENSIONS\s*=\s*\[[^\]]*"\.dmg"/);
+    for (const path of ["/eduflow.dmg", "/EduFlow.DMG", "/eduflow.dmg?v=2"]) {
+      assert.equal(serviceWorkerIntercepts(sw, path), false);
+    }
+    assert.equal(serviceWorkerIntercepts(sw, "/dashboard"), true);
   });
 });

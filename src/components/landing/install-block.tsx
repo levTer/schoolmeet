@@ -31,12 +31,12 @@ const tileShine =
  * Три нативных пути установки (все три кнопки видны всегда, без авто-детекции ОС):
  *  1. Android — прямая ссылка на `public/eduflow.apk` с атрибутом `download`;
  *  2. Windows 10/11 — прямая ссылка на `public/eduflow.msix` с атрибутом `download`;
- *  3. Mac / iPhone — модальная инструкция для Safari и Chrome:
+ *  3. Mac — прямая ссылка на `public/eduflow.dmg`; отдельная инструкция для браузера:
  *     «Поделиться» / «Установить» → «На экран "Домой"» или «Добавить в Dock».
  *
- * Оба файла лежат в `public/`, поэтому ссылки относительные: атрибут `download`
+ * Все три файла лежат в `public/`, поэтому ссылки относительные: атрибут `download`
  * работает только для того же origin. Service Worker (`public/sw.js`) не
- * перехватывает `.apk` и `.msix` — файлы скачиваются как бинарные данные.
+ * перехватывает `.apk`, `.msix` и `.dmg` — файлы скачиваются как бинарные данные.
  */
 export function InstallBlock() {
   const [isAppleHelpOpen, setIsAppleHelpOpen] = useState(false);
@@ -85,21 +85,25 @@ export function InstallBlock() {
             <Download aria-hidden className={goldIcon} strokeWidth={2} />
           </a>
 
-          <button
-            type="button"
-            onClick={() => setIsAppleHelpOpen(true)}
+          <a
+            href="/eduflow.dmg"
+            download="EduFlow.dmg"
             className={installerTile}
-            aria-label="Инструкция по установке на Mac и iPhone"
-            aria-haspopup="dialog"
-            aria-expanded={isAppleHelpOpen}
+            aria-label="Скачать для Mac (.dmg)"
           >
             <span aria-hidden className={tileShine} />
             <span className="relative text-sm font-semibold leading-snug text-white">
-              🍏 Установить для Mac / iPhone
+              🍏 Скачать для Mac (.dmg)
             </span>
-            <Share aria-hidden className={goldIcon} strokeWidth={2} />
-          </button>
+            <Download aria-hidden className={goldIcon} strokeWidth={2} />
+          </a>
         </div>
+        <p className="mt-3 text-xs leading-relaxed text-slate-400">
+          DMG для Mac: неподписанный веб-лаунчер, запрашивает адрес вашего EduFlow.
+        </p>
+        <button type="button" onClick={() => setIsAppleHelpOpen(true)} className="mt-3 text-xs text-slate-400 underline hover:text-white">
+          Установка через браузер на Mac / iPhone
+        </button>
 
         <p className="mt-4 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-center text-xs leading-relaxed text-slate-500">
           <Image
@@ -110,7 +114,7 @@ export function InstallBlock() {
             unoptimized
             className="inline-block h-4 w-4 align-[-2px]"
           />
-          <span>APK для Android · MSIX для Windows 10/11 · Safari / Chrome для Mac и iPhone</span>
+          <span>APK для Android · MSIX для Windows 10/11 · DMG для Mac</span>
         </p>
       </div>
 
