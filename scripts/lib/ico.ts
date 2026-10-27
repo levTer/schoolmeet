@@ -1,5 +1,6 @@
 /**
- * Кодирование ICO для Windows: favicon.ico и иконка `eduflow-portable.exe`.
+ * Кодирование ICO для Windows: favicon.ico, иконка установщика
+ * `public/eduflow-setup.exe` и окна Electron-приложения.
  *
  * Внутри ICO лежат независимые PNG-слои (Windows Vista+), поэтому иконка
  * рисуется векторно из `public/icon.svg` в каждом размере, без апскейла.

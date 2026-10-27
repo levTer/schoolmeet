@@ -16,8 +16,6 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import { renderIco } from "./lib/ico";
-import { inspectEduFlowIcon, readGroupIcon, readPeResources } from "./lib/pe";
-import { extractZipEntry, readZipEntries } from "./lib/zip";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 

@@ -49,3 +49,4 @@ next-env.d.ts
 # (public/eduflow-setup.exe коммитится — его скачивают пользователи)
 /dist
 /desktop/build
+/windows-build.log

@@ -89,10 +89,10 @@ jobs:
           git commit -m "build(windows): полноценный установщик Electron public/eduflow-setup.exe"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
-      # Небольшой отчёт о сборке (лог + размер) коммитится всегда — по нему видно,
-      # что именно собралось, даже если публикация тяжёлого файла не удалась.
+      # При падении сборки публикуем лог: артефакты Actions недоступны без
+      # авторизации, а коммит с логом читается обычным git pull.
       - name: Publish build report
-        if: always()
+        if: failure()
         shell: bash
         run: |
           set -e
