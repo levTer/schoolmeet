@@ -28,11 +28,11 @@ const tileShine =
 /**
  * Блок установки EduFlow (дизайн №9).
  *
- * Три нативных пути установки:
+ * Три нативных пути установки (все три кнопки видны всегда, без авто-детекции ОС):
  *  1. Android — прямая ссылка на `public/eduflow.apk` с атрибутом `download`;
  *  2. Windows 10/11 — прямая ссылка на `public/eduflow.msix` с атрибутом `download`;
- *  3. Mac / iPhone — модальная инструкция для Safari:
- *     «Поделиться» → «На экран "Домой"» → «Добавить».
+ *  3. Mac / iPhone — модальная инструкция для Safari и Chrome:
+ *     «Поделиться» / «Установить» → «На экран "Домой"» или «Добавить в Dock».
  *
  * Оба файла лежат в `public/`, поэтому ссылки относительные: атрибут `download`
  * работает только для того же origin. Service Worker (`public/sw.js`) не
@@ -67,7 +67,7 @@ export function InstallBlock() {
           >
             <span aria-hidden className={tileShine} />
             <span className="relative text-sm font-semibold leading-snug text-white">
-              🤖 Скачать для Android (.apk)
+              🤖 Скачать APK для Android
             </span>
             <Download aria-hidden className={goldIcon} strokeWidth={2} />
           </a>
@@ -110,7 +110,7 @@ export function InstallBlock() {
             unoptimized
             className="inline-block h-4 w-4 align-[-2px]"
           />
-          <span>APK для Android · MSIX для Windows 10/11 · Safari для Mac и iPhone</span>
+          <span>APK для Android · MSIX для Windows 10/11 · Safari / Chrome для Mac и iPhone</span>
         </p>
       </div>
 
@@ -142,33 +142,41 @@ export function InstallBlock() {
               <h2 id="install-help-title" className="text-lg font-semibold text-white">
                 Установить на Mac / iPhone
               </h2>
-              <p className="text-xs text-amber-300">Через Safari — «Поделиться» → «На экран Домой»</p>
+              <p className="text-xs text-amber-300">
+                Через Safari / Chrome — «Поделиться» или «Установить»
+              </p>
             </div>
           </div>
 
           <p id="install-help-description" className="mt-5 text-sm leading-relaxed text-slate-300">
-            Откройте EduFlow в Safari на iPhone, iPad или Mac — установка веб-приложения
-            выполняется через меню «Поделиться».
+            Откройте EduFlow в Safari (iPhone, iPad, Mac) или Chrome — установка веб-приложения
+            выполняется через меню «Поделиться» или «Установить».
           </p>
 
           <ol className="mt-4 space-y-3">
             <InstallStep icon={<Share className="h-4 w-4" />}>
               Нажмите <strong className="font-semibold text-white">«Поделиться»</strong> в панели
-              Safari
+              Safari — или <strong className="font-semibold text-white">«Установить»</strong> в меню
+              Chrome
             </InstallStep>
             <InstallStep icon={<Plus className="h-4 w-4" />}>
               Выберите{" "}
-              <strong className="font-semibold text-white">«На экран &quot;Домой&quot;»</strong>
+              <strong className="font-semibold text-white">«На экран &quot;Домой&quot;»</strong> на
+              iPhone / iPad — или{" "}
+              <strong className="font-semibold text-white">«Добавить на главный экран»</strong>
             </InstallStep>
             <InstallStep icon={<Check className="h-4 w-4" />}>
               Нажмите <strong className="font-semibold text-white">«Добавить»</strong> — иконка
-              EduFlow появится на домашнем экране
+              EduFlow появится на домашнем экране или в Dock
             </InstallStep>
           </ol>
 
           <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-xs leading-5 text-slate-400">
-            В Safari на Mac вместо этого: <strong className="font-semibold text-slate-200">Файл</strong>{" "}
-            → <strong className="font-semibold text-slate-200">Добавить в Dock</strong>.
+            <strong className="font-semibold text-slate-200">Safari на Mac:</strong> вместо этого →{" "}
+            <strong className="font-semibold text-slate-200">Файл</strong> →{" "}
+            <strong className="font-semibold text-slate-200">Добавить в Dock</strong>.{" "}
+            <strong className="font-semibold text-slate-200">Chrome на Android:</strong> меню «⋮» →{" "}
+            <strong className="font-semibold text-slate-200">Установить</strong>.
           </p>
 
           <button

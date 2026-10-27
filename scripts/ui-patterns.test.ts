@@ -814,7 +814,7 @@ describe("дистрибуция установщиков: APK, MSIX и Mac / iP
   const sw = readSource("public/sw.js");
 
   it("три кнопки: Android (.apk), Windows (.msix) и Mac / iPhone", () => {
-    assert.match(installBlock, /🤖 Скачать для Android \(\.apk\)/, "нет кнопки для Android");
+    assert.match(installBlock, /🤖 Скачать APK для Android/, "нет кнопки для Android");
     assert.match(installBlock, /💻 Скачать для Windows \(\.msix\)/, "нет кнопки для Windows");
     assert.match(installBlock, /🍏 Установить для Mac \/ iPhone/, "нет кнопки для Mac / iPhone");
   });
@@ -880,6 +880,62 @@ describe("дистрибуция установщиков: APK, MSIX и Mac / iP
     // Остальной трафик SW по-прежнему кэширует, а не-GET запросы пропускает.
     assert.equal(serviceWorkerIntercepts(sw, "/dashboard"), true, "SW перестал обслуживать страницы");
     assert.equal(serviceWorkerIntercepts(sw, "/eduflow.apk", "POST"), false, "SW вмешивается в POST");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Все 3 варианта установки сразу: без авто-детекции ОС                        */
+/* -------------------------------------------------------------------------- */
+
+describe("установка без авто-детекции ОС: все 3 варианта видны сразу", () => {
+  const pwaButton = readSource("src/components/pwa-install-button.tsx");
+  const installBlock = readSource("src/components/landing/install-block.tsx");
+  const hook = readSource("src/hooks/usePwaInstall.ts");
+
+  it("компоненты и хук больше не фильтруют устройства по строке браузера", () => {
+    for (const [name, source] of [
+      ["pwa-install-button.tsx", pwaButton],
+      ["install-block.tsx", installBlock],
+      ["usePwaInstall.ts", hook],
+    ] as const) {
+      assert.doesNotMatch(
+        source,
+        /userAgent/,
+        `${name}: авто-детекция ОС по строке браузера должна быть убрана`,
+      );
+      assert.doesNotMatch(
+        source,
+        /isIOS|isWindows/,
+        `${name}: остатки фильтрации устройств должны быть убраны`,
+      );
+    }
+  });
+
+  it("модалка установки показывает все 3 кнопки списком, а не только Android", () => {
+    assert.match(pwaButton, /Скачать APK для Android/, "в модалке нет кнопки Android");
+    assert.match(pwaButton, /Скачать для Windows \(\.msix\)/, "в модалке нет кнопки Windows");
+    assert.match(pwaButton, /Установить для Mac \/ iPhone/, "в модалке нет кнопки Mac / iPhone");
+    assert.match(
+      pwaButton,
+      /href="\/eduflow\.msix"[^>]*download="EduFlow\.msix"/,
+      "кнопка Windows должна ссылаться на /eduflow.msix с download",
+    );
+    assert.match(
+      pwaButton,
+      /onClick=\{\(\) => setShowAppleHelp\(true\)\}/,
+      "кнопка Mac / iPhone не открывает пошаговую подсказку",
+    );
+  });
+
+  it("главная страница и модалка используют одинаковые три варианта", () => {
+    for (const [name, source] of [
+      ["install-block.tsx", installBlock],
+      ["pwa-install-button.tsx", pwaButton],
+    ] as const) {
+      assert.match(source, /Скачать APK для Android/, `${name}: нет варианта Android`);
+      assert.match(source, /Скачать для Windows \(\.msix\)/, `${name}: нет варианта Windows`);
+      assert.match(source, /Установить для Mac \/ iPhone/, `${name}: нет варианта Mac / iPhone`);
+    }
   });
 });
 
