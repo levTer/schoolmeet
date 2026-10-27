@@ -25,6 +25,9 @@
         background:
           radial-gradient(120% 90% at 50% 0%, rgba(245, 158, 11, 0.16), transparent 60%),
           linear-gradient(180deg, #0a1b3d 0%, #0f172a 45%, #000000 100%);
+        /* Системный заголовок окна скрыт (titleBarStyle: hidden) — страницу
+           можно перетаскивать за любое свободное место, как за шапку окна. */
+        -webkit-app-region: drag;
       }
       .card {
         width: 100%;
@@ -81,6 +84,8 @@
         gap: 10px;
       }
       button {
+        /* Кнопки остаются кликабельными внутри drag-области заголовка. */
+        -webkit-app-region: no-drag;
         width: 100%;
         padding: 12px 18px;
         border-radius: 14px;

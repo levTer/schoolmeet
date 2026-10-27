@@ -3,6 +3,8 @@
  *
  * Полноценное десктопное приложение на Chromium, как Discord / VS Code / Spotify:
  *  • собственное окно 1280×832 с иконкой №9 и тёмно-сланцевым фоном `#0F172A`;
+ *  • бесшовный тёмный заголовок окна вместо системной белой полосы Windows
+ *    (`titleBarStyle: "hidden"` + Window Controls Overlay в цвет темы);
  *  • чистый интерфейс без нативного верхнего меню Electron (`Menu.setApplicationMenu(null)`,
  *    `autoHideMenuBar: true`, `menuBarVisible: false`);
  *  • метка `EduFlowDesktop/1.0.0` в User-Agent — веб-интерфейс скрывает кнопки установки;
@@ -20,6 +22,10 @@ const APP_ORIGIN = new URL(APP_URL).origin;
 const APP_NAME = "EduFlow";
 /** Тёмно-сланцевый фон окна до загрузки страницы (дизайн №9). */
 const BACKGROUND_COLOR = "#0F172A";
+/** Серебристо-белые значки «закрыть / свернуть / развернуть» в оверлее заголовка. */
+const TITLE_BAR_SYMBOL_COLOR = "#F8FAFC";
+/** Высота оверлея кнопок окна — компактная тёмная полоса, как у Discord / VS Code. */
+const TITLE_BAR_HEIGHT = 38;
 const IS_DEV = !app.isPackaged;
 
 let mainWindow = null;
@@ -88,6 +94,27 @@ function configureDownloads() {
   });
 }
 
+/**
+ * Бесшовный тёмный заголовок окна, как у Discord / Spotify / VS Code.
+ *
+ * `titleBarStyle: "hidden"` полностью убирает системную белую полосу сверху —
+ * содержимое страницы занимает всё окно. На Windows и Linux нативные кнопки
+ * «свернуть / развернуть / закрыть» рисует Window Controls Overlay в цвет темы:
+ * тёмно-сланцевый фон `#0F172A`, серебристо-белые значки, высота 38 px.
+ * На macOS система сама сохраняет «светофор», поэтому оверлей там не нужен.
+ */
+function titleBarOptions() {
+  if (process.platform === "darwin") return { titleBarStyle: "hidden" };
+  return {
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: BACKGROUND_COLOR,
+      symbolColor: TITLE_BAR_SYMBOL_COLOR,
+      height: TITLE_BAR_HEIGHT,
+    },
+  };
+}
+
 function createMainWindow() {
   Menu.setApplicationMenu(null);
 
@@ -98,7 +125,11 @@ function createMainWindow() {
     minHeight: 640,
     show: false,
     title: APP_NAME,
+    // Предотвращает белые вспышки при загрузке.
     backgroundColor: BACKGROUND_COLOR,
+    // Бесшовный тёмный заголовок: без системной белой полосы Windows,
+    // нативные кнопки окна — в тёмном оверлее цвета темы.
+    ...titleBarOptions(),
     icon: iconPath(),
     autoHideMenuBar: true,
     menuBarVisible: false,
@@ -128,6 +159,7 @@ function createMainWindow() {
         action: "allow",
         overrideBrowserWindowOptions: {
           backgroundColor: BACKGROUND_COLOR,
+          ...titleBarOptions(),
           autoHideMenuBar: true,
           menuBarVisible: false,
         },

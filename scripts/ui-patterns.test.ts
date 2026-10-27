@@ -1402,3 +1402,71 @@ describe("десктопный интерфейс Windows без верхнег�
   });
 });
 
+
+/* -------------------------------------------------------------------------- */
+/* Бесшовный тёмный заголовок окна: без системной белой полосы Windows        */
+/* -------------------------------------------------------------------------- */
+
+describe("бесшовный тёмный заголовок окна Electron (hidden + Window Controls Overlay)", () => {
+  const desktopMain = readSource("desktop/main.js");
+  const macMain = readSource("electron-app/main.js");
+
+  it("desktop/main.js убирает системную белую полосу Windows и красит оверлей кнопок в тему №9", () => {
+    assert.match(desktopMain, /BACKGROUND_COLOR = "#0F172A"/, "нет тёмно-сланцевого фона окна #0F172A");
+    assert.match(desktopMain, /backgroundColor: BACKGROUND_COLOR/, "у окна нет тёмного фона — при загрузке будет белая вспышка");
+    assert.match(
+      desktopMain,
+      /titleBarStyle: "hidden"/,
+      'нет titleBarStyle: "hidden" — системная белая полоса Windows осталась',
+    );
+    assert.match(
+      desktopMain,
+      /titleBarOverlay: \{/,
+      "нет titleBarOverlay — вместе с полосой пропадут кнопки «свернуть / развернуть / закрыть»",
+    );
+    assert.match(desktopMain, /color: BACKGROUND_COLOR/, "фон оверлея должен совпадать с фоном окна (#0F172A)");
+    assert.match(desktopMain, /TITLE_BAR_SYMBOL_COLOR = "#F8FAFC"/, "значки кнопок окна должны быть серебристо-белые #F8FAFC");
+    assert.match(desktopMain, /symbolColor: TITLE_BAR_SYMBOL_COLOR/, "оверлей не использует серебристо-белый цвет значков");
+    assert.match(desktopMain, /TITLE_BAR_HEIGHT = 38/, "высота оверлея заголовка должна быть 38 px");
+    assert.match(desktopMain, /height: TITLE_BAR_HEIGHT/, "оверлей не использует высоту 38 px");
+
+    const usages = desktopMain.match(/\.\.\.titleBarOptions\(\)/g) ?? [];
+    assert.ok(usages.length >= 2, "бесшовный заголовок нужен и главному окну, и всплывающим окнам приложения");
+    assert.doesNotMatch(desktopMain, /frame:\s*false/, "frame: false оставит окно без кнопок управления — нужен titleBarOverlay");
+  });
+
+  it("electron-app/main.js скрывает системный заголовок на всех платформах", () => {
+    assert.match(macMain, /titleBarStyle: 'hidden'/, "нет titleBarStyle: 'hidden' — системная полоса осталась");
+    assert.match(macMain, /titleBarOverlay: \{/, "нет titleBarOverlay — на Windows/Linux пропадут кнопки окна");
+    assert.match(macMain, /TITLE_BAR_COLOR = '#0F172A'/, "фон оверлея не тёмно-сланцевый #0F172A");
+    assert.match(macMain, /color: TITLE_BAR_COLOR/, "оверлей кнопок не в цвет фона окна");
+    assert.match(macMain, /TITLE_BAR_SYMBOL_COLOR = '#F8FAFC'/, "значки кнопок окна должны быть серебристо-белые #F8FAFC");
+    assert.match(macMain, /symbolColor: TITLE_BAR_SYMBOL_COLOR/, "оверлей не использует серебристо-белый цвет значков");
+    assert.match(macMain, /TITLE_BAR_HEIGHT = 38/, "высота оверлея заголовка должна быть 38 px");
+    assert.match(macMain, /height: TITLE_BAR_HEIGHT/, "оверлей не использует высоту 38 px");
+    assert.match(
+      macMain,
+      /process\.platform === 'darwin'/,
+      "на macOS оверлей не нужен — система сама рисует «светофор», это должно быть учтено",
+    );
+
+    const usages = macMain.match(/\.\.\.titleBarOptions\(\)/g) ?? [];
+    assert.ok(usages.length >= 2, "бесшовный заголовок нужен и главному окну, и всплывающим окнам приложения");
+  });
+
+  it("локальные экраны оболочки перетаскиваются как заголовок окна (drag / no-drag)", () => {
+    for (const file of ["desktop/offline.html", "electron-app/loading.html"]) {
+      const source = readSource(file);
+      assert.match(
+        source,
+        /-webkit-app-region: drag/,
+        `${file}: окно со скрытым заголовком нельзя перетащить — нет области drag`,
+      );
+      assert.match(
+        source,
+        /-webkit-app-region: no-drag/,
+        `${file}: кнопки должны оставаться кликабельными внутри drag-области — нет no-drag`,
+      );
+    }
+  });
+});

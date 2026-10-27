@@ -5,7 +5,9 @@
  *
  * Открывает живую веб-версию платформы в нативном окне: контент, авторизация
  * и обновления всегда приходят с сервера, DMG не нужно пересобирать при
- * изменениях сайта. Окно — без лишних рамок и полос меню.
+ * изменениях сайта. Окно — без лишних рамок и полос меню: системный заголовок
+ * скрыт (`titleBarStyle: 'hidden'`), вместо белой полосы — бесшовный тёмный
+ * верх в цвет темы, а нативные кнопки окна рисует Window Controls Overlay.
  *
  * Безопасность: удалённый контент работает без Node.js и preload-скриптов
  * (`nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`),
@@ -38,6 +40,11 @@ const APP_ORIGIN = new URL(APP_URL).origin;
 // electron-builder не включает его содержимое внутрь приложения.
 const ICON_PATH = path.join(__dirname, 'assets', 'icon.png');
 const LOADING_PAGE = path.join(__dirname, 'loading.html');
+
+/** Тема бесшовного заголовка окна: тёмный сланец (дизайн №9) и серебристо-белые значки кнопок. */
+const TITLE_BAR_COLOR = '#0F172A';
+const TITLE_BAR_SYMBOL_COLOR = '#F8FAFC';
+const TITLE_BAR_HEIGHT = 38;
 
 /**
  * Бесплатный инстанс на Render засыпает без трафика и просыпается
@@ -149,6 +156,27 @@ function showContextMenu(win, params) {
   }
 }
 
+/**
+ * Бесшовный тёмный заголовок окна, как у Discord / Spotify / VS Code.
+ *
+ * `titleBarStyle: 'hidden'` полностью убирает системную полосу сверху —
+ * содержимое занимает всё окно. На Windows и Linux нативные кнопки
+ * «свернуть / развернуть / закрыть» рисует Window Controls Overlay в цвет
+ * темы (тёмно-сланцевый фон, серебристо-белые значки, высота 38 px);
+ * на macOS система сама сохраняет «светофор», поэтому оверлей там не нужен.
+ */
+function titleBarOptions() {
+  if (process.platform === 'darwin') return { titleBarStyle: 'hidden' };
+  return {
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: TITLE_BAR_COLOR,
+      symbolColor: TITLE_BAR_SYMBOL_COLOR,
+      height: TITLE_BAR_HEIGHT,
+    },
+  };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -159,6 +187,8 @@ function createWindow() {
     icon: ICON_PATH,
     // Тёмный фон в фирменном цвете — без белой вспышки при загрузке.
     backgroundColor: '#0F172A',
+    // Бесшовный тёмный заголовок: системная полоса убрана, кнопки окна — в оверлее.
+    ...titleBarOptions(),
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
@@ -188,6 +218,7 @@ function createWindow() {
         overrideBrowserWindowOptions: {
           autoHideMenuBar: true,
           backgroundColor: '#0F172A',
+          ...titleBarOptions(),
           webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
