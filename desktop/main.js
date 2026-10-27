@@ -3,15 +3,17 @@
  *
  * Полноценное десктопное приложение на Chromium, как Discord / VS Code / Spotify:
  *  • собственное окно 1280×832 с иконкой №9 и тёмно-сланцевым фоном `#0F172A`;
+ *  • чистый интерфейс без нативного верхнего меню Electron (`Menu.setApplicationMenu(null)`,
+ *    `autoHideMenuBar: true`, `menuBarVisible: false`);
+ *  • метка `EduFlowDesktop/1.0.0` в User-Agent — веб-интерфейс скрывает кнопки установки;
  *  • сразу открывает https://schoolmeet-vb96.onrender.com в изолированном окне;
- *  • нативное меню (Файл / Правка / Вид / Переходы / Справка), горячие клавиши;
  *  • внешние ссылки уходят в системный браузер, чужие origin — блокируются;
  *  • камера и микрофон для онлайн-уроков разрешены только для домена EduFlow;
  *  • при отсутствии сети показывается локальная страница «Нет подключения»;
  *  • один экземпляр приложения (повторный запуск фокусирует открытое окно).
  */
 const path = require("node:path");
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, shell, session } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, nativeImage, shell, session } = require("electron");
 
 const APP_URL = (process.env.EDUFLOW_URL || "https://schoolmeet-vb96.onrender.com").replace(/\/+$/, "");
 const APP_ORIGIN = new URL(APP_URL).origin;
@@ -54,98 +56,6 @@ function openExternal(url) {
   return Promise.resolve();
 }
 
-function buildMenu() {
-  const template = [
-    {
-      label: "Файл",
-      submenu: [
-        {
-          label: "Обновить страницу",
-          accelerator: "CmdOrCtrl+R",
-          click: () => mainWindow && mainWindow.webContents.reload(),
-        },
-        {
-          label: "Открыть в браузере",
-          accelerator: "CmdOrCtrl+Shift+O",
-          click: () => openExternal(mainWindow ? mainWindow.webContents.getURL() || APP_URL : APP_URL),
-        },
-        { type: "separator" },
-        { label: "Печать…", accelerator: "CmdOrCtrl+P", click: () => mainWindow && mainWindow.webContents.print() },
-        { type: "separator" },
-        { role: "quit", label: "Выход" },
-      ],
-    },
-    {
-      label: "Правка",
-      submenu: [
-        { role: "undo", label: "Отменить" },
-        { role: "redo", label: "Повторить" },
-        { type: "separator" },
-        { role: "cut", label: "Вырезать" },
-        { role: "copy", label: "Копировать" },
-        { role: "paste", label: "Вставить" },
-        { role: "selectAll", label: "Выделить всё" },
-      ],
-    },
-    {
-      label: "Вид",
-      submenu: [
-        { role: "resetZoom", label: "Обычный масштаб" },
-        { role: "zoomIn", label: "Увеличить" },
-        { role: "zoomOut", label: "Уменьшить" },
-        { type: "separator" },
-        { role: "togglefullscreen", label: "Полный экран" },
-        { role: "toggleDevTools", label: "Инструменты разработчика" },
-      ],
-    },
-    {
-      label: "Переходы",
-      submenu: [
-        {
-          label: "Назад",
-          accelerator: "Alt+Left",
-          click: () => mainWindow && mainWindow.webContents.canGoBack() && mainWindow.webContents.goBack(),
-        },
-        {
-          label: "Вперёд",
-          accelerator: "Alt+Right",
-          click: () => mainWindow && mainWindow.webContents.canGoForward() && mainWindow.webContents.goForward(),
-        },
-        { label: "На главную", click: () => mainWindow && mainWindow.loadURL(APP_URL) },
-      ],
-    },
-    {
-      label: "Справка",
-      submenu: [
-        {
-          label: "О программе EduFlow",
-          click: () =>
-            dialog.showMessageBox(mainWindow, {
-              type: "info",
-              title: `О программе ${APP_NAME}`,
-              message: `${APP_NAME} ${app.getVersion()}`,
-              detail:
-                `Десктопное приложение для онлайн-уроков, домашних заданий и обучения с ИИ.\n\n` +
-                `Версия Electron: ${process.versions.electron}\n` +
-                `Версия Chromium: ${process.versions.chrome}\n` +
-                `Версия Node.js: ${process.versions.node}\n\n` +
-                `Адрес: ${APP_URL}`,
-              buttons: ["Закрыть"],
-              noLink: true,
-              icon: iconPath(),
-            }),
-        },
-        {
-          label: "Сайт EduFlow",
-          click: () => openExternal(APP_URL),
-        },
-      ],
-    },
-  ];
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-}
-
 /** Разрешения выдаём только для домена EduFlow — уроки требуют камеру и микрофон. */
 function configurePermissions() {
   const allowed = new Set([
@@ -179,6 +89,8 @@ function configureDownloads() {
 }
 
 function createMainWindow() {
+  Menu.setApplicationMenu(null);
+
   const window = new BrowserWindow({
     width: 1280,
     height: 832,
@@ -188,7 +100,8 @@ function createMainWindow() {
     title: APP_NAME,
     backgroundColor: BACKGROUND_COLOR,
     icon: iconPath(),
-    autoHideMenuBar: false,
+    autoHideMenuBar: true,
+    menuBarVisible: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -199,26 +112,39 @@ function createMainWindow() {
     },
   });
 
-  window.setMenuBarVisibility(true);
+  window.setMenuBarVisibility(false);
+  window.removeMenu();
+
+  const { webContents } = window;
+  webContents.setUserAgent(BROWSER_USER_AGENT);
+  webContents.setUserAgent(webContents.getUserAgent() + " EduFlowDesktop/1.0.0");
+
   window.once("ready-to-show", () => window.show());
 
-  // Всплывающие окна: свои страницы — в отдельном окне, чужие — в системном браузере.
-  window.webContents.setWindowOpenHandler(({ url }) => {
+  // Всплывающие окна: свои страницы — в отдельном окне без меню, чужие — в системном браузере.
+  webContents.setWindowOpenHandler(({ url }) => {
     if (isAppUrl(url)) {
-      return { action: "allow", overrideBrowserWindowOptions: { backgroundColor: BACKGROUND_COLOR } };
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          backgroundColor: BACKGROUND_COLOR,
+          autoHideMenuBar: true,
+          menuBarVisible: false,
+        },
+      };
     }
     void openExternal(url);
     return { action: "deny" };
   });
 
   // Уходим из приложения только по ссылкам самого EduFlow.
-  window.webContents.on("will-navigate", (event, url) => {
+  webContents.on("will-navigate", (event, url) => {
     if (isAppUrl(url)) return;
     event.preventDefault();
     void openExternal(url);
   });
 
-  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+  webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
     if (!isMainFrame) return;
     // -3 = ERR_ABORTED (обычная отмена навигации), её не показываем.
     if (errorCode === -3) return;
@@ -226,7 +152,7 @@ function createMainWindow() {
     showOfflinePage(errorDescription);
   });
 
-  window.webContents.on("did-finish-load", () => {
+  webContents.on("did-finish-load", () => {
     isOfflinePageShown = false;
   });
 
@@ -275,20 +201,19 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    Menu.setApplicationMenu(null);
     app.setAppUserModelId("com.eduflow.desktop");
+    session.defaultSession.setUserAgent(`${BROWSER_USER_AGENT} EduFlowDesktop/1.0.0`);
     configurePermissions();
     configureDownloads();
-    buildMenu();
     registerIpc();
 
     const window = createMainWindow();
-    window.webContents.setUserAgent(BROWSER_USER_AGENT);
     void window.loadURL(APP_URL);
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         const created = createMainWindow();
-        created.webContents.setUserAgent(BROWSER_USER_AGENT);
         void created.loadURL(APP_URL);
       }
     });
