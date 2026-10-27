@@ -20,6 +20,11 @@ files:
   - preload.js
   - offline.html
   - assets/icon.png
+  # Внутрь установщика не должны попадать зависимости сайта: Electron-оболочке
+  # они не нужны, а корневой node_modules (Next.js, Prisma, sharp) раздувает
+  # установщик до ~200 МБ.
+  - "!**/node_modules/**/*"
+  - "!node_modules"
 
 extraMetadata:
   main: main.js

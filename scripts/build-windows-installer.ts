@@ -49,7 +49,7 @@ const PUBLIC_EXE = path.join(ROOT, "public/eduflow-setup.exe");
 /** Минимальный вес полноценного Electron-установщика. */
 const MIN_SIZE_MB = 60;
 /** Максимальный вес, чтобы установщик не разросся до неподъёмного. */
-const MAX_SIZE_MB = 160;
+const MAX_SIZE_MB = 130;
 
 async function renderIcons(): Promise<void> {
   mkdirSync(BUILD_DIR, { recursive: true });

@@ -894,7 +894,7 @@ describe("дистрибуция установщиков: APK, Electron-уст�
 describe("полноценный установщик EduFlow для Windows (Electron)", () => {
   /** Полноценный Electron-инсталлятор весит десятки мегабайт, а не десятки килобайт. */
   const MIN_SIZE_MB = 60;
-  const MAX_SIZE_MB = 160;
+  const MAX_SIZE_MB = 130;
 
   it("public/eduflow-setup.exe — настоящий NSIS-установщик на десятки мегабайт", () => {
     const exePath = join(REPO_ROOT, "public/eduflow-setup.exe");
