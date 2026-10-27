@@ -50,3 +50,13 @@ next-env.d.ts
 /dist
 /desktop/build
 /windows-build.log
+
+# electron desktop wrapper для macOS (electron-app/): сам DMG ~100 МБ —
+# он живёт только в артефактах CI и в GitHub Releases, не в git.
+electron-app/node_modules/
+electron-app/dist/
+
+# ВАЖНО: public/eduflow.dmg здесь НЕ игнорируется. В main этот файл
+# отслеживается намеренно — это закоммиченный HFS+/UDZO launcher-образ
+# (56 КБ), его проверяет и пересобирает .github/workflows/build-mac-dmg.yml.
+# Игнор скрыл бы изменения важного для лендинга бинаря.

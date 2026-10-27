@@ -1,33 +1,69 @@
+# Сборка macOS-дистрибутивов EduFlow (.dmg) на бесплатных macOS-раннерах GitHub.
+#
+# У проекта ДВА независимых Mac-пути, и оба собираются здесь (слиты из
+# «main: HFS+/UDZO launcher» и PR #57 «Electron-обёртка»):
+#
+#   1) build / publish — облегчённый launcher-образ: берём закоммиченный
+#      public/eduflow.dmg, проверяем его и пересобираем HFS+/UDZO-вариант
+#      скриптом scripts/create-mac-dmg.py. Именно на него сейчас ссылается
+#      лендинг, поэтому он публикуется в общий релиз `macos-latest`.
+#   2) build-electron-dmg — полноценное Electron-приложение из electron-app/
+#      (тонкая обёртка над живым сайтом, окно с чистым UI: autoHideMenuBar +
+#      Menu.setApplicationMenu(null), без меню Electron). Универсальный DMG
+#      (Intel + Apple Silicon) весит ~100 МБ, поэтому в git не коммитится:
+#      он уезжает в артефакты запуска, а по тегу v* — в GitHub Release
+#      с постоянной ссылкой /releases/latest/download/eduflow.dmg.
+#
+# Windows (.exe, public/eduflow-setup.exe) и Android (.apk, public/eduflow.apk)
+# собираются своими workflow-ами и этот файл не затрагиваются.
+#
+# Запуск:
+#   - push в main / тег v* — автоматическая сборка;
+#   - pull request с изменениями в electron-app/**, scripts/create-mac-dmg.py
+#     или public/eduflow.dmg — проверка, что оба DMG собираются;
+#   - вручную: Actions → Build macOS DMG → Run workflow.
 name: Build macOS DMG
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
-    branches: [main]
     paths:
-      - scripts/create-mac-dmg.py
-      - public/eduflow.dmg
-      - public/icon-512.png
-      - .github/workflows/build-mac-dmg.yml
+      - "electron-app/**"
+      - "scripts/create-mac-dmg.py"
+      - "public/eduflow.dmg"
+      - "public/icon-512.png"
+      - ".github/workflows/build-mac-dmg.yml"
   workflow_dispatch:
 
+# softprops/action-gh-release (публикация DMG) требует contents: write.
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: mac-dmg-${{ github.ref }}
-  cancel-in-progress: false
+  group: build-mac-dmg-${{ github.ref }}
+  # Сборку по push в main (она публикует релиз) не отменяем, проверку в PR — отменяем.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Путь 1 (из main): HFS+/UDZO launcher из закоммиченного public/eduflow.dmg.
+  # ─────────────────────────────────────────────────────────────────────────
   build:
+    # macos-latest — как в main; этот режим проверяет scripts/ui-patterns.test.ts
+    # («macOS CI builds and verifies HFS+/UDZO…»). Launcher-сборка лёгкая (hdiutil +
+    # python), очереди arm64-пула на ней не сказывается, в отличие от Electron-джобы
+    # ниже (длинный npm ci + electron-builder) — она стоит на macos-15-intel.
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Verify committed starter image on macOS
         run: |
           hdiutil verify public/eduflow.dmg
@@ -39,10 +75,12 @@ jobs:
           test -x "$mountpoint/EduFlow.app/Contents/MacOS/EduFlow"
           test -s "$mountpoint/EduFlow.app/Contents/Resources/EduFlow.icns"
           grep -F 'https://schoolmeet-vb96.onrender.com' "$mountpoint/EduFlow.app/Contents/MacOS/EduFlow"
+
       - name: Build HFS+ UDZO and verify mounted bundle
         run: |
           python3 scripts/create-mac-dmg.py --output artifacts/eduflow.dmg
           shasum -a 256 artifacts/eduflow.dmg > artifacts/eduflow.dmg.sha256
+
       - uses: actions/upload-artifact@v4
         with:
           name: EduFlow-macOS-${{ github.sha }}
@@ -62,6 +100,7 @@ jobs:
         with:
           name: EduFlow-macOS-${{ github.sha }}
           path: artifacts
+
       - name: Publish shared download in GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -73,3 +112,69 @@ jobs:
               --notes "Unsigned browser launcher for https://schoolmeet-vb96.onrender.com. Not a native/offline client or an Apple-notarized application."
           fi
           gh release upload macos-latest artifacts/eduflow.dmg artifacts/eduflow.dmg.sha256 --clobber
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Путь 2 (из PR #57): полноценный Electron DMG из electron-app/.
+  # ─────────────────────────────────────────────────────────────────────────
+  build-electron-dmg:
+    # Осознанно macos-15-intel, а не macos-latest (фикс из PR #57): arm64-пул
+    # (macos-latest/15/26) осенью 2026 перегружен — первые запуски PR по 15 минут
+    # не получали раннер вовсе («capacity constraints») и отменялись GitHub'ом.
+    # Intel-пул свободнее, а результат тот же: electron-builder собирает
+    # универсальный DMG (Intel + Apple Silicon) с любого Mac-хоста; минимум macOS
+    # задаёт Electron, а не версия/архитектура раннера.
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Electron 44 требует Node >= 22.12 (engines в electron-app/package.json).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: electron-app/package-lock.json
+
+      # Сборка без подписи: сертификата Apple Developer у проекта нет,
+      # поэтому отключаем авто-поиск identity, чтобы electron-builder
+      # не искал несуществующий ключ подписи на раннере.
+      # --publish never: DMG публикуем шагами ниже, а не из electron-builder.
+      - name: Build Electron DMG
+        working-directory: electron-app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm ci
+          npx electron-builder --mac dmg --publish never
+
+      # Нормализуем имя файла: ссылка релиза ждёт eduflow.dmg
+      # (/releases/latest/download/eduflow.dmg).
+      # КЛАДЁМ В artifacts/, А НЕ В public/: public/eduflow.dmg в main — это
+      # отслеживаемый git launcher-образ лендинга, перезаписывать его ~100 МБ
+      # Electron-сборкой нельзя. Без `|| true` — отсутствие DMG валит сборку.
+      - name: Collect Electron DMG
+        run: |
+          mkdir -p artifacts
+          cp electron-app/dist/*.dmg artifacts/eduflow.dmg
+          ls -lh artifacts/eduflow.dmg
+          {
+            echo "### EduFlow for macOS"
+            echo
+            echo "- Файл: \`eduflow.dmg\` (universal: Intel + Apple Silicon)"
+            echo "- SHA-256: \`$(shasum -a 256 artifacts/eduflow.dmg | cut -d' ' -f1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduFlow-macOS-dmg
+          path: artifacts/eduflow.dmg
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attach DMG to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/eduflow.dmg
+          fail_on_unmatched_files: true

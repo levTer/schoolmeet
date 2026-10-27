@@ -1,0 +1,6 @@
+# Сборка Electron: зависимости и готовые артефакты не коммитим —
+# DMG собирает GitHub Actions (.github/workflows/build-mac-dmg.yml).
+node_modules/
+dist/
+*.dmg
+.DS_Store
