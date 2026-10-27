@@ -1,0 +1,106 @@
+name: Build Windows Installer
+
+# Собирает полноценный Electron-инсталлятор EduFlow (NSIS) и коммитит его в
+# public/eduflow-setup.exe. Нужен Windows-раннер: electron-builder встраивает
+# иконку и свойства файла в EduFlow.exe через rcedit (на Linux нужен Wine).
+#
+# Триггер — изменения в оболочке `desktop/**`, конфиге сборщика и скрипте сборки.
+# Файл public/eduflow-setup.exe в списке путей отсутствует, поэтому коммит с
+# готовым установщиком не запускает новый цикл сборки.
+
+on:
+  push:
+    branches: [main, "arena/**"]
+    paths:
+      - "desktop/**"
+      - "electron-builder.yml"
+      - "scripts/build-windows-installer.ts"
+      - "scripts/lib/ico.ts"
+      - "public/icon.svg"
+      - ".github/workflows/build-windows-installer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Electron installer
+        shell: pwsh
+        run: |
+          npm run build:windows 2>&1 | Tee-Object -FilePath windows-build.log
+          if ($LASTEXITCODE -ne 0) { throw "Сборка установщика завершилась с кодом $LASTEXITCODE" }
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $exe = Get-Item public/eduflow-setup.exe
+          $sizeMb = $exe.Length / 1MB
+          "eduflow-setup.exe: {0:N1} MB ({1} bytes)" -f $sizeMb, $exe.Length | Tee-Object -Append -FilePath windows-build.log
+          if ($sizeMb -lt 60) { throw "Установщик меньше 60 МБ — это не полноценный Electron" }
+          $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)[0..1]
+          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw "Нет MZ-заголовка" }
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduFlow-Windows-Installer
+          path: public/eduflow-setup.exe
+          compression-level: 0
+          retention-days: 30
+
+      - name: Commit installer into public/
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # GitHub отклоняет файлы больше 100 МБ — такой установщик не опубликовать.
+          size=$(stat -c%s public/eduflow-setup.exe 2>/dev/null || wc -c < public/eduflow-setup.exe)
+          echo "eduflow-setup.exe: $size bytes ($((size / 1024 / 1024)) MB)" | tee -a windows-build.log
+          if [ "$size" -gt 97500000 ]; then
+            echo "Установщик больше лимита GitHub (100 МБ) — публикация пропущена" | tee -a windows-build.log
+            exit 1
+          fi
+          git add public/eduflow-setup.exe
+          if git diff --cached --quiet; then
+            echo "Установщик не изменился — коммит не нужен"
+            exit 0
+          fi
+          git commit -m "build(windows): полноценный установщик Electron public/eduflow-setup.exe"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      # При падении сборки публикуем лог: артефакты Actions недоступны без
+      # авторизации, а коммит с логом читается обычным git pull.
+      - name: Publish build report
+        if: failure()
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          test -f windows-build.log || echo "сборка не дошла до лога" > windows-build.log
+          # В индексе мог остаться тяжёлый .exe — публикуем только отчёт.
+          git reset -q
+          git add -f windows-build.log
+          git commit -m "ci(windows): отчёт сборки установщика [skip ci]" || exit 0
+          git push origin "HEAD:${GITHUB_REF_NAME}" || true

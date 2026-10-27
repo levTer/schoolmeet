@@ -44,3 +44,9 @@ next-env.d.ts
 
 # windows portable build artifacts (public/eduflow-windows.zip коммитится)
 /windows-portable/build
+
+# electron-builder: временные артефакты сборки установщика
+# (public/eduflow-setup.exe коммитится — его скачивают пользователи)
+/dist
+/desktop/build
+/windows-build.log

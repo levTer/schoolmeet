@@ -42,7 +42,7 @@ Repository Actions permissions must allow release creation. The first shared
 release appears only after a successful run on `main`.
 
 The website's three links intentionally remain same-origin `/eduflow.apk`,
-`/eduflow-windows.zip` (portable Windows `.exe`, see `windows-portable/README.md`),
+`/eduflow-setup.exe` (full Electron installer, see `docs/windows-installer.md`),
 `/eduflow.dmg`, with download attributes. The website serves
 the committed starter DMG; the workflow does **not** commit to `main` or silently
 change the deployed file. To refresh the website's DMG with a native CI build,

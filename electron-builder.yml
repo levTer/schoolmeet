@@ -1,0 +1,70 @@
+# Сборка полноценного Windows-инсталлятора EduFlow (Electron + NSIS).
+#
+# Приложение — это настоящий Electron: движок Chromium, отдельное окно,
+# нативное меню, авто-открытие https://schoolmeet-vb96.onrender.com.
+# Итог: public/eduflow-setup.exe (~80–100 МБ), установщик «как у Discord / VS Code».
+#
+# Команда: npm run build:windows
+appId: com.eduflow.desktop
+# Облегчаем дистрибутив Chromium перед упаковкой в NSIS.
+afterPack: desktop/after-pack.js
+productName: EduFlow
+copyright: Copyright © 2026 EduFlow
+
+directories:
+  app: desktop
+  buildResources: desktop/build
+  output: dist/electron
+
+# Внутрь приложения попадает только код Electron-оболочки — без Next.js-сервера.
+files:
+  - main.js
+  - preload.js
+  - offline.html
+  - assets/icon.png
+  # Внутрь установщика не должны попадать зависимости сайта: Electron-оболочке
+  # они не нужны, а корневой node_modules (Next.js, Prisma, sharp) раздувает
+  # установщик до ~200 МБ.
+  - "!**/node_modules/**/*"
+  - "!node_modules"
+
+extraMetadata:
+  main: main.js
+  name: eduflow-desktop
+
+# Максимальное сжатие: NSIS/LZMA ужимает Chromium почти вдвое.
+compression: maximum
+# Только русская и английская локали Chromium — каждая выброшенная экономит вес.
+electronLanguages:
+  - ru
+  - en-US
+asar: true
+removePackageScripts: true
+# Внутри приложения нет нативных модулей — пересборка не нужна.
+npmRebuild: false
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: desktop/build/icon.ico
+  executableName: EduFlow
+  # Иконка №9 и свойства файла встраиваются в EduFlow.exe на Windows-раннере.
+  # Платный сертификат подписи не нужен: SmartScreen покажет предупреждение.
+  artifactName: eduflow-setup.${ext}
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: EduFlow
+  installerIcon: desktop/build/icon.ico
+  uninstallerIcon: desktop/build/icon.ico
+  installerHeaderIcon: desktop/build/icon.ico
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
