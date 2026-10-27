@@ -32,6 +32,10 @@ extraMetadata:
 
 # Максимальное сжатие: NSIS/LZMA ужимает Chromium почти вдвое.
 compression: maximum
+# Только русская и английская локали Chromium — каждая выброшенная экономит вес.
+electronLanguages:
+  - ru
+  - en-US
 asar: true
 removePackageScripts: true
 # Внутри приложения нет нативных модулей — пересборка не нужна.
