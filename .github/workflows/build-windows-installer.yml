@@ -1,0 +1,79 @@
+name: Build Windows Installer
+
+# Собирает полноценный Electron-инсталлятор EduFlow (NSIS) и коммитит его в
+# public/eduflow-setup.exe. Нужен Windows-раннер: electron-builder встраивает
+# иконку и свойства файла в EduFlow.exe через rcedit (на Linux нужен Wine).
+#
+# Триггер — изменения в оболочке `desktop/**`, конфиге сборщика и скрипте сборки.
+# Файл public/eduflow-setup.exe в списке путей отсутствует, поэтому коммит с
+# готовым установщиком не запускает новый цикл сборки.
+
+on:
+  push:
+    branches: [main, "arena/**"]
+    paths:
+      - "desktop/**"
+      - "electron-builder.yml"
+      - "scripts/build-windows-installer.ts"
+      - "scripts/lib/ico.ts"
+      - "public/icon.svg"
+      - ".github/workflows/build-windows-installer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Electron installer
+        run: npm run build:windows
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $exe = Get-Item public/eduflow-setup.exe
+          $sizeMb = $exe.Length / 1MB
+          Write-Host ("eduflow-setup.exe: {0:N1} MB" -f $sizeMb)
+          if ($sizeMb -lt 60) { throw "Установщик меньше 60 МБ — это не полноценный Electron" }
+          $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)[0..1]
+          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw "Нет MZ-заголовка" }
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduFlow-Windows-Installer
+          path: public/eduflow-setup.exe
+          compression-level: 0
+          retention-days: 30
+
+      - name: Commit installer into public/
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/eduflow-setup.exe
+          if (git diff --cached --quiet) {
+            Write-Host "Установщик не изменился — коммит не нужен"
+          } else {
+            git commit -m "build(windows): полноценный установщик Electron public/eduflow-setup.exe"
+            git push origin "HEAD:${{ github.ref_name }}"
+          }

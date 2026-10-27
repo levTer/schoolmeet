@@ -1,0 +1,57 @@
+# Сборка полноценного Windows-инсталлятора EduFlow (Electron + NSIS).
+#
+# Приложение — это настоящий Electron: движок Chromium, отдельное окно,
+# нативное меню, авто-открытие https://schoolmeet-vb96.onrender.com.
+# Итог: public/eduflow-setup.exe (~80–100 МБ), установщик «как у Discord / VS Code».
+#
+# Команда: npm run build:windows
+appId: com.eduflow.desktop
+productName: EduFlow
+copyright: Copyright © 2026 EduFlow
+
+directories:
+  app: desktop
+  buildResources: desktop/build
+  output: dist/electron
+
+# Внутрь приложения попадает только код Electron-оболочки — без Next.js-сервера.
+files:
+  - main.js
+  - preload.js
+  - offline.html
+  - assets/icon.png
+
+extraMetadata:
+  main: main.js
+  name: eduflow-desktop
+
+# Максимальное сжатие: NSIS/LZMA ужимает Chromium почти вдвое.
+compression: maximum
+asar: true
+removePackageScripts: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: desktop/build/icon.ico
+  executableName: EduFlow
+  # Иконка №9 и свойства файла встраиваются в EduFlow.exe на Windows-раннере.
+  # Платный сертификат подписи не нужен: SmartScreen покажет предупреждение.
+  artifactName: eduflow-setup.${ext}
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: EduFlow
+  installerIcon: desktop/build/icon.ico
+  uninstallerIcon: desktop/build/icon.ico
+  installerHeaderIcon: desktop/build/icon.ico
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false

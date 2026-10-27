@@ -1,0 +1,10 @@
+{
+  "name": "eduflow-desktop",
+  "productName": "EduFlow",
+  "version": "1.0.0",
+  "description": "EduFlow — десктопное приложение для онлайн-уроков, ДЗ и обучения с ИИ",
+  "author": "EduFlow",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js"
+}
