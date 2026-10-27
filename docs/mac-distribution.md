@@ -42,7 +42,8 @@ Repository Actions permissions must allow release creation. The first shared
 release appears only after a successful run on `main`.
 
 The website's three links intentionally remain same-origin `/eduflow.apk`,
-`/eduflow.msix`, `/eduflow.dmg`, with download attributes. The website serves
+`/eduflow-windows.zip` (portable Windows `.exe`, see `windows-portable/README.md`),
+`/eduflow.dmg`, with download attributes. The website serves
 the committed starter DMG; the workflow does **not** commit to `main` or silently
 change the deployed file. To refresh the website's DMG with a native CI build,
 download its artifact/release asset and replace `public/eduflow.dmg` in a PR.

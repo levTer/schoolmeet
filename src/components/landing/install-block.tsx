@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Check, Download, Plus, Share, X } from "lucide-react";
 
 import { Modal } from "@/components/ui/modal";
+import { WINDOWS_SMARTSCREEN_NOTE } from "@/lib/install-copy";
 
 /**
  * Кнопка-плитка установщика в дизайне №9: тёмно-сланцевый фон `#0F172A`,
@@ -30,13 +31,16 @@ const tileShine =
  *
  * Три нативных пути установки (все три кнопки видны всегда, без авто-детекции ОС):
  *  1. Android — прямая ссылка на `public/eduflow.apk` с атрибутом `download`;
- *  2. Windows 10/11 — прямая ссылка на `public/eduflow.msix` с атрибутом `download`;
+ *  2. Windows 10/11 — портативная версия `public/eduflow-windows.zip` (внутри
+ *     `eduflow-portable.exe`) с атрибутом `download`. MSIX не используется:
+ *     неподписанный пакет Windows блокирует с ошибкой 0x800B010A;
  *  3. Mac — прямая ссылка на `public/eduflow.dmg`; отдельная инструкция для браузера:
  *     «Поделиться» / «Установить» → «На экран "Домой"» или «Добавить в Dock».
  *
  * Все три файла лежат в `public/`, поэтому ссылки относительные: атрибут `download`
  * работает только для того же origin. Service Worker (`public/sw.js`) не
- * перехватывает `.apk`, `.msix` и `.dmg` — файлы скачиваются как бинарные данные.
+ * перехватывает `.apk`, `.zip`, `.exe` и `.dmg` — файлы скачиваются как бинарные
+ * данные и не подменяются закэшированным HTML.
  */
 export function InstallBlock() {
   const [isAppleHelpOpen, setIsAppleHelpOpen] = useState(false);
@@ -73,14 +77,14 @@ export function InstallBlock() {
           </a>
 
           <a
-            href="/eduflow.msix"
-            download="EduFlow.msix"
+            href="/eduflow-windows.zip"
+            download="EduFlow-windows.zip"
             className={installerTile}
-            aria-label="Скачать установщик для Windows (MSIX)"
+            aria-label="Скачать портативную версию для Windows (.exe в ZIP-архиве)"
           >
             <span aria-hidden className={tileShine} />
             <span className="relative text-sm font-semibold leading-snug text-white">
-              💻 Скачать для Windows (.msix)
+              💻 Скачать для Windows (.exe / portable)
             </span>
             <Download aria-hidden className={goldIcon} strokeWidth={2} />
           </a>
@@ -99,11 +103,27 @@ export function InstallBlock() {
           </a>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-slate-400">
+          Windows: неподписанный .exe → SmartScreen «Подробнее → Выполнить в любом случае».
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-slate-400">
           DMG для Mac: неподписанный веб-лаунчер, открывает EduFlow в браузере.
         </p>
-        <button type="button" onClick={() => setIsAppleHelpOpen(true)} className="mt-3 text-xs text-slate-400 underline hover:text-white">
-          Установка через браузер на Mac / iPhone
-        </button>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <button
+            type="button"
+            onClick={() => setIsAppleHelpOpen(true)}
+            className="text-xs text-slate-400 underline hover:text-white"
+          >
+            Установка через браузер на Mac / iPhone
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsAppleHelpOpen(true)}
+            className="text-xs text-amber-300/90 underline decoration-amber-400/40 underline-offset-2 hover:text-amber-200"
+          >
+            Инструкция для Windows (.exe)
+          </button>
+        </div>
 
         <p className="mt-4 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-center text-xs leading-relaxed text-slate-500">
           <Image
@@ -114,7 +134,7 @@ export function InstallBlock() {
             unoptimized
             className="inline-block h-4 w-4 align-[-2px]"
           />
-          <span>APK для Android · MSIX для Windows 10/11 · DMG для Mac</span>
+          <span>APK для Android · Portable (.exe) для Windows 10/11 · DMG для Mac</span>
         </p>
       </div>
 
@@ -136,25 +156,41 @@ export function InstallBlock() {
           </button>
 
           <div className="flex items-center gap-3 pr-10">
-            <span
-              aria-hidden
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] border border-white/10 bg-amber-500/10 text-2xl ring-1 ring-inset ring-amber-400/20"
-            >
-              🍏
-            </span>
+            <Image
+              src="/icon.svg"
+              alt=""
+              width={48}
+              height={48}
+              unoptimized
+              className="h-12 w-12 shrink-0 rounded-[14px] ring-1 ring-inset ring-amber-400/20"
+            />
             <div>
               <h2 id="install-help-title" className="text-lg font-semibold text-white">
-                Установить на Mac / iPhone
+                Как установить EduFlow
               </h2>
-              <p className="text-xs text-amber-300">
-                Через Safari / Chrome — «Поделиться» или «Установить»
-              </p>
+              <p className="text-xs text-amber-300">Windows (.exe), Mac и iPhone</p>
             </div>
           </div>
 
+          <div className="mt-5 rounded-2xl border border-amber-400/25 bg-amber-500/10 p-4">
+            <p className="text-xs font-semibold uppercase tracking-widest text-amber-300">
+              💻 Windows — портативный .exe
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-200">
+              {WINDOWS_SMARTSCREEN_NOTE}
+            </p>
+            <a
+              href="/eduflow-windows.zip"
+              download="EduFlow-windows.zip"
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-bold text-slate-950 transition hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
+            >
+              Скачать eduflow-windows.zip
+            </a>
+          </div>
+
           <p id="install-help-description" className="mt-5 text-sm leading-relaxed text-slate-300">
-            Откройте EduFlow в Safari (iPhone, iPad, Mac) или Chrome — установка веб-приложения
-            выполняется через меню «Поделиться» или «Установить».
+            Mac / iPhone: откройте EduFlow в Safari (iPhone, iPad, Mac) или Chrome — установка
+            веб-приложения выполняется через меню «Поделиться» или «Установить».
           </p>
 
           <ol className="mt-4 space-y-3">
