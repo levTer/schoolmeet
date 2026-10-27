@@ -61,8 +61,16 @@ module.exports = async function afterPack(context) {
     rmSync(target, { recursive: true, force: true });
   }
 
+  // Крупнейшие файлы дистрибутива — по этому отчёту видно, что ещё можно ужать.
+  const largest = readdirSync(appOutDir)
+    .map((name) => ({ name, size: sizeOf(path.join(appOutDir, name)) }))
+    .sort((left, right) => right.size - left.size)
+    .slice(0, 8)
+    .map((entry) => `${entry.name}=${(entry.size / (1024 * 1024)).toFixed(1)}MB`)
+    .join(", ");
+
   console.log(
     `[afterPack] удалено ${(removedBytes / (1024 * 1024)).toFixed(1)} МБ лишних файлов Chromium; ` +
-      `размер дистрибутива ${(sizeOf(appOutDir) / (1024 * 1024)).toFixed(1)} МБ`,
+      `размер дистрибутива ${(sizeOf(appOutDir) / (1024 * 1024)).toFixed(1)} МБ; крупнейшее: ${largest}`,
   );
 };
