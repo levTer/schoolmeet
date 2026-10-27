@@ -7,6 +7,7 @@ import { ArrowLeft, Check, Download, Plus, Share, X } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { WINDOWS_SMARTSCREEN_NOTE } from "@/lib/install-copy";
 import { cn } from "@/lib/utils";
+import { useIsApp } from "@/hooks/useIsApp";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
 
 /*
@@ -44,6 +45,7 @@ type _BeforeInstallPromptEvent = Event & {
  * варианта — Android (APK), Windows (Electron-установщик .exe) и Mac (DMG).
  */
 export function PwaInstallButton({ className }: { className?: string }) {
+  const isApp = useIsApp();
   const { isInstalled, isPrompting, triggerPrompt } = usePwaInstall();
   const [isModalOpen, setIsModalOpen] = useState(false);
   // false — список из всех 3 вариантов, true — пошаговая подсказка 🍏.
@@ -68,7 +70,7 @@ export function PwaInstallButton({ className }: { className?: string }) {
     }
   };
 
-  if (isInstalled) return null;
+  if (isApp || isInstalled) return null;
 
   return (
     <>

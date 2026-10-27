@@ -1335,3 +1335,70 @@ describe("macOS DMG download", () => {
     assert.equal(serviceWorkerIntercepts(sw, "/dashboard"), true);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Десктопный интерфейс Windows: без верхнего меню и кнопок установки в окне  */
+/* -------------------------------------------------------------------------- */
+
+describe("десктопный интерфейс Windows без верхнего меню Electron и кнопок установки", () => {
+  const main = readSource("desktop/main.js");
+  const isAppHook = readSource("src/hooks/useIsApp.ts");
+  const installBlock = readSource("src/components/landing/install-block.tsx");
+  const pwaButton = readSource("src/components/pwa-install-button.tsx");
+
+  it("desktop/main.js полностью вырезает верхнее меню Electron и ставит метку EduFlowDesktop/1.0.0", () => {
+    const menuNullMatches = main.match(/Menu\.setApplicationMenu\(null\);/g) ?? [];
+    assert.ok(
+      menuNullMatches.length >= 2,
+      "Menu.setApplicationMenu(null) должен вызываться и перед созданием окна, и в app.whenReady",
+    );
+    assert.doesNotMatch(main, /Menu\.buildFromTemplate|function buildMenu/, "остался шаблон верхнего меню");
+    assert.doesNotMatch(main, /autoHideMenuBar:\s*false/, "autoHideMenuBar снова выключен");
+    assert.doesNotMatch(main, /setMenuBarVisibility\(true\)/, "полоса меню снова принудительно включена");
+
+    assert.match(main, /autoHideMenuBar:\s*true/, "в new BrowserWindow нет autoHideMenuBar: true");
+    assert.match(main, /menuBarVisible:\s*false/, "в new BrowserWindow нет menuBarVisible: false");
+    assert.match(
+      main,
+      /webContents\.setUserAgent\(webContents\.getUserAgent\(\)\s*\+\s*["'] EduFlowDesktop\/1\.0\.0["']\)/,
+      "нет метки EduFlowDesktop/1.0.0 в User-Agent окна",
+    );
+    assert.doesNotMatch(
+      main,
+      /const window = createMainWindow\(\);\s*window\.webContents\.setUserAgent\(BROWSER_USER_AGENT\)/,
+      "User-Agent перезатирается после createMainWindow и теряет метку EduFlowDesktop/1.0.0",
+    );
+  });
+
+  it("хук useIsApp определяет Electron (EduFlowDesktop) и standalone PWA без поломки гидрации", () => {
+    assert.match(isAppHook, /"use client";/, "хук должен быть клиентским модулем");
+    assert.match(isAppHook, /useState\(false\)/, "первый рендер должен возвращать false для SSR-гидрации");
+    assert.match(
+      isAppHook,
+      /navigator\.userAgent\.includes\(["']EduFlowDesktop["']\)/,
+      "useIsApp не проверяет метку EduFlowDesktop в navigator.userAgent",
+    );
+    assert.match(
+      isAppHook,
+      /window\.matchMedia\(["']\(display-mode: standalone\)["']\)\.matches/,
+      "useIsApp не проверяет display-mode: standalone",
+    );
+  });
+
+  it("оба блока установки скрываются внутри приложения (useIsApp)", () => {
+    for (const [name, source] of [
+      ["install-block.tsx", installBlock],
+      ["pwa-install-button.tsx", pwaButton],
+    ] as const) {
+      assert.match(source, /import \{ useIsApp \} from "@\/hooks\/useIsApp"/, `${name}: не подключён useIsApp`);
+      assert.match(source, /const isApp = useIsApp\(\);/, `${name}: не вызывается useIsApp()`);
+    }
+    assert.match(installBlock, /if \(isApp\) return null;/, "InstallBlock не скрывается внутри приложения");
+    assert.match(
+      pwaButton,
+      /if \(isApp \|\| isInstalled\) return null;|if \(isInstalled \|\| isApp\) return null;/,
+      "PwaInstallButton не скрывается внутри приложения",
+    );
+  });
+});
+

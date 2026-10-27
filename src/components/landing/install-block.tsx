@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Check, Download, Plus, Share, X } from "lucide-react";
 
 import { Modal } from "@/components/ui/modal";
+import { useIsApp } from "@/hooks/useIsApp";
 import { WINDOWS_SMARTSCREEN_NOTE } from "@/lib/install-copy";
 
 /**
@@ -43,8 +44,11 @@ const tileShine =
  * пользователь получил бы страницу сайта с расширением .exe).
  */
 export function InstallBlock() {
+  const isApp = useIsApp();
   const [isAppleHelpOpen, setIsAppleHelpOpen] = useState(false);
   const [isInstallerHelpOpen, setIsInstallerHelpOpen] = useState(false);
+
+  if (isApp) return null;
 
   return (
     <div className="animate-fade-up mx-auto mt-9 flex w-full max-w-2xl flex-col items-center gap-3 [animation-delay:200ms]">
