@@ -1,0 +1,75 @@
+name: Build macOS DMG
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/create-mac-dmg.py
+      - public/eduflow.dmg
+      - public/icon-512.png
+      - .github/workflows/build-mac-dmg.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-dmg-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify committed starter image on macOS
+        run: |
+          hdiutil verify public/eduflow.dmg
+          mountpoint="$RUNNER_TEMP/eduflow-starter"
+          mkdir -p "$mountpoint"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mountpoint" public/eduflow.dmg
+          trap 'hdiutil detach "$mountpoint"' EXIT
+          plutil -lint "$mountpoint/EduFlow.app/Contents/Info.plist"
+          test -x "$mountpoint/EduFlow.app/Contents/MacOS/EduFlow"
+          test -s "$mountpoint/EduFlow.app/Contents/Resources/EduFlow.icns"
+          grep -F 'https://schoolmeet-vb96.onrender.com' "$mountpoint/EduFlow.app/Contents/MacOS/EduFlow"
+      - name: Build HFS+ UDZO and verify mounted bundle
+        run: |
+          python3 scripts/create-mac-dmg.py --output artifacts/eduflow.dmg
+          shasum -a 256 artifacts/eduflow.dmg > artifacts/eduflow.dmg.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EduFlow-macOS-${{ github.sha }}
+          path: artifacts/eduflow.dmg*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: EduFlow-macOS-${{ github.sha }}
+          path: artifacts
+      - name: Publish shared download in GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view macos-latest; then
+            gh release create macos-latest --target "$GITHUB_SHA" \
+              --title "EduFlow for macOS" \
+              --notes "Unsigned browser launcher for https://schoolmeet-vb96.onrender.com. Not a native/offline client or an Apple-notarized application."
+          fi
+          gh release upload macos-latest artifacts/eduflow.dmg artifacts/eduflow.dmg.sha256 --clobber

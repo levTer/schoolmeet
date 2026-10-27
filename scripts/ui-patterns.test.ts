@@ -1112,10 +1112,36 @@ describe("macOS DMG download", () => {
     assert.equal(blkx.readUInt32BE(244), 0xffffffff);
     const raw = inflateSync(dmg.subarray(0, xmlOffset));
     assert.equal(raw.length, Number(trailer.readBigUInt64BE(492)) * 512);
-    assert.equal(raw.toString("ascii", 32769, 32774), "CD001");
+    assert.equal(raw.toString("ascii", 1024, 1026), "H+", "must contain HFS+, not ISO9660");
+    assert.equal(raw.readUInt16BE(1026), 4, "HFS+ volume version");
+    assert.equal(raw.toString("ascii", raw.length - 1024, raw.length - 1022), "H+", "backup volume header");
     assert.ok(raw.includes(Buffer.from("CFBundleExecutable")));
-    assert.ok(raw.includes(Buffer.from("#!/bin/sh")));
+    assert.ok(raw.includes(Buffer.from('#!/bin/sh\nexec /usr/bin/open "https://schoolmeet-vb96.onrender.com"\n')));
+    assert.ok(raw.includes(Buffer.from("CFBundleIconFile")));
+    assert.ok(raw.includes(Buffer.from("EduFlow.icns")));
+    const iconAt = raw.indexOf(Buffer.from("icns"));
+    assert.ok(iconAt >= 0, "missing ICNS icon");
+    assert.equal(raw.toString("ascii", iconAt + 8, iconAt + 12), "ic09");
+    assert.ok(raw.includes(readFileSync(join(REPO_ROOT, "public/icon-512.png"))));
+    assert.ok(raw.includes(Buffer.from("EduFlow.app", "utf16le").swap16()), "missing HFS+ bundle catalog entry");
+    assert.ok(!raw.includes(Buffer.from("display dialog")), "must open the site without asking for a URL");
     assert.ok(raw.includes(Buffer.from("NOT a native")), "payload must disclose launcher limitations");
+  });
+
+  it("macOS CI builds and verifies HFS+/UDZO and publishes only main pushes", () => {
+    const workflow = readSource(".github/workflows/build-mac-dmg.yml");
+    const generator = readSource("scripts/create-mac-dmg.py");
+    assert.match(workflow, /push:\s*branches: \[main\]/);
+    assert.match(workflow, /runs-on: macos-latest/);
+    assert.match(workflow, /hdiutil verify public\/eduflow\.dmg/);
+    assert.match(workflow, /hdiutil attach -readonly/);
+    assert.match(workflow, /actions\/upload-artifact@v4/);
+    assert.match(workflow, /github.event_name == 'push' && github.ref == 'refs\/heads\/main'/);
+    assert.match(workflow, /gh release upload macos-latest/);
+    assert.match(generator, /'-fs', 'HFS\+'/);
+    assert.match(generator, /'-format', 'UDZO'/);
+    assert.match(generator, /run\('hdiutil', 'verify'/);
+    assert.doesNotMatch(workflow, /npm run build|prisma generate|pull_request_target/);
   });
 
   it("SW bypasses DMG downloads online and offline, including uppercase extensions and queries", () => {

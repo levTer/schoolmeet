@@ -231,7 +231,7 @@ export function PwaInstallButton({ className }: { className?: string }) {
 
           {!showAppleHelp && (
             <p className="mt-4 text-center text-xs leading-5 text-slate-500">
-              APK для Android · MSIX для Windows 10/11 · DMG для Mac (неподписанный веб-лаунчер, запрашивает адрес EduFlow)
+              APK для Android · MSIX для Windows 10/11 · DMG для Mac (неподписанный веб-лаунчер, открывает EduFlow в браузере)
             </p>
           )}
         </div>

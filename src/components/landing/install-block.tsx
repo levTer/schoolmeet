@@ -99,7 +99,7 @@ export function InstallBlock() {
           </a>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-slate-400">
-          DMG для Mac: неподписанный веб-лаунчер, запрашивает адрес вашего EduFlow.
+          DMG для Mac: неподписанный веб-лаунчер, открывает EduFlow в браузере.
         </p>
         <button type="button" onClick={() => setIsAppleHelpOpen(true)} className="mt-3 text-xs text-slate-400 underline hover:text-white">
           Установка через браузер на Mac / iPhone
