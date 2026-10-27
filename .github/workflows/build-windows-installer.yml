@@ -45,7 +45,10 @@ jobs:
         run: npm ci
 
       - name: Build Electron installer
-        run: npm run build:windows
+        shell: pwsh
+        run: |
+          npm run build:windows 2>&1 | Tee-Object -FilePath windows-build.log
+          if ($LASTEXITCODE -ne 0) { throw "Сборка установщика завершилась с кодом $LASTEXITCODE" }
 
       - name: Verify installer
         shell: pwsh
@@ -64,6 +67,18 @@ jobs:
           path: public/eduflow-setup.exe
           compression-level: 0
           retention-days: 30
+
+      - name: Publish build log on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if (Test-Path windows-build.log) {
+            git add -f windows-build.log
+            git commit -m "ci(windows): лог сборки установщика [skip ci]"
+            git push origin "HEAD:${{ github.ref_name }}"
+          }
 
       - name: Commit installer into public/
         shell: pwsh

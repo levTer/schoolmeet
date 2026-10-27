@@ -58,14 +58,16 @@ async function renderIcons(): Promise<void> {
 }
 
 function runElectronBuilder(): void {
-  const builderBin = path.join(ROOT, "node_modules", ".bin", "electron-builder");
-  if (!existsSync(builderBin)) {
+  // Запускаем CLI через сам Node: на Windows `node_modules/.bin/electron-builder`
+  // — это shell-скрипт без расширения, execFile его не запустит.
+  const builderCli = path.join(ROOT, "node_modules", "electron-builder", "out", "cli", "cli.js");
+  if (!existsSync(builderCli)) {
     throw new Error("electron-builder не установлен — выполните: npm install");
   }
 
   execFileSync(
-    builderBin,
-    ["--win", "nsis", "--x64", "--config", "electron-builder.yml", "--publish", "never"],
+    process.execPath,
+    [builderCli, "--win", "nsis", "--x64", "--config", "electron-builder.yml", "--publish", "never"],
     {
       cwd: ROOT,
       stdio: "inherit",
