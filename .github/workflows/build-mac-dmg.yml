@@ -33,7 +33,12 @@ concurrency:
 
 jobs:
   build-dmg:
-    runs-on: macos-latest
+    # Осознанно macos-15, а не macos-latest: latest указывает на только что
+    # вышедший macOS 26, чьи бесплатные arm64-раннеры осенью 2026 стоят
+    # в очереди дольше 15 минут и отменяются GitHub'ом («capacity
+    # constraints», первый запуск PR #57 не получил раннер вовсе).
+    # Собранному DMG версия раннера безразлична — минимум macOS задаёт Electron.
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
