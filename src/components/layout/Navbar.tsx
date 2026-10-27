@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -22,6 +22,11 @@ import { ClassSwitcher } from "@/components/layout/ClassSwitcher";
 import { AppearanceSettingsMenu } from "@/components/theme/AppearanceSettingsMenu";
 import { ROLE_LABELS, type Role } from "@/types";
 import { cn, getInitials } from "@/lib/utils";
+import { getThemeOption } from "@/lib/theme";
+import { useTheme } from "@/components/theme/theme-provider";
+
+const NO_DRAG_STYLE = { WebkitAppRegion: "no-drag" } as unknown as CSSProperties;
+const DRAG_STYLE = { WebkitAppRegion: "drag" } as unknown as CSSProperties;
 
 interface NavItem {
   href: string;
@@ -58,6 +63,8 @@ const ROLE_BADGES: Record<Role, string> = {
  */
 export function Navbar({ user }: { user: Session["user"] | null }) {
   const pathname = usePathname();
+  const { theme } = useTheme();
+  const [isDesktop, setIsDesktop] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileProfileOpen, setIsMobileProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -72,6 +79,19 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
     if (item.href === "/admin") return role === "ADMIN";
     return role !== null && item.roles.includes(role);
   });
+
+  const currentTheme = getThemeOption(theme);
+
+  useEffect(() => {
+    setIsDesktop(Boolean(window.eduflowDesktop?.isDesktop));
+  }, []);
+
+  useEffect(() => {
+    window.eduflowDesktop?.setTheme?.({
+      backgroundColor: currentTheme.background,
+      symbolColor: currentTheme.accent,
+    });
+  }, [currentTheme.accent, currentTheme.background]);
 
   /* Закрываем меню при переходе на другую страницу. */
   useEffect(() => {
@@ -125,20 +145,27 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
   };
 
   return (
-    <header className="sticky top-0 z-50 border-b border-white/10 bg-ink-950/75 backdrop-blur-2xl">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-8 md:h-16">
-        <div className="flex items-center gap-6">
+    <header
+      className="sticky top-0 z-50 border-b border-white/10 bg-ink-950/75 backdrop-blur-2xl"
+      style={DRAG_STYLE}
+    >
+      <div
+        className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-8 md:h-16"
+        style={isDesktop ? { paddingRight: "env(titlebar-area-width, 140px)" } : undefined}
+      >
+        <div className="flex items-center gap-6" style={NO_DRAG_STYLE}>
           <Logo size="sm" schoolName={schoolName} />
         </div>
 
         {/* Навигация (десктоп) */}
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-1 md:flex" style={NO_DRAG_STYLE}>
           {visibleItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
 
             return (
               <Link
+                style={NO_DRAG_STYLE}
                 key={item.href}
                 href={item.href}
                 className={cn(
@@ -156,25 +183,27 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
         </nav>
 
         {/* Установка PWA доступна гостям и всем ролям; в standalone скрыта. */}
-        <PwaInstallButton className="ml-auto md:ml-0" />
+        <div style={NO_DRAG_STYLE}><PwaInstallButton className="ml-auto md:ml-0" /></div>
 
         {/* Настройки внешнего вида и профиль (десктоп) */}
-        <div className="hidden items-center gap-3 md:flex">
+        <div className="hidden items-center gap-3 md:flex" style={NO_DRAG_STYLE}>
           {!isAuthenticated && (
             <>
               <Link
+                style={NO_DRAG_STYLE}
                 href="/login"
                 className="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition hover:text-white"
               >
                 Войти
               </Link>
               <Link
+                style={NO_DRAG_STYLE}
                 href="/auth/register"
                 className="rounded-full bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.03]"
               >
                 Регистрация
               </Link>
-              <AppearanceSettingsMenu />
+              <span style={NO_DRAG_STYLE}><AppearanceSettingsMenu /></span>
             </>
           )}
 
@@ -185,6 +214,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
 
               <div ref={profileRef} className="relative">
                 <button
+                  style={NO_DRAG_STYLE}
                   type="button"
                   onClick={() => setIsProfileOpen((open) => !open)}
                   aria-expanded={isProfileOpen}
@@ -231,6 +261,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                     <div className="p-1.5">
                       {visibleItems.map((item) => (
                         <Link
+                          style={NO_DRAG_STYLE}
                           key={item.href}
                           href={item.href}
                           role="menuitem"
@@ -242,6 +273,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                       ))}
 
                       <button
+                        style={NO_DRAG_STYLE}
                         type="button"
                         role="menuitem"
                         onClick={handleSignOut}
@@ -255,9 +287,10 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                 )}
               </div>
 
-              <AppearanceSettingsMenu />
+              <span style={NO_DRAG_STYLE}><AppearanceSettingsMenu /></span>
 
               <button
+                style={NO_DRAG_STYLE}
                 type="button"
                 onClick={handleSignOut}
                 className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-2 text-sm font-medium text-slate-300 transition hover:border-rose-400/30 hover:bg-rose-500/10 hover:text-rose-200"
@@ -270,10 +303,11 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
         </div>
 
         {/* Компактная мобильная шапка: логотип, профиль и настройки. */}
-        <div className="flex items-center gap-2 md:hidden">
+        <div className="flex items-center gap-2 md:hidden" style={NO_DRAG_STYLE}>
           {isAuthenticated && user && role ? (
             <div ref={mobileProfileRef} className="relative">
               <button
+                style={NO_DRAG_STYLE}
                 type="button"
                 onClick={() => setIsMobileProfileOpen((open) => !open)}
                 aria-label="Открыть профиль"
@@ -309,6 +343,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                       </div>
                     )}
                     <Link
+                      style={NO_DRAG_STYLE}
                       href="/dashboard#profile"
                       role="menuitem"
                       onClick={() => setIsMobileProfileOpen(false)}
@@ -318,6 +353,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                       Профиль
                     </Link>
                     <button
+                      style={NO_DRAG_STYLE}
                       type="button"
                       role="menuitem"
                       onClick={handleSignOut}
@@ -332,13 +368,14 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
             </div>
           ) : (
             <Link
+              style={NO_DRAG_STYLE}
               href="/login"
               className="inline-flex min-h-10 items-center rounded-xl px-3 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
             >
               Войти
             </Link>
           )}
-          <AppearanceSettingsMenu />
+          <span style={NO_DRAG_STYLE}><AppearanceSettingsMenu /></span>
         </div>
       </div>
     </header>
