@@ -44,7 +44,7 @@ const tileShine =
  */
 export function InstallBlock() {
   const [isAppleHelpOpen, setIsAppleHelpOpen] = useState(false);
-  const [isWindowsHelpOpen, setIsWindowsHelpOpen] = useState(false);
+  const [isInstallerHelpOpen, setIsInstallerHelpOpen] = useState(false);
 
   return (
     <div className="animate-fade-up mx-auto mt-9 flex w-full max-w-2xl flex-col items-center gap-3 [animation-delay:200ms]">
@@ -120,7 +120,7 @@ export function InstallBlock() {
           </button>
           <button
             type="button"
-            onClick={() => setIsWindowsHelpOpen(true)}
+            onClick={() => setIsInstallerHelpOpen(true)}
             className="text-xs text-amber-300/90 underline decoration-amber-400/40 underline-offset-2 hover:text-amber-200"
           >
             Инструкция для Windows (.exe)
@@ -232,8 +232,8 @@ export function InstallBlock() {
       </Modal>
 
       <Modal
-        open={isWindowsHelpOpen}
-        onClose={() => setIsWindowsHelpOpen(false)}
+        open={isInstallerHelpOpen}
+        onClose={() => setIsInstallerHelpOpen(false)}
         labelledBy="windows-install-title"
         describedBy="windows-install-description"
         className="border-white/10 bg-[#0F172A] shadow-[0_24px_90px_rgba(2,6,23,0.75)] sm:max-w-md"
@@ -241,7 +241,7 @@ export function InstallBlock() {
         <div className="relative p-6 sm:p-7">
           <button
             type="button"
-            onClick={() => setIsWindowsHelpOpen(false)}
+            onClick={() => setIsInstallerHelpOpen(false)}
             className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/5 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
             aria-label="Закрыть инструкцию"
           >
@@ -309,7 +309,7 @@ export function InstallBlock() {
 
           <button
             type="button"
-            onClick={() => setIsWindowsHelpOpen(false)}
+            onClick={() => setIsInstallerHelpOpen(false)}
             className="mt-3 w-full rounded-xl border border-white/15 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-white/30 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
           >
             Понятно

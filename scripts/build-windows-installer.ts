@@ -15,11 +15,15 @@
  * Команда: npm run build:windows
  */
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { renderIco } from "./lib/ico";
+
+/** Имя файла приложения внутри установщика. */
+const APP_FILES = ["main.js", "preload.js", "offline.html", "package.json"];
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DESKTOP_DIR = path.join(ROOT, "desktop");
@@ -30,6 +34,15 @@ const ICON_PNG = path.join(BUILD_DIR, "icon.png");
 const ASSETS_DIR = path.join(DESKTOP_DIR, "assets");
 const WINDOW_ICON = path.join(ASSETS_DIR, "icon.png");
 const OUTPUT_DIR = path.join(ROOT, "dist/electron");
+/**
+ * Промежуточный каталог Electron-оболочки вне репозитория.
+ *
+ * electron-builder собирает production-зависимости, поднимаясь по дереву каталогов:
+ * если приложение лежит внутри репозитория, в установщик попадёт корневой
+ * `node_modules` (Next.js, Prisma, sharp…) и файл раздуется до ~200 МБ.
+ * Сборка из временного каталога оставляет внутри только оболочку EduFlow (~85 МБ).
+ */
+const STAGING_DIR = path.join(os.tmpdir(), "eduflow-desktop-app");
 const BUILT_EXE = path.join(OUTPUT_DIR, "eduflow-setup.exe");
 const PUBLIC_EXE = path.join(ROOT, "public/eduflow-setup.exe");
 
@@ -57,6 +70,19 @@ async function renderIcons(): Promise<void> {
   );
 }
 
+/** Копирует оболочку приложения в чистый временный каталог. */
+function stageDesktopApp(): string {
+  rmSync(STAGING_DIR, { recursive: true, force: true });
+  mkdirSync(path.join(STAGING_DIR, "assets"), { recursive: true });
+
+  for (const file of APP_FILES) {
+    copyFileSync(path.join(DESKTOP_DIR, file), path.join(STAGING_DIR, file));
+  }
+  copyFileSync(path.join(ASSETS_DIR, "icon.png"), path.join(STAGING_DIR, "assets", "icon.png"));
+
+  return STAGING_DIR;
+}
+
 function runElectronBuilder(): void {
   // Запускаем CLI через сам Node: на Windows `node_modules/.bin/electron-builder`
   // — это shell-скрипт без расширения, execFile его не запустит.
@@ -65,9 +91,21 @@ function runElectronBuilder(): void {
     throw new Error("electron-builder не установлен — выполните: npm install");
   }
 
+  const appDir = stageDesktopApp().replace(/\\/g, "/");
+
   execFileSync(
     process.execPath,
-    [builderCli, "--win", "nsis", "--x64", "--config", "electron-builder.yml", "--publish", "never"],
+    [
+      builderCli,
+      "--win",
+      "nsis",
+      "--x64",
+      "--config",
+      "electron-builder.yml",
+      "--publish",
+      "never",
+      `-c.directories.app=${appDir}`,
+    ],
     {
       cwd: ROOT,
       stdio: "inherit",
@@ -110,6 +148,7 @@ function verifyInstaller(exe: Buffer): void {
 
 async function main(): Promise<void> {
   await renderIcons();
+  rmSync(OUTPUT_DIR, { recursive: true, force: true });
   runElectronBuilder();
 
   if (!existsSync(BUILT_EXE)) {

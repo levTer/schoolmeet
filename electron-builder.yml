@@ -29,6 +29,8 @@ extraMetadata:
 compression: maximum
 asar: true
 removePackageScripts: true
+# Внутри приложения нет нативных модулей — пересборка не нужна.
+npmRebuild: false
 
 win:
   target:

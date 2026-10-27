@@ -836,16 +836,16 @@ describe("дистрибуция установщиков: APK, Electron-уст�
   it("ссылки ведут строго на локальные /eduflow.apk и /eduflow-setup.exe с атрибутом download", () => {
     assert.match(
       installBlock,
-      /href="/eduflow\.apk"[\s\S]{0,120}?download="EduFlow\.apk"/,
+      /href="\/eduflow\.apk"[\s\S]{0,120}?download="EduFlow\.apk"/,
       'кнопка Android должна скачивать /eduflow.apk с download="EduFlow.apk"',
     );
     assert.match(
       installBlock,
-      /href="/eduflow-setup\.exe"[\s\S]{0,120}?download="EduFlow-Setup\.exe"/,
+      /href="\/eduflow-setup\.exe"[\s\S]{0,120}?download="EduFlow-Setup\.exe"/,
       'кнопка Windows должна скачивать /eduflow-setup.exe с download="EduFlow-Setup.exe"',
     );
     assert.doesNotMatch(installBlock, /eduflow-windows\.zip/, "осталась ссылка на ZIP-архив");
-    assert.doesNotMatch(installBlock, /href="/eduflow\.msix"/, "прямая ссылка на MSIX снова появилась");
+    assert.doesNotMatch(installBlock, /href="\/eduflow\.msix"/, "прямая ссылка на MSIX снова появилась");
     assert.doesNotMatch(installBlock, /href="https?:[^"]*eduflow-setup\.exe"/, "ссылка должна быть локальной");
   });
 
