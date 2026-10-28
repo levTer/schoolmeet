@@ -19,6 +19,13 @@ interface AppearanceSettingsMenuProps {
   className?: string;
 }
 
+/**
+ * Меню «Внешний вид»: пять тем дизайн-системы и размер текста.
+ *
+ * Каждая тема меняет акцент и цвет системной полосы (Android status bar,
+ * Electron title bar). Выбор сохраняется в localStorage и применяется до
+ * первой отрисовки bootstrap-скриптом из layout.tsx.
+ */
 export function AppearanceSettingsMenu({ className }: AppearanceSettingsMenuProps) {
   const { theme, textSize, setTextSize } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
@@ -62,13 +69,13 @@ export function AppearanceSettingsMenu({ className }: AppearanceSettingsMenuProp
         aria-controls={menuId}
         onClick={() => setIsOpen((open) => !open)}
         className={cn(
-          "inline-flex h-10 w-10 items-center justify-center rounded-xl border transition",
+          "inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors",
           isOpen
-            ? "border-brand-400/50 bg-brand-500/15 text-white"
-            : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-brand-400/40 hover:bg-brand-500/10 hover:text-white",
+            ? "border-white/20 bg-white/[0.08] text-white"
+            : "border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] hover:text-white",
         )}
       >
-        <Settings2 aria-hidden="true" className="h-5 w-5" />
+        <Settings2 aria-hidden="true" className="h-4 w-4" />
       </button>
 
       {isOpen ? (
@@ -76,44 +83,40 @@ export function AppearanceSettingsMenu({ className }: AppearanceSettingsMenuProp
           id={menuId}
           role="dialog"
           aria-label="Настройки внешнего вида"
-          className="absolute right-0 top-full z-[70] mt-2 w-80 max-w-[calc(100vw_-_2rem)] overflow-hidden rounded-2xl border border-white/10 bg-ink-950/95 text-left shadow-glow backdrop-blur-2xl"
+          className="animate-fade-up absolute right-0 top-full z-[70] mt-2 w-[19rem] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 bg-surface text-left shadow-xl"
         >
-          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <div className="flex items-center justify-between border-b border-white/10 px-3.5 py-2.5">
             <div>
-              <p className="text-sm font-semibold text-white">Настройки</p>
-              <p className="mt-0.5 text-xs text-slate-400">Внешний вид приложения</p>
+              <p className="text-sm font-semibold text-white">Внешний вид</p>
+              <p className="mt-0.5 text-[11px] text-slate-400">
+                {activeTheme.label} · сохраняется на устройстве
+              </p>
             </div>
             <button
               type="button"
               aria-label="Закрыть настройки"
               onClick={() => setIsOpen(false)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
             >
               <X aria-hidden="true" className="h-4 w-4" />
             </button>
           </div>
 
-          <section aria-labelledby={`${menuId}-theme`} className="px-4 py-4">
-            <div className="flex items-center justify-between gap-3">
-              <p id={`${menuId}-theme`} className="text-sm font-medium text-white">
-                Цветовая тема
-              </p>
-              <span className="truncate text-xs text-slate-400">{activeTheme.label}</span>
-            </div>
-            <ThemeSwitcher compact className="mt-3 justify-start" />
+          <section aria-labelledby={`${menuId}-theme`} className="px-3.5 py-3">
+            <p id={`${menuId}-theme`} className="mb-2 text-xs font-medium text-slate-400">
+              Тема
+            </p>
+            <ThemeSwitcher />
           </section>
 
           <section
             aria-labelledby={`${menuId}-text-size`}
-            className="border-t border-white/10 px-4 py-4"
+            className="border-t border-white/10 px-3.5 py-3"
           >
-            <div className="mb-3">
-              <p id={`${menuId}-text-size`} className="text-sm font-medium text-white">
-                Размер текста
-              </p>
-              <p className="mt-0.5 text-xs text-slate-400">Изменится во всём интерфейсе</p>
-            </div>
-            <div role="group" aria-label="Размер текста" className="grid grid-cols-3 gap-2">
+            <p id={`${menuId}-text-size`} className="mb-2 text-xs font-medium text-slate-400">
+              Размер текста
+            </p>
+            <div role="group" aria-label="Размер текста" className="grid grid-cols-3 gap-1.5">
               {TEXT_SIZE_OPTIONS.map((option) => {
                 const isSelected = textSize === option.id;
 
@@ -125,16 +128,16 @@ export function AppearanceSettingsMenu({ className }: AppearanceSettingsMenuProp
                     aria-pressed={isSelected}
                     onClick={() => setTextSize(option.id)}
                     className={cn(
-                      "flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 transition",
+                      "flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-lg border px-2 py-2 transition-colors",
                       isSelected
-                        ? "border-brand-400/50 bg-brand-500/15 text-white shadow-glow"
-                        : "border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/25 hover:bg-white/[0.07] hover:text-white",
+                        ? "border-brand-400/40 bg-brand-500/15 text-white"
+                        : "border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/20 hover:bg-white/[0.05] hover:text-white",
                     )}
                   >
                     <span className={cn("font-semibold leading-none", TEXT_SIZE_SAMPLE_CLASS[option.id])}>
                       Аа
                     </span>
-                    <span className="text-[10px] leading-none">({option.label})</span>
+                    <span className="text-[10px] leading-none text-slate-400">{option.label}</span>
                   </button>
                 );
               })}

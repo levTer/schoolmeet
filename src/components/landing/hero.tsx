@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { ArrowRight, KeyRound, Lock, PlayCircle, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, KeyRound, Lock, PlayCircle, ShieldCheck } from "lucide-react";
 
 import { ProductPreview } from "./product-preview";
 import { InstallBlock } from "./install-block";
 
 const SECURITY_BADGES = [
-  { icon: ShieldCheck, label: "AES-256", hint: "шифрование чата и материалов" },
-  { icon: Lock, label: "Вход по сессии", hint: "звонок и чат только для участников" },
+  { icon: ShieldCheck, label: "AES-256", hint: "шифрование чата" },
+  { icon: Lock, label: "Вход по сессии", hint: "только участники" },
   { icon: KeyRound, label: "WebRTC / SRTP", hint: "защищённый медиапоток" },
 ] as const;
 
@@ -16,99 +16,88 @@ const STATS = [
   { value: "99,9%", label: "доступность" },
 ] as const;
 
+/**
+ * Hero-секция лендинга в дизайн-системе «Telegram × Twitch Dark».
+ *
+ * Плоский графитовый фон #0B0F17, один сдержанный акцент темы, заголовок
+ * `text-3xl/4xl font-semibold` (не гигантский), карточки `rounded-2xl` с
+ * окантовкой `border-white/10`. Блок установки — сразу под подзаголовком.
+ */
 export function Hero() {
   return (
-    <section className="relative overflow-hidden pb-28 pt-32 sm:pt-40">
-      {/* Фоновые слои */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-20 bg-[linear-gradient(180deg,#0A1B3D_0%,#08142E_34%,#050B1C_68%,#000000_100%)]" />
+    <section className="relative overflow-hidden pb-20 pt-24 sm:pb-24 sm:pt-28">
+      {/* Фон: ровный графит + очень тихое свечение акцента */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        {/* Золотое свечение по центру — иконки и кнопки «горят» на глубоком синем */}
-        <div className="absolute left-1/2 top-[6%] h-[30rem] w-[52rem] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(245,158,11,0.18),rgba(245,158,11,0.05),transparent)] blur-[70px]" />
-        <div className="absolute inset-0 bg-grid mask-radial opacity-60" />
-        <div className="absolute left-1/2 top-[-25%] h-[42rem] w-[42rem] -translate-x-1/2 animate-spin-slow rounded-full bg-brand-600/20 blur-[130px]" />
-        <div className="absolute right-[3%] top-[12%] h-[24rem] w-[24rem] animate-float rounded-full bg-amber-500/12 blur-[110px]" />
-        <div className="absolute -left-[8%] top-[38%] h-[22rem] w-[22rem] rounded-full bg-brand-500/15 blur-[120px]" />
-        {/* Плавный переход в секцию ниже — в глубокий фон темы, без видимого шва */}
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-[linear-gradient(180deg,transparent_0%,rgb(var(--bg-deep-rgb))_100%)]" />
+        <div className="absolute inset-0 bg-grid mask-radial opacity-40" />
+        <div className="absolute left-1/2 top-[-14rem] h-[26rem] w-[42rem] -translate-x-1/2 rounded-full bg-brand-500/[0.07] blur-[120px]" />
       </div>
 
-      <div className="mx-auto max-w-7xl px-5 sm:px-8">
-        <div className="mx-auto max-w-4xl text-center">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="mx-auto max-w-3xl text-center">
           {/* Бейдж */}
-          <div className="inline-flex animate-fade-up items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs text-slate-300 backdrop-blur">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-gradient px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-              <Sparkles className="h-3 w-3" />
+          <div className="inline-flex animate-fade-up items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-slate-300">
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-brand-300">
               New
             </span>
-            EduFlow · ИИ-ассистент встроен прямо в урок
+            ИИ-ассистент встроен прямо в урок
           </div>
 
-          {/* Заголовок */}
-          <h1 className="mt-7 animate-fade-up text-balance text-4xl font-semibold leading-[1.08] tracking-tight text-white [animation-delay:80ms] sm:text-6xl lg:text-7xl">
-            EduFlow — Образование будущего
-            <br className="hidden sm:block" />{" "}
-            <span className="bg-[linear-gradient(100deg,#FDE68A_0%,#F59E0B_45%,#FCD34D_100%)] bg-clip-text text-transparent drop-shadow-[0_0_30px_rgba(245,158,11,0.25)]">
-              с ИИ
-            </span>
+          <h1 className="mt-5 animate-fade-up text-balance text-3xl font-semibold leading-tight tracking-tight text-white sm:text-4xl">
+            EduFlow — Образование будущего{" "}
+            <span className="text-brand-400">с ИИ</span>
           </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl animate-fade-up text-pretty text-base leading-relaxed text-slate-300/90 [animation-delay:140ms] sm:text-lg">
+          <p className="mx-auto mt-3 max-w-xl animate-fade-up text-pretty text-sm leading-relaxed text-slate-400 sm:text-base">
             Интерактивный холст, умные ИИ-ассистенты и видеосвязь в одном приложении. Учитесь
             вместе, идите дальше.
           </p>
 
-          {/* Блок «Установить EduFlow» — сразу под подзаголовком, дизайн №9
-              (тёмно-сланцевый фон, squircle, белая окантовка, золотые иконки) */}
+          {/* Установка: APK / PWA / Windows / Mac — сразу под подзаголовком */}
           <InstallBlock />
 
           {/* Кнопки */}
-          <div className="mt-8 flex animate-fade-up flex-col items-center justify-center gap-3 [animation-delay:440ms] sm:flex-row">
+          <div className="mt-7 flex animate-fade-up flex-col items-center justify-center gap-2 sm:flex-row">
             <Link
               href="/auth/register"
-              className="group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-brand-gradient px-7 py-3.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02] sm:w-auto"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-5 text-sm font-medium text-canvas transition hover:bg-brand-400 sm:w-auto"
             >
-              <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-              <span className="relative">Начать урок</span>
-              <ArrowRight className="relative h-4 w-4 transition group-hover:translate-x-1" />
+              Начать урок
+              <ArrowRight className="h-4 w-4" />
             </Link>
 
             <a
               href="#features"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-7 py-3.5 text-sm font-semibold text-white backdrop-blur transition hover:border-amber-300/40 hover:bg-white/10 sm:w-auto"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-5 text-sm font-medium text-white transition hover:bg-white/[0.06] sm:w-auto"
             >
-              <PlayCircle className="h-4 w-4 text-amber-300" />
+              <PlayCircle className="h-4 w-4 text-brand-300" />
               Демонстрация
             </a>
           </div>
 
           {/* Бейджи безопасности */}
-          <div className="mt-10 flex animate-fade-up flex-wrap items-center justify-center gap-3 [animation-delay:260ms]">
+          <div className="mt-8 flex animate-fade-up flex-wrap items-center justify-center gap-2">
             {SECURITY_BADGES.map((badge) => (
               <div
                 key={badge.label}
-                className="glass flex items-center gap-3 rounded-2xl px-4 py-2.5 text-left"
+                className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-2.5 py-1.5 text-left"
               >
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-300/20 to-brand-500/5 text-brand-300 ring-1 ring-brand-400/20">
-                  <badge.icon className="h-4 w-4" />
-                </span>
+                <badge.icon className="h-3.5 w-3.5 text-brand-300" />
                 <span className="leading-tight">
-                  <span className="block text-sm font-semibold text-white">{badge.label}</span>
-                  <span className="block text-[11px] text-slate-400">{badge.hint}</span>
+                  <span className="block text-xs font-medium text-white">{badge.label}</span>
+                  <span className="block text-[10px] text-slate-500">{badge.hint}</span>
                 </span>
               </div>
             ))}
           </div>
 
           {/* Статистика */}
-          <dl className="mx-auto mt-12 grid max-w-2xl animate-fade-up grid-cols-3 gap-4 [animation-delay:320ms]">
+          <dl className="mx-auto mt-8 grid max-w-lg animate-fade-up grid-cols-3 gap-3">
             {STATS.map((stat) => (
               <div key={stat.label}>
                 <dt className="sr-only">{stat.label}</dt>
                 <dd>
-                  <span className="block text-2xl font-semibold text-white sm:text-3xl">
-                    {stat.value}
-                  </span>
-                  <span className="mt-1 block text-[11px] uppercase tracking-wider text-slate-500 sm:text-xs">
+                  <span className="block text-lg font-semibold text-white">{stat.value}</span>
+                  <span className="mt-0.5 block text-[10px] uppercase tracking-wider text-slate-500">
                     {stat.label}
                   </span>
                 </dd>

@@ -7,8 +7,11 @@
     <style>
       :root {
         color-scheme: dark;
-        --slate: #0f172a;
-        --gold: #f59e0b;
+        --bg: #0b0f17;
+        --card: #111827;
+        --accent: #10b981;
+        --text: #f9fafb;
+        --muted: #9ca3af;
       }
       * {
         box-sizing: border-box;
@@ -21,22 +24,18 @@
         justify-content: center;
         padding: 32px;
         font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-        color: #e2e8f0;
-        background:
-          radial-gradient(120% 90% at 50% 0%, rgba(245, 158, 11, 0.16), transparent 60%),
-          linear-gradient(180deg, #0a1b3d 0%, #0f172a 45%, #000000 100%);
+        color: var(--text);
+        background: var(--bg);
       }
       .card {
         width: 100%;
         max-width: 460px;
         text-align: center;
         padding: 36px 32px 30px;
-        border-radius: 26px;
+        border-radius: 16px;
         border: 1px solid rgba(255, 255, 255, 0.12);
-        background: rgba(15, 23, 42, 0.86);
-        box-shadow:
-          0 30px 80px -40px rgba(0, 0, 0, 0.95),
-          0 0 60px -28px rgba(245, 158, 11, 0.5);
+        background: var(--card);
+        box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.9);
         backdrop-filter: blur(12px);
       }
       .logo {
@@ -48,9 +47,8 @@
         align-items: center;
         justify-content: center;
         font-size: 34px;
-        background: rgba(245, 158, 11, 0.12);
-        border: 1px solid rgba(245, 158, 11, 0.35);
-        box-shadow: 0 0 34px -12px rgba(245, 158, 11, 0.9);
+        background: rgba(16, 185, 129, 0.12);
+        border: 1px solid rgba(16, 185, 129, 0.3);
       }
       h1 {
         margin: 0 0 10px;
@@ -62,16 +60,16 @@
         margin: 0 0 8px;
         font-size: 14px;
         line-height: 1.6;
-        color: #94a3b8;
+        color: var(--muted);
       }
       .reason {
         display: inline-block;
         margin-top: 6px;
         padding: 6px 12px;
         border-radius: 999px;
-        border: 1px solid rgba(245, 158, 11, 0.25);
-        background: rgba(245, 158, 11, 0.1);
-        color: #fcd34d;
+        border: 1px solid rgba(16, 185, 129, 0.25);
+        background: rgba(16, 185, 129, 0.08);
+        color: #6ee7b7;
         font-size: 12px;
       }
       .actions {
@@ -84,8 +82,8 @@
         width: 100%;
         padding: 12px 18px;
         border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.25);
-        background: var(--slate);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.04);
         color: #fff;
         font-size: 14px;
         font-weight: 600;
@@ -95,21 +93,20 @@
       button:hover {
         transform: translateY(-1px);
         border-color: rgba(255, 255, 255, 0.45);
-        background: #111a2f;
+        background: rgba(255, 255, 255, 0.08);
       }
       button.primary {
         border-color: transparent;
-        background: linear-gradient(180deg, #fbbf24, var(--gold));
-        color: #0f172a;
-        box-shadow: 0 12px 30px -14px rgba(245, 158, 11, 0.9);
+        background: var(--accent);
+        color: #0b0f17;
       }
       button.primary:hover {
-        background: linear-gradient(180deg, #fcd34d, #f59e0b);
+        background: #34d399;
       }
       .hint {
         margin-top: 18px;
         font-size: 12px;
-        color: #64748b;
+        color: #6b7280;
       }
     </style>
   </head>

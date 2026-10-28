@@ -159,11 +159,11 @@ function createWindow() {
     title: 'EduFlow',
     icon: ICON_PATH,
     // Тёмный фон в фирменном цвете — без белой вспышки при загрузке.
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B0F17',
     ...(process.platform !== 'darwin'
       ? {
           titleBarStyle: 'hidden',
-          titleBarOverlay: { color: '#0F172A', symbolColor: '#F8FAFC', height: 38 },
+          titleBarOverlay: { color: '#0B0F17', symbolColor: '#F9FAFB', height: 38 },
         }
       : {}),
     autoHideMenuBar: true,
@@ -195,7 +195,7 @@ function createWindow() {
         action: 'allow',
         overrideBrowserWindowOptions: {
           autoHideMenuBar: true,
-          backgroundColor: '#0F172A',
+          backgroundColor: '#0B0F17',
           webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -378,8 +378,8 @@ if (!hasSingleInstanceLock) {
         if (mainWindow && !mainWindow.isDestroyed() && process.platform !== 'darwin') {
           try {
             mainWindow.setTitleBarOverlay({
-              color: backgroundColor || '#0F172A',
-              symbolColor: symbolColor || '#F8FAFC',
+              color: backgroundColor || '#0B0F17',
+              symbolColor: symbolColor || '#F9FAFB',
               height: 38,
             });
           } catch (error) {

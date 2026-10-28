@@ -65,7 +65,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <header className="animate-fade-up flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Управление школой</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Админ-панель</h1>
+          <h1 className="mt-2 text-lg font-semibold tracking-tight sm:text-xl">Админ-панель</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
             Пользователи и роли, активные уроки, посещаемость и общешкольные объявления.
             Раздел открыт только Администратору школы.

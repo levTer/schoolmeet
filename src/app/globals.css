@@ -2,8 +2,264 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Тонкий скроллбар в текстовом поле ИИ-помощника. */
+/*
+ * EduFlow · глобальные стили дизайн-системы «Telegram × Twitch Dark».
+ *
+ * Источник значений — `src/styles/design-tokens.css` (подключается в layout.tsx
+ * до этого файла). Здесь только поведение: фон, типографика, safe-area,
+ * Zero-Scroll на мобильных и утилиты карточек/скроллбаров.
+ */
+
+@layer base {
+  * {
+    @apply border-white/10;
+  }
+
+  html {
+    background-color: var(--bg-primary);
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply font-sans antialiased;
+    min-height: 100dvh;
+    background-color: var(--bg-primary);
+    color: var(--text-secondary);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-semibold text-white;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background-color: rgb(var(--accent-primary-rgb) / 0.3);
+    color: var(--text-primary);
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2;
+    --tw-ring-color: rgb(var(--accent-primary-rgb) / 0.65);
+    --tw-ring-offset-color: var(--bg-primary);
+    --tw-ring-offset-width: 2px;
+  }
+
+  /*
+   * Zero-Scroll (mobile): страница не «резинится» целиком, скроллится только
+   * внутренняя область `.app-frame`. Это убирает прыжки адресной строки
+   * мобильного браузера и сохраняет нижнюю навигацию на месте.
+   */
+  @media (max-width: 767px) {
+    html,
+    body {
+      height: 100dvh;
+      overflow: hidden;
+    }
+  }
+
+  /* Тонкий плоский скроллбар в цветах темы (без градиентов и свечения). */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.12);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--accent-primary-rgb) / 0.45);
+  }
+
+  @media (max-width: 768px) {
+    ::-webkit-scrollbar {
+      width: 3px;
+      height: 3px;
+    }
+  }
+}
+
+@layer components {
+  /*
+   * Карточка дизайн-системы: #111827, окантовка border-white/10, rounded-2xl.
+   * Плоская, без «стекла» и неоновых теней — строгий Telegram/Twitch-стиль.
+   */
+  .card {
+    @apply rounded-2xl border bg-surface;
+    border-color: var(--border-subtle);
+    box-shadow: var(--shadow-glow);
+  }
+
+  .card-hover {
+    @apply transition-colors duration-150;
+  }
+
+  .card-hover:hover {
+    border-color: var(--border-strong);
+    background-color: rgb(var(--bg-raised-rgb));
+  }
+
+  /* Небольшая вложенная плитка внутри карточки. */
+  .tile {
+    @apply rounded-xl border border-white/10;
+    background-color: rgb(255 255 255 / 0.03);
+  }
+
+  /* Разделитель-хайрлайн в списках (Telegram-style). */
+  .hairline {
+    border-color: var(--border-subtle);
+  }
+
+  /* Заголовочные роли дизайн-системы. */
+  .title-card {
+    @apply text-base font-semibold text-white;
+  }
+
+  .subtitle-card {
+    @apply text-sm font-medium text-white/90;
+  }
+
+  .caption {
+    @apply text-xs text-slate-400;
+  }
+}
+
 @layer utilities {
+  /*
+   * Каркас приложения. На мобильных — единственная прокручиваемая область
+   * внутри body с overflow:hidden (Zero-Scroll), на десктопе — обычный поток.
+   */
+  .app-frame {
+    @apply flex w-full flex-col;
+    min-height: 100dvh;
+  }
+
+  @media (max-width: 767px) {
+    .app-frame {
+      height: 100dvh;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+
+  /* --------------------------- Зоны перетаскивания --------------------------- */
+  /* Electron: шапка тянет окно, интерактивные элементы — нет. */
+  .drag-region {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .no-drag,
+  .drag-region button,
+  .drag-region a,
+  .drag-region input,
+  .drag-region select,
+  .drag-region [role="button"] {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
+  /* Место под системные кнопки окна Windows (titleBarOverlay, height 38px). */
+  .titlebar-inset {
+    padding-right: env(titlebar-area-width, 140px);
+  }
+
+  /* iOS / Android safe-area. */
+  .safe-bottom {
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+
+  .safe-pb {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .safe-mb {
+    margin-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /* ------------------------------ Матовое стекло ---------------------------- */
+  /* Оставлено для оверлеев и модалок; карточки используют `.card`. */
+  .glass {
+    @apply rounded-2xl border backdrop-blur-xl;
+    border-color: var(--border-subtle);
+    background: var(--glass-bg);
+  }
+
+  .glass-strong {
+    @apply rounded-2xl border backdrop-blur-2xl;
+    border-color: var(--border-subtle);
+    background: var(--glass-bg-strong);
+  }
+
+  .glass-card {
+    @apply card;
+  }
+
+  .glass-card:hover {
+    border-color: var(--border-strong);
+  }
+
+  .glass-tile {
+    @apply tile;
+  }
+
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+
+  .ring-gradient {
+    position: relative;
+  }
+
+  .speaking-ring {
+    @apply rounded-2xl;
+    box-shadow: var(--shadow-neon-ring);
+    animation: neon-breathe 1.6s ease-in-out infinite;
+  }
+
+  /* Градиентный текст = акцент темы, без радужных переливов. */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--brand-gradient);
+  }
+
+  .text-gradient-brand {
+    @apply text-white;
+    background-image: none;
+  }
+
+  /* Фоновая сетка — очень тихая, только для лендинга. */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+
+  .mask-radial {
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 35%, transparent 100%);
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 35%, transparent 100%);
+  }
+
+  .mask-fade-b {
+    -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 50%, transparent 100%);
+  }
+
+  /* Тонкий скроллбар в текстовом поле ИИ-помощника. */
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: rgb(148 163 184 / 0.4) transparent;
@@ -23,11 +279,6 @@
     background-color: transparent;
   }
 
-  /*
-   * Аккуратный скроллбар для длинных прокручиваемых блоков (окно создания ДЗ,
-   * глобальный ИИ-виджет). Тонкий, полупрозрачный — не перетягивает внимание
-   * с содержимого и не «съедает» ширину карточки.
-   */
   .custom-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: rgb(148 163 184 / 0.35) transparent;
@@ -50,304 +301,15 @@
   .custom-scrollbar::-webkit-scrollbar-track {
     background-color: transparent;
   }
-}
 
-/*
- * Лицей Сингулярити · тематическая система с динамическими цветовыми токенами.
- * Существующие brand/accent/ink Tailwind-классы автоматически меняются
- * вместе с темой, выбранной в переключателе.
- */
-
-@layer base {
-  :root,
-  :root[data-theme="emerald"] {
-    color-scheme: dark;
-    --bg-primary: #061F17;
-    --bg-primary-rgb: 6 31 23;
-    --bg-deep-rgb: 3 14 10;
-    --bg-surface-rgb: 7 29 22;
-    --bg-surface-raised-rgb: 12 43 33;
-    --bg-panel-rgb: 18 57 43;
-    --bg-panel-strong-rgb: 26 75 57;
-    --accent-color: #2EDB9C;
-    --accent-rgb: 46 219 156;
-    --accent-light-rgb: 145 255 214;
-    --accent-pale-rgb: 222 255 241;
-    --accent-strong-rgb: 13 117 81;
-    --accent-deep-rgb: 12 96 67;
-    --glass-bg: rgba(3, 18, 13, 0.76);
-    --glass-bg-strong: rgba(2, 12, 9, 0.91);
-    --glass-border: rgba(222, 255, 241, 0.12);
-    --glass-fill: rgba(255, 255, 255, 0.045);
-    --bg-overlay-opacity: 0;
-    --scrollbar-border: #061F17;
+  /* Скрыть скроллбар, но оставить прокрутку (горизонтальные чипы, ленты). */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
 
-  :root[data-theme="cyber"] {
-    --bg-primary: #1B0773;
-    --bg-primary-rgb: 27 7 115;
-    --bg-deep-rgb: 9 3 39;
-    --bg-surface-rgb: 15 7 53;
-    --bg-surface-raised-rgb: 23 10 69;
-    --bg-panel-rgb: 34 14 83;
-    --bg-panel-strong-rgb: 48 18 95;
-    --accent-color: #9A3E85;
-    --accent-rgb: 154 62 133;
-    --accent-light-rgb: 241 174 224;
-    --accent-pale-rgb: 255 231 249;
-    --accent-strong-rgb: 112 37 96;
-    --accent-deep-rgb: 75 23 66;
-    --glass-bg: rgba(8, 4, 33, 0.80);
-    --glass-bg-strong: rgba(6, 3, 25, 0.93);
-    --glass-border: rgba(255, 231, 249, 0.14);
-    --bg-overlay-opacity: 0;
-    --scrollbar-border: #1B0773;
-  }
-
-  :root[data-theme="ocean"] {
-    --bg-primary: #837FB8;
-    --bg-primary-rgb: 131 127 184;
-    --bg-deep-rgb: 16 15 40;
-    --bg-surface-rgb: 22 20 48;
-    --bg-surface-raised-rgb: 30 27 60;
-    --bg-panel-rgb: 41 36 73;
-    --bg-panel-strong-rgb: 54 47 88;
-    --accent-color: #25C4B4;
-    --accent-rgb: 37 196 180;
-    --accent-light-rgb: 143 242 232;
-    --accent-pale-rgb: 223 255 251;
-    --accent-strong-rgb: 11 114 102;
-    --accent-deep-rgb: 13 92 85;
-    --glass-bg: rgba(17, 15, 42, 0.83);
-    --glass-bg-strong: rgba(11, 10, 31, 0.94);
-    --glass-border: rgba(223, 255, 251, 0.14);
-    --bg-overlay-opacity: 0.48;
-    --scrollbar-border: #292642;
-  }
-
-  :root[data-theme="mint"] {
-    --bg-primary: #436F67;
-    --bg-primary-rgb: 67 111 103;
-    --bg-deep-rgb: 5 22 20;
-    --bg-surface-rgb: 9 30 27;
-    --bg-surface-raised-rgb: 15 42 38;
-    --bg-panel-rgb: 22 56 50;
-    --bg-panel-strong-rgb: 31 72 64;
-    --accent-color: #3BD2B1;
-    --accent-rgb: 59 210 177;
-    --accent-light-rgb: 153 255 229;
-    --accent-pale-rgb: 224 255 247;
-    --accent-strong-rgb: 12 115 94;
-    --accent-deep-rgb: 13 97 80;
-    --glass-bg: rgba(5, 22, 20, 0.79);
-    --glass-bg-strong: rgba(3, 15, 14, 0.92);
-    --glass-border: rgba(224, 255, 247, 0.13);
-    --bg-overlay-opacity: 0.16;
-    --scrollbar-border: #294842;
-  }
-
-  :root {
-    --background: var(--bg-primary);
-    --foreground: #e8ebf7;
-    --brand: var(--accent-color);
-    --accent: var(--accent-color);
-    --brand-gradient: linear-gradient(
-      135deg,
-      rgb(var(--accent-strong-rgb) / 1) 0%,
-      rgb(var(--accent-deep-rgb) / 1) 100%
-    );
-    --brand-gradient-soft: linear-gradient(
-      135deg,
-      rgb(var(--accent-rgb) / 0.22) 0%,
-      rgb(var(--accent-light-rgb) / 0.12) 50%,
-      rgb(var(--accent-deep-rgb) / 0.18) 100%
-    );
-    --shadow-glow: 0 0 0 1px rgb(var(--accent-rgb) / 0.18), 0 24px 70px -24px rgb(var(--accent-rgb) / 0.62);
-    --shadow-glow-accent: 0 0 0 1px rgb(var(--accent-rgb) / 0.25), 0 24px 70px -26px rgb(var(--accent-rgb) / 0.58);
-    --shadow-neon-ring: 0 0 0 2px rgb(var(--accent-rgb) / 0.85), 0 0 26px 4px rgb(var(--accent-rgb) / 0.45);
-  }
-
-  :root[data-text-size="small"] {
-    font-size: 14px;
-  }
-
-  :root[data-text-size="normal"] {
-    font-size: 16px;
-  }
-
-  :root[data-text-size="large"] {
-    font-size: 18px;
-  }
-
-  * {
-    @apply border-white/10;
-  }
-
-  html {
-    scroll-behavior: smooth;
-    -webkit-tap-highlight-color: transparent;
-    background-color: var(--bg-primary);
-  }
-
-  body {
-    @apply font-sans text-slate-400 antialiased;
-    background-color: var(--bg-primary);
-    background-image:
-      radial-gradient(60rem 42rem at 12% -12%, rgb(var(--accent-rgb) / 0.2), transparent 60%),
-      radial-gradient(52rem 38rem at 96% 0%, rgb(var(--accent-light-rgb) / 0.13), transparent 62%),
-      radial-gradient(40rem 30rem at 50% 110%, rgb(var(--accent-deep-rgb) / 0.18), transparent 65%),
-      linear-gradient(
-        rgb(0 0 0 / var(--bg-overlay-opacity)),
-        rgb(0 0 0 / var(--bg-overlay-opacity))
-      );
-    background-attachment: fixed;
-    background-repeat: no-repeat;
-    /* iOS safe area для PWA */
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-
-  h1,
-  h2,
-  h3,
-  h4 {
-    @apply text-white;
-    text-wrap: balance;
-  }
-
-  ::selection {
-    @apply bg-brand-500/35 text-white;
-  }
-
-  :focus-visible {
-    @apply outline-none ring-2 ring-accent-400/70 ring-offset-2 ring-offset-ink-950;
-  }
-
-  /* Скроллбар подхватывает активный акцент и фон темы. */
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: var(--brand-gradient);
-    border: 3px solid var(--scrollbar-border);
-    border-radius: 9999px;
-  }
-
-  /* Скрываем скроллбар на мобильных для чистого вида */
-  @media (max-width: 768px) {
-    ::-webkit-scrollbar {
-      width: 4px;
-    }
-    ::-webkit-scrollbar-thumb {
-      border: 1px solid var(--scrollbar-border);
-    }
-  }
-}
-
-@layer utilities {
-  /* Градиентный текст, синхронизированный с активной темой. */
-  .text-gradient {
-    @apply bg-clip-text text-transparent;
-    background-image: var(--brand-gradient);
-  }
-
-  .text-gradient-brand {
-    @apply bg-brand-gradient bg-clip-text text-transparent;
-  }
-
-  /* Фоновая сетка */
-  .bg-grid {
-    background-image:
-      linear-gradient(to right, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
-    background-size: 56px 56px;
-  }
-
-  /* Маски для затухания фоновых слоёв */
-  .mask-radial {
-    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 35%, transparent 100%);
-    mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 35%, transparent 100%);
-  }
-
-  .mask-fade-b {
-    -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent 100%);
-    mask-image: linear-gradient(to bottom, #000 50%, transparent 100%);
-  }
-
-  /* ----------------------------- Матовое стекло ----------------------------- */
-
-  .glass {
-    @apply border backdrop-blur-2xl;
-    border-color: var(--glass-border);
-    background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)), var(--glass-bg);
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
-  }
-
-  .glass-strong {
-    @apply border backdrop-blur-3xl;
-    border-color: var(--glass-border);
-    background: linear-gradient(160deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)), var(--glass-bg-strong);
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 30px 60px -30px rgba(0, 0, 0, 0.8);
-  }
-
-  .glass-card {
-    @apply rounded-3xl border backdrop-blur-2xl transition duration-300;
-    border-color: var(--glass-border);
-    background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)), var(--glass-bg);
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-  }
-
-  .glass-card:hover {
-    border-color: rgb(var(--accent-rgb) / 0.34);
-  }
-
-  .glass-tile {
-    @apply rounded-2xl border border-white/[0.08] backdrop-blur-xl;
-    background: linear-gradient(160deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)), var(--glass-bg);
-  }
-
-  .ring-gradient {
-    position: relative;
-  }
-  .ring-gradient::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    background: linear-gradient(140deg, rgb(var(--accent-light-rgb) / 0.72), rgb(var(--accent-rgb) / 0.46), transparent 60%);
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
-  }
-
-  .speaking-ring {
-    @apply rounded-2xl;
-    box-shadow: var(--shadow-neon-ring);
-    animation: neon-breathe 1.6s ease-in-out infinite;
-  }
-
-  .shadow-glow {
-    box-shadow: var(--shadow-glow);
-  }
-
-  /* iOS safe area: добавляем padding для нижней панели. */
-  .safe-bottom {
-    padding-bottom: max(0px, env(safe-area-inset-bottom));
-  }
-
-  .safe-pb {
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
-  }
-  .safe-mb {
-    margin-bottom: max(1rem, env(safe-area-inset-bottom));
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
 
@@ -361,7 +323,6 @@
 /*
  * Тулбар доски всегда поверх белого холста и никогда не сжимается:
  * если кнопки не помещаются по ширине, панель прокручивается горизонтально.
- * Дублирует Tailwind-классы компонента — защита от регрессий в разметке.
  */
 .whiteboard-toolbar {
   position: relative;
@@ -380,7 +341,7 @@
     filter: brightness(1);
   }
   50% {
-    filter: brightness(1.25);
+    filter: brightness(1.2);
   }
 }
 
@@ -392,10 +353,10 @@
 @keyframes pulse-glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.5), 0 24px 70px -24px rgb(var(--accent-rgb) / 0.5);
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.4);
   }
   50% {
-    box-shadow: 0 0 0 8px rgb(var(--accent-rgb) / 0), 0 24px 70px -12px rgb(var(--accent-rgb) / 0.8);
+    box-shadow: 0 0 0 6px rgb(var(--accent-rgb) / 0);
   }
 }
 
@@ -407,7 +368,7 @@
 @keyframes page-enter {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -416,14 +377,13 @@
 }
 
 .animate-page-enter {
-  animation: page-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: page-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* ------------------------------------------------------------------ */
 /* Мобильная адаптация                                                 */
 /* ------------------------------------------------------------------ */
 
-/* Компактный тулбар доски на мобильных. */
 @media (max-width: 768px) {
   .whiteboard-toolbar {
     gap: 2px !important;
@@ -451,7 +411,9 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-pulse-soft,
   .animate-pulse-glow,
-  .animate-neon-breathe {
+  .animate-neon-breathe,
+  .animate-float,
+  .animate-spin-slow {
     animation: none;
   }
 }
@@ -463,7 +425,7 @@
   input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea {
-    min-height: 46px;
+    min-height: 44px;
   }
 
   input:not([type="checkbox"]):not([type="radio"]),

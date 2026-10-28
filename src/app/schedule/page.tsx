@@ -122,7 +122,7 @@ export default async function SchedulePage() {
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="flex items-center gap-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h1 className="flex items-center gap-3 text-lg font-semibold tracking-tight sm:text-xl">
               <CalendarDays className="h-7 w-7 text-brand-300" />
               Расписание
             </h1>

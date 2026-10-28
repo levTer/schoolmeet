@@ -16,7 +16,7 @@ export function AiBoardSection() {
             ИИ-Доска
           </span>
 
-          <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl">
+          <h2 className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">
             Доска, которая <span className="text-gradient-brand">понимает</span>, что на ней написано
           </h2>
 

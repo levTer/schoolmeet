@@ -1,11 +1,18 @@
 <resources>
+    <!--
+      Тема контейнера: никакого ActionBar и серого заголовка «< EduFlow».
+      Edge-to-edge включается в MainActivity (WindowCompat.setDecorFitsSystemWindows),
+      статус-бар прозрачный, иконки системных панелей светлые.
+    -->
     <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">@color/slate</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@color/slate</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowBackground">@drawable/splash_background</item>
-        <item name="android:colorAccent">#F59E0B</item>
+        <item name="android:colorAccent">@color/accent</item>
     </style>
 </resources>

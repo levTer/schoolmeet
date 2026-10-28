@@ -26,8 +26,12 @@ import { cn } from "@/lib/utils";
 /* Общие стили виджетов                                                       */
 /* -------------------------------------------------------------------------- */
 
-const WIDGET_SHELL = "ring-gradient glass-card animate-fade-up flex h-full flex-col p-5";
-const WIDGET_TITLE = "flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400";
+/* Дизайн-система: плоская карточка #111827, rounded-2xl, тонкая окантовка. */
+const WIDGET_SHELL = "card flex h-full flex-col p-4";
+const WIDGET_TITLE = "flex items-center gap-1.5 text-xs font-medium text-slate-400";
+/* Основная кнопка действия — акцент темы, только на активных элементах. */
+const WIDGET_ACTION =
+  "inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-canvas transition hover:bg-brand-400";
 
 const DAY_SHORT = ["", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
 
@@ -103,11 +107,11 @@ export function NextLessonWidgetLive({
         Следующий урок
       </h2>
 
-      <div className="mt-4 flex flex-1 flex-col">
-        <div className="flex items-start gap-3">
+      <div className="mt-3 flex flex-1 flex-col">
+        <div className="flex items-start gap-2.5">
           <span
             aria-hidden
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xl"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 text-lg"
             style={{
               background: `linear-gradient(135deg, ${lesson.subject?.color ?? "#6366f1"}E6, ${lesson.subject?.color ?? "#6366f1"}55)`,
             }}
@@ -115,7 +119,7 @@ export function NextLessonWidgetLive({
             {lesson.subject?.emoji ?? "📚"}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-base font-semibold text-white">
+            <p className="truncate text-sm font-semibold text-white">
               {lesson.subject?.name ?? "Урок"}
             </p>
             <p className="mt-0.5 text-xs text-slate-400">
@@ -126,7 +130,7 @@ export function NextLessonWidgetLive({
         </div>
 
         {/* Обратный отсчёт или «идёт сейчас» */}
-        <div className="mt-4">
+        <div className="mt-3">
           {live ? (
             <span className="inline-flex items-center gap-2 text-sm font-medium text-rose-200">
               <span className="relative flex h-2.5 w-2.5">
@@ -140,7 +144,7 @@ export function NextLessonWidgetLive({
               <p className="text-xs text-slate-400">
                 До урока <span className="text-white">{lesson.subject?.name ?? "Урока"}</span> осталось
               </p>
-              <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-gradient">
+              <p className="mt-0.5 font-mono text-xl font-semibold tabular-nums text-white">
                 {formatCountdown(countdown)}
               </p>
               <p className="mt-0.5 text-xs text-slate-500">
@@ -155,15 +159,14 @@ export function NextLessonWidgetLive({
           )}
         </div>
 
-        <div className="mt-auto pt-5">
+        <div className="mt-auto pt-3">
           <Link
             href={`/meeting/${encodeURIComponent(lesson.meetingCode)}`}
             className={cn(
-              "relative inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition",
-              isButtonActive
-                ? "bg-brand-gradient shadow-glow hover:scale-[1.02] animate-pulse-glow"
-                : "bg-brand-gradient/60 hover:bg-brand-gradient hover:shadow-glow",
+              "inline-flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-canvas transition",
+              isButtonActive ? "bg-brand-500 hover:bg-brand-400" : "bg-brand-500/70 hover:bg-brand-500",
             )}
+            data-active={isButtonActive}
           >
             <Video className="h-4 w-4" />
             {live ? "Войти в урок" : isButtonActive ? "Войти в урок" : "Перейти к уроку"}
@@ -216,7 +219,7 @@ export function UrgentHomeworkWidget({ items, role }: { items: UrgentHomeworkIte
               <li key={item.id}>
                 <Link
                   href={`/homework/${item.id}`}
-                  className="group flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 transition hover:border-brand-400/20 hover:bg-white/[0.06]"
+                  className="group flex items-start gap-2.5 rounded-lg border border-white/10 bg-white/[0.02] px-2.5 py-2 transition hover:border-white/20 hover:bg-white/[0.05]"
                 >
                   <span
                     className={cn(
@@ -230,7 +233,7 @@ export function UrgentHomeworkWidget({ items, role }: { items: UrgentHomeworkIte
                       <span aria-hidden>{item.subjectEmoji} </span>
                       {item.title}
                     </p>
-                    <div className="mt-1.5">
+                    <div className="mt-1">
                       <DeadlineBadge deadline={item.deadline} />
                     </div>
                   </div>
@@ -267,7 +270,7 @@ export function ReviewQueueWidget({ queue, role }: { queue: ReviewQueue; role: s
         {isStudent ? "На проверке" : "Нужно проверить"}
       </h2>
 
-      <p className="mt-4 text-3xl font-semibold tabular-nums text-white">{queue.count}</p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-white">{queue.count}</p>
       <p className="mt-1 text-xs text-slate-400">
         {isStudent ? "ваших работ ждут оценки учителя" : "работ учеников ждут проверки"}
       </p>
@@ -275,7 +278,7 @@ export function ReviewQueueWidget({ queue, role }: { queue: ReviewQueue; role: s
       {!isStudent && queue.count > 0 && (
         <Link
           href="/homework"
-          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-brand-gradient/80 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-gradient hover:scale-[1.02]"
+          className={cn(WIDGET_ACTION, "mt-3 w-fit")}
         >
           <FileCheck className="h-4 w-4" />
           Перейти к проверке
@@ -283,7 +286,7 @@ export function ReviewQueueWidget({ queue, role }: { queue: ReviewQueue; role: s
       )}
 
       {!isStudent && queue.items.length > 0 && (
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-2 space-y-1">
           {queue.items.slice(0, 3).map((item) => (
             <li key={item.submissionId} className="text-xs text-slate-300">
               <Link
@@ -347,13 +350,13 @@ export function QuickLessonButton({ role }: { role: string }) {
   if (role === "STUDENT") return null;
 
   return (
-    <section className="ring-gradient glass-card animate-fade-up p-5">
-      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+    <section className="card p-4">
+      <h2 className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
         <Rocket className="h-4 w-4" />
         Быстрое действие
       </h2>
 
-      <p className="mt-3 text-sm text-slate-300">
+      <p className="mt-2 text-sm text-slate-300">
         Запустите внеплановый урок одним нажатием. Код встречи сгенерируется автоматически.
       </p>
 
@@ -361,7 +364,7 @@ export function QuickLessonButton({ role }: { role: string }) {
         type="button"
         onClick={handleCreate}
         disabled={creating}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient px-4 py-3 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02] disabled:opacity-60"
+        className={cn(WIDGET_ACTION, "mt-3 w-full disabled:opacity-60")}
       >
         {creating ? (
           <Loader2 className="h-4 w-4 animate-spin" />

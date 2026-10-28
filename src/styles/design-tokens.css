@@ -1,0 +1,209 @@
+/*
+ * EduFlow · Design Tokens
+ * ---------------------------------------------------------------------------
+ * Единая дизайн-система «Telegram × Twitch Dark» для всех пяти поверхностей:
+ * Web Desktop, Web Mobile, Android APK, Windows .exe и macOS .dmg.
+ *
+ * Правила системы:
+ *  • фон страницы — глубокий графит #0B0F17, карточки — #111827 с окантовкой
+ *    rgba(255,255,255,0.10) и скруглением 16px (rounded-2xl);
+ *  • акцент (#10B981) используется ТОЛЬКО на активных элементах: кнопка
+ *    действия, активный пункт навигации, фокус, индикатор «идёт урок»;
+ *  • типографика сдержанная: заголовки text-base/text-lg font-semibold,
+ *    подзаголовки text-sm font-medium, подписи text-xs text-slate-400;
+ *  • темы меняют только акцент и цвет нативной полосы (title bar / status bar),
+ *    поэтому вся сетка и контраст остаются одинаковыми на всех платформах.
+ *
+ * Файл подключается в src/app/layout.tsx ДО globals.css: токены должны быть
+ * доступны и Tailwind-утилитам, и инлайн-стилям, и JS-мостам (Android/Electron).
+ */
+
+:root {
+  /* ---------- Поверхности: Dark Graphite (базовая тема) ------------------ */
+  --bg-primary: #0b0f17;
+  --bg-primary-rgb: 11 15 23;
+  --bg-card: #111827;
+  --bg-card-rgb: 17 24 39;
+  --bg-raised: #16202f;
+  --bg-raised-rgb: 22 32 47;
+  --bg-panel-rgb: 24 34 50;
+  --bg-panel-strong-rgb: 31 43 62;
+
+  /* ---------- Акцент: изумрудный, только для активных элементов ---------- */
+  --accent-primary: #10b981;
+  --accent-primary-rgb: 16 185 129;
+  --accent-rgb: 16 185 129;
+  --accent-light-rgb: 110 231 183;
+  --accent-pale-rgb: 209 250 229;
+  --accent-strong-rgb: 5 150 105;
+  --accent-deep-rgb: 6 95 70;
+
+  /* ---------- Текст ------------------------------------------------------ */
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --text-primary-rgb: 249 250 251;
+  --text-secondary-rgb: 156 163 175;
+  --text-muted-rgb: 107 114 128;
+
+  /* ---------- Окантовки и радиусы --------------------------------------- */
+  --border-rgb: 255 255 255;
+  --border-subtle: rgb(255 255 255 / 0.1);
+  --border-strong: rgb(255 255 255 / 0.16);
+  --border-accent: rgb(var(--accent-primary-rgb) / 0.35);
+  --radius-card: 1rem; /* rounded-2xl — карточки */
+  --radius-control: 0.75rem; /* rounded-xl — кнопки, поля */
+  --radius-pill: 9999px;
+
+  /* ---------- Хром окна и мобильные панели ------------------------------- */
+  /* Цвет нативной полосы: Electron titleBarOverlay и Android status/nav bar. */
+  --titlebar-color: #0b0f17;
+  --titlebar-symbol: #f9fafb;
+  --titlebar-height: 38px;
+  --navbar-height: 56px;
+  --bottom-nav-height: 60px;
+
+  /* ---------- Производные токены (мост к Tailwind-утилитам) -------------- */
+  --bg-deep-rgb: var(--bg-primary-rgb);
+  --bg-surface-rgb: var(--bg-card-rgb);
+  --bg-surface-raised-rgb: var(--bg-raised-rgb);
+  --scrollbar-border: var(--bg-primary);
+  --bg-overlay-opacity: 0;
+  --glass-bg: rgb(17 24 39 / 0.82);
+  --glass-bg-strong: rgb(11 15 23 / 0.94);
+  --glass-border: var(--border-subtle);
+  --glass-fill: rgb(255 255 255 / 0.04);
+  --brand: var(--accent-primary);
+  --accent: var(--accent-primary);
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
+  --brand-gradient: linear-gradient(180deg, var(--accent-primary) 0%, rgb(var(--accent-strong-rgb)) 100%);
+  --brand-gradient-soft: linear-gradient(
+    160deg,
+    rgb(var(--accent-primary-rgb) / 0.16) 0%,
+    rgb(var(--accent-primary-rgb) / 0.04) 100%
+  );
+  --shadow-glow: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 8px 24px -12px rgb(0 0 0 / 0.8);
+  --shadow-glow-accent: 0 0 0 1px rgb(var(--accent-primary-rgb) / 0.28), 0 8px 24px -12px rgb(var(--accent-primary-rgb) / 0.45);
+  --shadow-neon-ring: 0 0 0 2px rgb(var(--accent-primary-rgb) / 0.72);
+}
+
+/* ------------------------------------------------------------------------- */
+/* TEMAS · каждая задаёт свой --accent-primary и --titlebar-color             */
+/* ------------------------------------------------------------------------- */
+
+/* 1. Dark Graphite — базовая (Twitch-графит + изумруд). */
+:root,
+:root[data-theme="graphite"] {
+  color-scheme: dark;
+  --bg-primary: #0b0f17;
+  --bg-primary-rgb: 11 15 23;
+  --bg-card: #111827;
+  --bg-card-rgb: 17 24 39;
+  --bg-raised: #16202f;
+  --bg-raised-rgb: 22 32 47;
+  --bg-panel-rgb: 24 34 50;
+  --bg-panel-strong-rgb: 31 43 62;
+  --accent-primary: #10b981;
+  --accent-primary-rgb: 16 185 129;
+  --accent-rgb: 16 185 129;
+  --accent-light-rgb: 110 231 183;
+  --accent-pale-rgb: 209 250 229;
+  --accent-strong-rgb: 5 150 105;
+  --accent-deep-rgb: 6 95 70;
+  --titlebar-color: #0b0f17;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #0b0f17;
+}
+
+/* 2. Indigo Night — индиго-акцент, холодные поверхности. */
+:root[data-theme="indigo"] {
+  color-scheme: dark;
+  --bg-primary: #0a0d1c;
+  --bg-primary-rgb: 10 13 28;
+  --bg-card: #111530;
+  --bg-card-rgb: 17 21 48;
+  --bg-raised: #171c3a;
+  --bg-raised-rgb: 23 28 58;
+  --bg-panel-rgb: 25 31 64;
+  --bg-panel-strong-rgb: 33 40 80;
+  --accent-primary: #6366f1;
+  --accent-primary-rgb: 99 102 241;
+  --accent-rgb: 99 102 241;
+  --accent-light-rgb: 165 180 252;
+  --accent-pale-rgb: 224 231 255;
+  --accent-strong-rgb: 79 70 229;
+  --accent-deep-rgb: 55 48 163;
+  --titlebar-color: #080b18;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #0a0d1c;
+}
+
+/* 3. Emerald Pro — насыщенный изумруд, зелёный подтон поверхностей. */
+:root[data-theme="emerald"] {
+  color-scheme: dark;
+  --bg-primary: #08120f;
+  --bg-primary-rgb: 8 18 15;
+  --bg-card: #0f1c17;
+  --bg-card-rgb: 15 28 23;
+  --bg-raised: #14251e;
+  --bg-raised-rgb: 20 37 30;
+  --bg-panel-rgb: 18 33 27;
+  --bg-panel-strong-rgb: 25 45 37;
+  --accent-primary: #34d399;
+  --accent-primary-rgb: 52 211 153;
+  --accent-rgb: 52 211 153;
+  --accent-light-rgb: 110 231 183;
+  --accent-pale-rgb: 209 250 229;
+  --accent-strong-rgb: 5 150 105;
+  --accent-deep-rgb: 6 78 59;
+  --titlebar-color: #06100c;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #08120f;
+}
+
+/* 4. Violet Glow — фиолетовый акцент Twitch-направления. */
+:root[data-theme="violet"] {
+  color-scheme: dark;
+  --bg-primary: #0d0a17;
+  --bg-primary-rgb: 13 10 23;
+  --bg-card: #17112a;
+  --bg-card-rgb: 23 17 42;
+  --bg-raised: #1e1736;
+  --bg-raised-rgb: 30 23 54;
+  --bg-panel-rgb: 26 20 47;
+  --bg-panel-strong-rgb: 36 28 62;
+  --accent-primary: #a855f7;
+  --accent-primary-rgb: 168 85 247;
+  --accent-rgb: 168 85 247;
+  --accent-light-rgb: 216 180 254;
+  --accent-pale-rgb: 243 232 255;
+  --accent-strong-rgb: 147 51 234;
+  --accent-deep-rgb: 107 33 168;
+  --titlebar-color: #0a0813;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #0d0a17;
+}
+
+/* 5. Classic Slate — нейтральный графит с приглушённым слейт-акцентом. */
+:root[data-theme="slate"] {
+  color-scheme: dark;
+  --bg-primary: #0f141b;
+  --bg-primary-rgb: 15 20 27;
+  --bg-card: #171e29;
+  --bg-card-rgb: 23 30 41;
+  --bg-raised: #1e2733;
+  --bg-raised-rgb: 30 39 51;
+  --bg-panel-rgb: 26 34 46;
+  --bg-panel-strong-rgb: 35 45 60;
+  --accent-primary: #94a3b8;
+  --accent-primary-rgb: 148 163 184;
+  --accent-rgb: 148 163 184;
+  --accent-light-rgb: 203 213 225;
+  --accent-pale-rgb: 241 245 249;
+  --accent-strong-rgb: 100 116 139;
+  --accent-deep-rgb: 71 85 105;
+  --titlebar-color: #0c1117;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #0f141b;
+}

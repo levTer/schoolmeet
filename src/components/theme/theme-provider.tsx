@@ -2,13 +2,14 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
+import { syncNativeChrome } from "@/lib/native-chrome";
 import {
   DEFAULT_TEXT_SIZE,
   DEFAULT_THEME,
   getThemeOption,
   isTextSize,
-  isThemeId,
   LEGACY_THEME_STORAGE_KEY,
+  normalizeThemeId,
   TEXT_SIZE_STORAGE_KEY,
   THEME_STORAGE_KEY,
   type TextSize,
@@ -24,12 +25,15 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
+/**
+ * Применяет тему к документу и нативному хрому:
+ *  • `data-theme` на <html> переключает токены из design-tokens.css;
+ *  • Android получает `setStatusBarColor`, Electron — `setTheme` (titleBarOverlay).
+ */
 function applyTheme(theme: ThemeId) {
-  document.documentElement.dataset.theme = theme;
-  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
-    "content",
-    getThemeOption(theme).background,
-  );
+  const option = getThemeOption(theme);
+  document.documentElement.dataset.theme = option.id;
+  syncNativeChrome(option);
 }
 
 function applyTextSize(textSize: TextSize) {
@@ -43,20 +47,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [textSize, setTextSizeState] = useState<TextSize>(DEFAULT_TEXT_SIZE);
 
   useEffect(() => {
-    let initialTheme = isThemeId(document.documentElement.dataset.theme)
-      ? document.documentElement.dataset.theme
-      : DEFAULT_THEME;
+    let initialTheme = normalizeThemeId(document.documentElement.dataset.theme) ?? DEFAULT_THEME;
     let initialTextSize = isTextSize(document.documentElement.dataset.textSize)
       ? document.documentElement.dataset.textSize
       : DEFAULT_TEXT_SIZE;
 
     try {
       const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-      if (isThemeId(savedTheme)) {
-        initialTheme = savedTheme;
+      const normalized = normalizeThemeId(savedTheme);
+      if (normalized) {
+        initialTheme = normalized;
+        // Переписываем старое значение (cyber/ocean/mint) в актуальный id темы.
+        if (savedTheme !== normalized) {
+          window.localStorage.setItem(THEME_STORAGE_KEY, normalized);
+        }
       } else {
-        const legacyTheme = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
-        if (isThemeId(legacyTheme)) {
+        const legacyTheme = normalizeThemeId(
+          window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY),
+        );
+        if (legacyTheme) {
           initialTheme = legacyTheme;
           window.localStorage.setItem(THEME_STORAGE_KEY, legacyTheme);
         }

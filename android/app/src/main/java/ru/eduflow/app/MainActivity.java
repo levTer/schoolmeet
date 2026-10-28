@@ -17,11 +17,15 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.view.Gravity;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -47,12 +51,26 @@ import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Native home, schedule and homework lists; the remaining workspace uses WebView. */
+/**
+ * Native home, schedule and homework lists; the remaining workspace uses WebView.
+ *
+ * Палитра синхронизирована с `src/styles/design-tokens.css`:
+ *  • {@link #SLATE} = --bg-primary (#0B0F17);
+ *  • {@link #PANEL} = --bg-card (#111827);
+ *  • {@link #MUTED} = --text-secondary (#9CA3AF);
+ *  • {@link #TEXT}  = --text-primary (#F9FAFB);
+ *  • {@link #ACCENT} = --accent-primary темы Dark Graphite (#10B981).
+ * Живая тема приходит из веба через мост AndroidApp.setStatusBarColor().
+ */
 public final class MainActivity extends Activity {
-    static final int SLATE = Color.rgb(15, 23, 42);
-    private static final int PANEL = Color.rgb(30, 41, 59);
-    private static final int MUTED = Color.rgb(148, 163, 184);
-    private static final int GOLD = Color.rgb(245, 158, 11);
+    /** Цвет по умолчанию для статус-бара и фона (--bg-primary). */
+    static final int SLATE = Color.rgb(11, 15, 23);
+    private static final int PANEL = Color.rgb(17, 24, 39);
+    private static final int MUTED = Color.rgb(156, 163, 175);
+    private static final int TEXT = Color.rgb(249, 250, 251);
+    private static final int ACCENT = Color.rgb(16, 185, 129);
+    /** Прозрачный статус-бар: контент уходит под системную панель (edge-to-edge). */
+    private static final String DEFAULT_STATUS_BAR_HEX = "#0B0F17";
     private static final int REQUEST_MEDIA = 102;
     private static final int REQUEST_FILE = 103;
     private static final int REQUEST_SAVE = 104;
@@ -78,7 +96,12 @@ public final class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(SLATE);
+        // Никакого серого заголовка «< EduFlow»: тема NoActionBar + скрытый title.
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        // Edge-to-edge: контент рисуется под прозрачным статус-баром, а отступы
+        // под системные панели добавляются обработчиком WindowInsets ниже.
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(SLATE);
         getWindow().getDecorView().setSystemUiVisibility(0); // light icons on dark bars
         if (Build.VERSION.SDK_INT >= 29) getWindow().setNavigationBarContrastEnforced(false);
@@ -90,9 +113,89 @@ public final class MainActivity extends Activity {
         content = new FrameLayout(this);
         root.addView(content, new FrameLayout.LayoutParams(-1, -1));
         setContentView(root);
+        applySystemBarInsets();
         getWindow().setBackgroundDrawable(new ColorDrawable(SLATE));
         show(Screen.HOME);
         showSplashOverlay();
+    }
+
+    /**
+     * Отступы edge-to-edge: статус-бар сверху, жестовая/навигационная полоса
+     * снизу. Паддинг ставится на decor-view, поэтому и нативные экраны, и WebView
+     * не заезжают под системные панели.
+     */
+    private void applySystemBarInsets() {
+        final View decor = getWindow().getDecorView();
+        decor.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override public WindowInsets onApplyWindowInsets(View view, WindowInsets insets) {
+                int top, left, right, bottom;
+                if (Build.VERSION.SDK_INT >= 30) {
+                    android.graphics.Insets bars = Api30.systemBars(insets);
+                    top = bars.top; left = bars.left; right = bars.right; bottom = bars.bottom;
+                } else {
+                    top = insets.getSystemWindowInsetTop();
+                    left = insets.getSystemWindowInsetLeft();
+                    right = insets.getSystemWindowInsetRight();
+                    bottom = insets.getSystemWindowInsetBottom();
+                }
+                view.setPadding(left, top, right, bottom);
+                return insets;
+            }
+        });
+        decor.requestApplyInsets();
+    }
+
+    private static final class Api30 {
+        static android.graphics.Insets systemBars(WindowInsets insets) {
+            return insets.getInsets(
+                WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+        }
+    }
+
+    /**
+     * JavaScript-мост `AndroidApp` для веб-интерфейса (useTheme → syncNativeChrome).
+     * Веб вызывает `window.AndroidApp.setStatusBarColor("#0B0F17")` при смене темы.
+     */
+    static final class AndroidBridge {
+        private final MainActivity activity;
+
+        AndroidBridge(MainActivity activity) { this.activity = activity; }
+
+        @JavascriptInterface
+        public void setStatusBarColor(final String colorHex) {
+            activity.runOnUiThread(new Runnable() {
+                @Override public void run() { activity.applyStatusBarColor(colorHex); }
+            });
+        }
+
+        @JavascriptInterface
+        public String getStatusBarColor() { return activity.statusBarColor; }
+
+        @JavascriptInterface
+        public boolean isEdgeToEdge() { return true; }
+    }
+
+    /** Текущий цвет системных панелей (hex) — для диагностики и getStatusBarColor(). */
+    private volatile String statusBarColor = DEFAULT_STATUS_BAR_HEX;
+
+    /** Перекрашивает статус-бар и панель навигации в цвет активной темы. */
+    void applyStatusBarColor(String colorHex) {
+        if (colorHex == null) return;
+        int color;
+        try {
+            color = Color.parseColor(colorHex);
+        } catch (IllegalArgumentException invalid) {
+            return;
+        }
+        statusBarColor = colorHex;
+        getWindow().setStatusBarColor(color);
+        getWindow().setNavigationBarColor(color);
+        if (root != null) root.setBackgroundColor(color);
+    }
+
+    /** Регистрирует мост в WebView (только для доверенного same-origin контента). */
+    void attachJavascriptBridge(WebView web) {
+        web.addJavascriptInterface(new AndroidBridge(this), "AndroidApp");
     }
 
     private static final class Api31 {
@@ -164,8 +267,8 @@ public final class MainActivity extends Activity {
         view.setTextSize(15);
         view.setAllCaps(false);
         view.setMinHeight(dp(52));
-        view.setTextColor(accent ? SLATE : Color.WHITE);
-        view.setBackground(surface(accent ? GOLD : PANEL, 14));
+        view.setTextColor(accent ? SLATE : TEXT);
+        view.setBackground(surface(accent ? ACCENT : PANEL, 14));
         view.setOnClickListener(listener);
         return view;
     }
@@ -221,15 +324,15 @@ public final class MainActivity extends Activity {
         icon.setImageResource(R.mipmap.ic_launcher);
         icon.setContentDescription("EduFlow");
         brand.addView(icon, new LinearLayout.LayoutParams(dp(50), dp(50)));
-        TextView title = text("EduFlow", 24, Color.WHITE, true);
+        TextView title = text("EduFlow", 24, TEXT, true);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-2, -2);
         titleParams.leftMargin = dp(12);
         brand.addView(title, titleParams);
         column.addView(brand);
         addSpace(column, 30);
-        column.addView(text("ВСЁ ДЛЯ УЧЁБЫ", 12, GOLD, true));
+        column.addView(text("ВСЁ ДЛЯ УЧЁБЫ", 12, ACCENT, true));
         addSpace(column, 9);
-        column.addView(text("Учиться вместе — проще", 29, Color.WHITE, true));
+        column.addView(text("Учиться вместе — проще", 29, TEXT, true));
         addSpace(column, 10);
         final TextView greeting = text("Уроки, задания и расписание в одном месте.", 15, MUTED, false);
         column.addView(greeting);
@@ -238,7 +341,7 @@ public final class MainActivity extends Activity {
             @Override public void onClick(View view) { openWeb("/dashboard"); }
         }), new LinearLayout.LayoutParams(-1, dp(54)));
         addSpace(column, 26);
-        column.addView(text("Быстрый доступ", 19, Color.WHITE, true));
+        column.addView(text("Быстрый доступ", 19, TEXT, true));
         addSpace(column, 12);
         column.addView(button("Расписание  →", false, new View.OnClickListener() {
             @Override public void onClick(View view) { navigate(Screen.SCHEDULE); }
@@ -272,7 +375,7 @@ public final class MainActivity extends Activity {
             @Override public void onClick(View view) { handleBack(); }
         }), new LinearLayout.LayoutParams(-1, dp(48)));
         addSpace(column, 22);
-        column.addView(text(schedule ? "Расписание" : "Домашние задания", 27, Color.WHITE, true));
+        column.addView(text(schedule ? "Расписание" : "Домашние задания", 27, TEXT, true));
         addSpace(column, 8);
         column.addView(text(schedule ? "Уроки вашей школы" : "Задания, доступные вашему аккаунту", 14, MUTED, false));
         addSpace(column, 18);
@@ -342,9 +445,9 @@ public final class MainActivity extends Activity {
         if (schedule) {
             int day = item.optInt("dayOfWeek");
             String dayName = day > 0 && day < DAYS.length ? DAYS[day] : "Урок";
-            card.addView(text(dayName + " · " + item.optString("startTime", "") + "–" + item.optString("endTime", ""), 13, GOLD, true));
+            card.addView(text(dayName + " · " + item.optString("startTime", "") + "–" + item.optString("endTime", ""), 13, ACCENT, true));
             addSpace(card, 7);
-            card.addView(text(subjectName, 18, Color.WHITE, true));
+            card.addView(text(subjectName, 18, TEXT, true));
             JSONObject teacher = item.optJSONObject("teacher");
             if (teacher != null) {
                 addSpace(card, 4);
@@ -358,9 +461,9 @@ public final class MainActivity extends Activity {
                 }), new LinearLayout.LayoutParams(-1, dp(48)));
             }
         } else {
-            card.addView(text(subjectName, 13, GOLD, true));
+            card.addView(text(subjectName, 13, ACCENT, true));
             addSpace(card, 7);
-            card.addView(text(item.optString("title", "Задание"), 18, Color.WHITE, true));
+            card.addView(text(item.optString("title", "Задание"), 18, TEXT, true));
             addSpace(card, 5);
             card.addView(text("Сдать до: " + formatDate(item.optString("deadline", "")), 14, MUTED, false));
             final String id = item.optString("id", "");

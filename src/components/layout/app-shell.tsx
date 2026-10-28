@@ -11,16 +11,22 @@ import { cn } from "@/lib/utils";
 interface AppShellProps {
   children: React.ReactNode;
   className?: string;
+  /**
+   * `flush` — полноэкранный режим без внешнего контейнера и футера: шапка,
+   * контент на всю высоту и нижняя навигация. Используется однoэкранным
+   * кабинетом (`h-[100dvh] flex flex-col`, Zero-Scroll на мобильных).
+   */
+  flush?: boolean;
 }
 
 /**
- * Каркас внутренних страниц платформы: навбар с профилем + контент в
- * ограниченном контейнере. Используется в /dashboard, /admin, /schedule, /meeting.
+ * Каркас внутренних страниц платформы: навбар с профилем + контент.
  *
- * Сессию читаем здесь один раз и передаём в навбар — так имя, роль и кнопка
- * «Выйти» попадают сразу в серверную разметку.
+ * Дизайн-система Telegram/Twitch Dark: плоский фон `--bg-primary`, карточки
+ * `#111827` с окантовкой `border-white/10`, нижняя навигация с safe-area.
+ * На мобильных работает Zero-Scroll: прокручивается только `.app-frame`.
  */
-export async function AppShell({ children, className }: AppShellProps) {
+export async function AppShell({ children, className, flush = false }: AppShellProps) {
   /* Реальный тип сессии: `Awaited<ReturnType<typeof getServerSession>>`
      в next-auth 4.24 схлопывается в `unknown` и ломает сборку. */
   let session: Session | null = null;
@@ -42,26 +48,31 @@ export async function AppShell({ children, className }: AppShellProps) {
   }
 
   return (
-    <div className="relative flex min-h-[100dvh] flex-col overflow-x-hidden">
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute inset-0 bg-grid mask-radial opacity-40" />
-        <div className="absolute left-1/2 top-0 h-[24rem] w-[24rem] -translate-x-1/2 rounded-full bg-brand-600/15 blur-[140px]" />
-      </div>
-
+    <div
+      className={cn(
+        "relative flex min-h-[100dvh] flex-col",
+        /* Однoэкранный кабинет: ровно 100dvh, прокрутка — только внутри контента. */
+        flush && "h-[100dvh] overflow-hidden md:h-auto md:min-h-[100dvh] md:overflow-visible",
+      )}
+    >
       <Navbar user={user ?? null} />
 
       <main
         className={cn(
-          "safe-pb mx-auto w-full max-w-7xl flex-1 px-4 py-6 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-8 sm:py-9 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-[calc(1.25rem+env(safe-area-inset-bottom))]",
+          flush
+            ? "flex min-h-0 flex-1 flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0"
+            : "mx-auto w-full max-w-7xl flex-1 px-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:pt-4 md:pb-6",
           className,
         )}
       >
         {children}
       </main>
 
-      <footer className="hidden border-t border-white/5 px-5 py-6 text-center text-xs text-slate-500 sm:px-8 md:block">
-        {schoolName} · платформа видеоуроков, ИИ-доски и расписания
-      </footer>
+      {!flush ? (
+        <footer className="hidden border-t border-white/10 px-5 py-4 text-center text-xs text-slate-500 sm:px-8 md:block">
+          {schoolName} · платформа видеоуроков, ИИ-доски и расписания
+        </footer>
+      ) : null}
 
       {/* Нижняя навигация для мобильных устройств */}
       <BottomNav role={user?.role ?? null} />
