@@ -4,8 +4,8 @@
   "description": "Платформа для онлайн-уроков, ДЗ и обучения с ИИ",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#0B0F17",
+  "theme_color": "#0B0F17",
   "orientation": "any",
   "icons": [
     {

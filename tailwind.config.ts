@@ -3,9 +3,18 @@ import type { Config } from "tailwindcss";
 const themeRgb = (variable: string) => `rgb(var(${variable}) / <alpha-value>)`;
 
 /**
- * Цветовые токены ссылаются на CSS variables, поэтому все использующие их
- * классы (bg-brand-500, text-accent-300, bg-ink-950 и т. д.) переключаются
- * одновременно при изменении data-theme на корневом элементе.
+ * EduFlow · Tailwind-мост к дизайн-системе (`src/styles/design-tokens.css`).
+ *
+ * Все цвета ссылаются на CSS-переменные, поэтому смена `data-theme` на <html>
+ * одновременно перекрашивает интерфейс во всех пяти поверхностях: web desktop,
+ * web mobile, Android APK (WebView), Windows .exe и macOS .dmg (Electron).
+ *
+ * Семантика:
+ *  • `canvas`  — фон страницы (#0B0F17);
+ *  • `surface` — карточки (#111827), `surface-raised` — вложенные блоки;
+ *  • `line`    — окантовка карточек (border-white/10);
+ *  • `fg`      — основной текст (#F9FAFB), `fg-muted` — подписи (#9CA3AF);
+ *  • `brand`/`accent` — акцент темы (по умолчанию изумруд #10B981).
  */
 const config: Config = {
   darkMode: "class",
@@ -17,6 +26,21 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        /** Фон страницы (--bg-primary). */
+        canvas: themeRgb("--bg-primary-rgb"),
+        /** Карточки дизайн-системы: #111827 + rgba(255,255,255,.10). */
+        surface: {
+          DEFAULT: themeRgb("--bg-card-rgb"),
+          raised: themeRgb("--bg-raised-rgb"),
+          panel: themeRgb("--bg-panel-rgb"),
+          strong: themeRgb("--bg-panel-strong-rgb"),
+        },
+        line: themeRgb("--border-rgb"),
+        fg: {
+          DEFAULT: themeRgb("--text-primary-rgb"),
+          muted: themeRgb("--text-secondary-rgb"),
+          subtle: themeRgb("--text-muted-rgb"),
+        },
         primary: themeRgb("--bg-primary-rgb"),
         /** Динамические поверхности интерфейса — глубокий фон и уровни карточек. */
         ink: {
@@ -58,6 +82,19 @@ const config: Config = {
         sans: ["var(--font-geist-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["var(--font-geist-mono)", "ui-monospace", "monospace"],
       },
+      /** Хром окна: 56px шапка и 38px системная полоса Electron. */
+      spacing: {
+        nav: "56px",
+        titlebar: "38px",
+      },
+      height: {
+        nav: "56px",
+        titlebar: "38px",
+      },
+      borderRadius: {
+        card: "var(--radius-card)",
+        control: "var(--radius-control)",
+      },
       backgroundImage: {
         "brand-gradient": "var(--brand-gradient)",
         "brand-gradient-soft": "var(--brand-gradient-soft)",
@@ -67,10 +104,12 @@ const config: Config = {
         "glow-accent": "var(--shadow-glow-accent)",
         "neon-ring": "var(--shadow-neon-ring)",
         "inner-top": "inset 0 1px 0 0 rgba(255, 255, 255, 0.07)",
+        /** Плоская тень карточки дизайн-системы (Telegram-style). */
+        card: "0 1px 2px 0 rgb(0 0 0 / 0.4)",
       },
       keyframes: {
         "fade-up": {
-          from: { opacity: "0", transform: "translateY(18px)" },
+          from: { opacity: "0", transform: "translateY(10px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "fade-in": {
@@ -118,8 +157,8 @@ const config: Config = {
         },
       },
       animation: {
-        "fade-up": "fade-up .7s cubic-bezier(.16,1,.3,1) both",
-        "fade-in": "fade-in .8s ease-out both",
+        "fade-up": "fade-up .35s cubic-bezier(.16,1,.3,1) both",
+        "fade-in": "fade-in .3s ease-out both",
         float: "float 7s ease-in-out infinite",
         "gradient-pan": "gradient-pan 8s ease infinite",
         shimmer: "shimmer 2.4s infinite",
@@ -127,7 +166,7 @@ const config: Config = {
         "spin-slow": "spin-slow 26s linear infinite",
         "neon-breathe": "neon-breathe 1.6s ease-in-out infinite",
         "pulse-glow": "pulse-glow 2s ease-in-out infinite",
-        "page-enter": "page-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) both",
+        "page-enter": "page-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) both",
       },
     },
   },

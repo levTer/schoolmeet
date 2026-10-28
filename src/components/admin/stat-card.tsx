@@ -30,7 +30,7 @@ export function StatCard({ label, value, hint, icon: Icon, tone = "brand", index
       <span className={cn("inline-flex h-9 w-9 items-center justify-center rounded-xl border", TONES[tone])}>
         <Icon className="h-4 w-4" />
       </span>
-      <p className="mt-4 text-3xl font-semibold tabular-nums text-white">{value}</p>
+      <p className="mt-4 text-2xl font-semibold tabular-nums text-white">{value}</p>
       <p className="mt-1 text-xs uppercase tracking-wider text-slate-500">{label}</p>
       {hint && <p className="mt-2 text-xs leading-relaxed text-slate-500">{hint}</p>}
     </div>

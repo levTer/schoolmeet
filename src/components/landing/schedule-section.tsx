@@ -54,7 +54,7 @@ export function ScheduleSection() {
             <Users className="h-3.5 w-3.5 text-brand-300" />
             Расписание
           </span>
-          <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl">
+          <h2 className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">
             Расписание, где у каждой роли{" "}
             <span className="text-gradient-brand">свои права</span>
           </h2>

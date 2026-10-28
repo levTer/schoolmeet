@@ -37,10 +37,10 @@ export function AuthShell({
     <main className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 py-10 sm:px-8 lg:py-16">
       {/* Декоративный фон: сетка + размытые градиентные пятна */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute inset-0 bg-grid mask-radial opacity-60" />
-        <div className="absolute -left-24 top-1/4 h-[26rem] w-[26rem] animate-float rounded-full bg-brand-600/25 blur-[130px]" />
-        <div className="absolute -right-20 top-10 h-[22rem] w-[22rem] animate-float rounded-full bg-accent-500/20 blur-[130px] [animation-delay:1.5s]" />
-        <div className="absolute bottom-[-6rem] left-1/3 h-[24rem] w-[24rem] animate-float rounded-full bg-brand-600/20 blur-[140px] [animation-delay:3s]" />
+        <div className="absolute inset-0 bg-grid mask-radial opacity-30" />
+        <div className="absolute -left-24 top-1/4 h-[26rem] w-[26rem] animate-float rounded-full bg-brand-500/[0.08] blur-[130px]" />
+        <div className="absolute -right-20 top-10 h-[22rem] w-[22rem] animate-float rounded-full bg-brand-500/[0.06] blur-[130px] [animation-delay:1.5s]" />
+        <div className="absolute bottom-[-6rem] left-1/3 h-[24rem] w-[24rem] animate-float rounded-full bg-brand-500/[0.05] blur-[140px] [animation-delay:3s]" />
       </div>
 
       <div className="relative grid w-full max-w-6xl items-center gap-10 lg:grid-cols-[1.05fr_minmax(0,27rem)] lg:gap-16">
@@ -48,12 +48,12 @@ export function AuthShell({
         <section className="hidden animate-fade-up lg:block">
           <Logo size="lg" />
 
-          <h1 className="mt-8 text-4xl font-semibold leading-tight tracking-tight text-white xl:text-5xl">
+          <h1 className="mt-6 text-2xl font-semibold leading-tight tracking-tight text-white">
             Уроки, доска и расписание —{" "}
             <span className="text-gradient">в одном виртуальном классе</span>
           </h1>
 
-          <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-400">
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-400">
             EduFlow — единая платформа видеоуроков: HD-трансляция, ИИ-доска с
             распознаванием формул, расписание по ролям и защищённый чат на AES-256.
           </p>
@@ -62,11 +62,11 @@ export function AuthShell({
             {highlights.map(({ icon: Icon, title: itemTitle, text }, index) => (
               <li
                 key={itemTitle}
-                className="ring-gradient animate-fade-up rounded-2xl border border-white/10 bg-white/[0.035] p-4 backdrop-blur-xl transition hover:bg-white/[0.06]"
+                className="animate-fade-up rounded-2xl border border-white/10 bg-white/[0.02] p-3.5 transition hover:bg-white/[0.04]"
                 style={{ animationDelay: `${120 + index * 90}ms` }}
               >
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient shadow-glow">
-                  <Icon className="h-4 w-4 text-white" />
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500/15 text-brand-300">
+                  <Icon className="h-4 w-4" />
                 </span>
                 <p className="mt-3 text-sm font-medium text-white">{itemTitle}</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">{text}</p>

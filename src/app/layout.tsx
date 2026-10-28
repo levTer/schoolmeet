@@ -5,14 +5,17 @@ import { Providers } from "@/components/providers";
 import {
   DEFAULT_TEXT_SIZE,
   DEFAULT_THEME,
+  LEGACY_THEME_ALIASES,
   LEGACY_THEME_STORAGE_KEY,
   TEXT_SIZE_OPTIONS,
   TEXT_SIZE_STORAGE_KEY,
-  THEME_OPTIONS,
   THEME_STORAGE_KEY,
+  themeBootstrapMap,
 } from "@/lib/theme";
 
 import "katex/dist/katex.min.css";
+/* Дизайн-токены подключаются ДО globals.css: базовые стили читают переменные. */
+import "@/styles/design-tokens.css";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -27,20 +30,35 @@ const geistMono = localFont({
   weight: "100 900",
 });
 
+/**
+ * Bootstrap темы: применяется в <head> до первой отрисовки, поэтому пользователь
+ * не видит вспышки чужого акцента. Поддерживаются и старые id тем
+ * (cyber/ocean/mint) — они нормализуются в актуальные (violet/indigo/graphite).
+ */
 const appearanceBootstrapScript = `(() => {
-  const themes = ${JSON.stringify(
-    Object.fromEntries(THEME_OPTIONS.map(({ id, background }) => [id, background])),
-  )};
+  const themes = ${JSON.stringify(themeBootstrapMap())};
+  const legacyThemes = ${JSON.stringify(LEGACY_THEME_ALIASES)};
   const textSizes = ${JSON.stringify(TEXT_SIZE_OPTIONS.map(({ id }) => id))};
   let theme = ${JSON.stringify(DEFAULT_THEME)};
   let textSize = ${JSON.stringify(DEFAULT_TEXT_SIZE)};
 
+  const normalizeTheme = (value) => {
+    if (typeof value !== "string") return null;
+    if (Object.prototype.hasOwnProperty.call(themes, value)) return value;
+    return Object.prototype.hasOwnProperty.call(legacyThemes, value) ? legacyThemes[value] : null;
+  };
+
   try {
     let savedTheme = window.localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
-    if (!Object.prototype.hasOwnProperty.call(themes, savedTheme)) {
+    let normalized = normalizeTheme(savedTheme);
+    if (!normalized) {
       savedTheme = window.localStorage.getItem(${JSON.stringify(LEGACY_THEME_STORAGE_KEY)});
+      normalized = normalizeTheme(savedTheme);
     }
-    if (Object.prototype.hasOwnProperty.call(themes, savedTheme)) theme = savedTheme;
+    if (normalized) {
+      theme = normalized;
+      window.localStorage.setItem(${JSON.stringify(THEME_STORAGE_KEY)}, normalized);
+    }
 
     const savedTextSize = window.localStorage.getItem(${JSON.stringify(TEXT_SIZE_STORAGE_KEY)});
     if (textSizes.includes(savedTextSize)) textSize = savedTextSize;
@@ -95,7 +113,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f172a",
+  themeColor: "#0B0F17",
   colorScheme: "dark",
   width: "device-width",
   initialScale: 1,
@@ -129,7 +147,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: serviceWorkerScript }} />
         {/* PWA и iOS метатеги для сборки .apk и полноэкранного режима */}
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#0f172a" />
+        <meta name="theme-color" content="#0B0F17" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="mobile-web-app-capable" content="yes" />
@@ -142,7 +160,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-[100dvh] font-sans antialiased`}
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          {/* Единственная прокручиваемая область на мобильных (Zero-Scroll). */}
+          <div className="app-frame">{children}</div>
+        </Providers>
       </body>
     </html>
   );

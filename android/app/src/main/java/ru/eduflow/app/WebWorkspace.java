@@ -36,32 +36,19 @@ final class WebWorkspace extends LinearLayout {
         setOrientation(VERTICAL);
         setBackgroundColor(MainActivity.SLATE);
 
-        LinearLayout bar = new LinearLayout(activity);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(8), 0, dp(16), 0);
-        Button back = new Button(activity);
-        back.setText("‹");
-        back.setTextSize(28);
-        back.setTextColor(Color.WHITE);
-        back.setContentDescription("Назад");
-        back.setBackgroundColor(Color.TRANSPARENT);
-        back.setOnClickListener(new OnClickListener() {
-            @Override public void onClick(View view) { activity.handleBack(); }
-        });
-        bar.addView(back, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        TextView label = new TextView(activity);
-        label.setText("EduFlow");
-        label.setTextSize(17);
-        label.setTextColor(Color.WHITE);
-        bar.addView(label);
-        addView(bar, new LinearLayout.LayoutParams(-1, dp(52)));
-
+        /*
+         * Нативной полосы «‹ EduFlow» больше нет: веб-интерфейс рисует
+         * собственную шапку дизайн-системы (56px). Назад — системный жест или
+         * кнопка Android Back (MainActivity.handleBack → workspace.goBack).
+         */
         FrameLayout body = new FrameLayout(activity);
         addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
         web = new WebView(activity);
         web.setBackgroundColor(MainActivity.SLATE);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
+        // Тема: window.AndroidApp.setStatusBarColor(hex) из useTheme/syncNativeChrome.
+        activity.attachJavascriptBridge(web);
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);

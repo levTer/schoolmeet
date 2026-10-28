@@ -1,32 +1,34 @@
 "use client";
 
+import { Check } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import { THEME_OPTIONS } from "@/lib/theme";
 
 import { useTheme } from "./theme-provider";
 
 interface ThemeSwitcherProps {
-  /** Small version for a compact header row; the full version includes a caption. */
+  /** Компактная версия для шапки: только кружки-образцы. */
   compact?: boolean;
   className?: string;
 }
 
+/**
+ * Переключатель пяти тем дизайн-системы.
+ *
+ * Каждая тема задаёт свой `--accent-primary` и `--titlebar-color`; образец
+ * показывает акцент на фоне страницы темы. В компактном режиме — кружки,
+ * в полном — список с названием и галочкой на активной теме.
+ */
 export function ThemeSwitcher({ compact = false, className }: ThemeSwitcherProps) {
   const { theme, setTheme } = useTheme();
 
-  return (
-    <div className={cn("flex items-center gap-3", compact ? "justify-center" : "justify-between", className)}>
-      {!compact ? (
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-white">Цветовая тема</p>
-          <p className="mt-0.5 text-[11px] text-slate-400">Сохранится на этом устройстве</p>
-        </div>
-      ) : null}
-
+  if (compact) {
+    return (
       <div
         role="group"
         aria-label="Выбор цветовой темы"
-        className={cn("flex shrink-0 items-center", compact ? "gap-1" : "gap-2")}
+        className={cn("flex items-center gap-1.5", className)}
       >
         {THEME_OPTIONS.map((option) => {
           const isSelected = theme === option.id;
@@ -40,14 +42,13 @@ export function ThemeSwitcher({ compact = false, className }: ThemeSwitcherProps
               title={option.label}
               onClick={() => setTheme(option.id)}
               className={cn(
-                "rounded-full border transition duration-200 hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-ink-900",
-                compact ? "h-5 w-5" : "h-7 w-7",
+                "inline-flex h-7 w-7 items-center justify-center rounded-full border transition",
                 isSelected
-                  ? "border-white ring-2 ring-white/90 ring-offset-2 ring-offset-ink-900"
-                  : "border-white/35 hover:border-white/80",
+                  ? "border-white/80 ring-2 ring-white/70 ring-offset-2 ring-offset-surface"
+                  : "border-white/10 hover:border-white/40",
               )}
               style={{
-                backgroundImage: `linear-gradient(145deg, ${option.background} 8%, ${option.accent} 100%)`,
+                backgroundImage: `linear-gradient(145deg, ${option.background} 10%, ${option.accent} 100%)`,
               }}
             >
               <span className="sr-only">{option.label}</span>
@@ -55,6 +56,48 @@ export function ThemeSwitcher({ compact = false, className }: ThemeSwitcherProps
           );
         })}
       </div>
+    );
+  }
+
+  return (
+    <div
+      role="group"
+      aria-label="Выбор цветовой темы"
+      className={cn("grid gap-2 sm:grid-cols-2", className)}
+    >
+      {THEME_OPTIONS.map((option) => {
+        const isSelected = theme === option.id;
+
+        return (
+          <button
+            key={option.id}
+            type="button"
+            aria-label={`Выбрать тему «${option.label}»`}
+            aria-pressed={isSelected}
+            onClick={() => setTheme(option.id)}
+            className={cn(
+              "flex items-center gap-3 rounded-xl border px-3 py-2 text-left transition",
+              isSelected
+                ? "border-white/25 bg-white/[0.06]"
+                : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.05]",
+            )}
+          >
+            <span
+              aria-hidden
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15"
+              style={{
+                backgroundImage: `linear-gradient(145deg, ${option.background} 10%, ${option.accent} 100%)`,
+              }}
+            >
+              {isSelected ? <Check className="h-3.5 w-3.5 text-white drop-shadow" /> : null}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium text-white">{option.label}</span>
+              <span className="block truncate text-[11px] text-slate-400">{option.description}</span>
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

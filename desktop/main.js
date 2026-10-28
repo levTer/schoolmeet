@@ -2,7 +2,7 @@
  * EduFlow Desktop — главный процесс Electron.
  *
  * Полноценное десктопное приложение на Chromium, как Discord / VS Code / Spotify:
- *  • собственное окно 1280×832 с иконкой №9 и тёмно-сланцевым фоном `#0F172A`;
+ *  • собственное окно 1280×832 с иконкой EduFlow и графитовым фоном `#0B0F17`;
  *  • чистый интерфейс без нативного верхнего меню Electron (`Menu.setApplicationMenu(null)`,
  *    `autoHideMenuBar: true`, `menuBarVisible: false`);
  *  • метка `EduFlowDesktop/1.0.0` в User-Agent — веб-интерфейс скрывает кнопки установки;
@@ -18,8 +18,10 @@ const { app, BrowserWindow, Menu, ipcMain, nativeImage, shell, session } = requi
 const APP_URL = (process.env.EDUFLOW_URL || "https://schoolmeet-vb96.onrender.com").replace(/\/+$/, "");
 const APP_ORIGIN = new URL(APP_URL).origin;
 const APP_NAME = "EduFlow";
-/** Тёмно-сланцевый фон окна до загрузки страницы (дизайн №9). */
-const BACKGROUND_COLOR = "#0F172A";
+/** Фон окна до загрузки страницы: --bg-primary (Dark Graphite). */
+const BACKGROUND_COLOR = "#0B0F17";
+/** Цвет системных кнопок окна: --titlebar-symbol. */
+const SYMBOL_COLOR = "#F9FAFB";
 const IS_DEV = !app.isPackaged;
 
 let mainWindow = null;
@@ -102,7 +104,7 @@ function createMainWindow() {
     ...(process.platform !== "darwin"
       ? {
           titleBarStyle: "hidden",
-          titleBarOverlay: { color: BACKGROUND_COLOR, symbolColor: "#F8FAFC", height: 38 },
+          titleBarOverlay: { color: BACKGROUND_COLOR, symbolColor: SYMBOL_COLOR, height: 38 },
         }
       : {}),
     icon: iconPath(),
@@ -184,8 +186,8 @@ function registerIpc() {
     if (mainWindow && !mainWindow.isDestroyed() && process.platform !== "darwin") {
       try {
         mainWindow.setTitleBarOverlay({
-          color: backgroundColor || "#0F172A",
-          symbolColor: symbolColor || "#F8FAFC",
+          color: backgroundColor || "#0B0F17",
+          symbolColor: symbolColor || "#F9FAFB",
           height: 38,
         });
       } catch (e) {

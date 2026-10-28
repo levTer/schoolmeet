@@ -1,0 +1,117 @@
+# Сборка и подпись Android-контейнера EduFlow (public/eduflow.apk).
+#
+# Контейнер нативный (Java + WebView), поэтому после правок в android/** APK
+# нужно пересобрать и подписать заново: v1 (JAR) + v2 + v3 (APK Signature Scheme)
+# ключом RSA-2048. Скрипт scripts/build-android.sh делает всё это одним вызовом,
+# сверяет отпечаток сертификата с android/release-certificate.sha256 и кладёт
+# готовый файл в public/.
+#
+# Ключ подписи НЕ хранится в git. Задайте в Settings → Secrets and variables →
+# Actions два секрета:
+#   • EDUFLOW_KEYSTORE_B64 — release-keystore (.jks) в base64;
+#   • EDUFLOW_KS_PASS      — пароль keystore (тот же, что у ключа alias eduflow).
+# Без секретов job завершается без сборки (шаги пропускаются), ничего не ломая.
+#
+# Запуск: push в main / arena/** с изменениями android/**, либо вручную
+# (Actions → Build Android APK → Run workflow). Готовый APK коммитится в ветку —
+# так же, как public/eduflow-setup.exe собирается Windows-воркфлоу.
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, "arena/**"]
+    paths:
+      - "android/**"
+      - "scripts/build-android.sh"
+      - "scripts/android-build-info.py"
+      - "scripts/generate-android-icons.mjs"
+      - "public/icon.svg"
+      - ".github/workflows/android-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Check signing secrets
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.EDUFLOW_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.EDUFLOW_KS_PASS }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KS_PASS" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::EDUFLOW_KEYSTORE_B64 / EDUFLOW_KS_PASS не заданы — APK не пересобирается."
+          fi
+
+      - name: Install Android SDK 34 and build tools
+        if: steps.signing.outputs.has_key == 'true'
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-34 build-tools;34.0.0"
+
+      - name: Prepare signing key
+        if: steps.signing.outputs.has_key == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.EDUFLOW_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.EDUFLOW_KS_PASS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/keys/eduflow-release.jks"
+          printf '%s' "$KS_PASS" > "$RUNNER_TEMP/keys/password.txt"
+          chmod 600 "$RUNNER_TEMP/keys/"*
+
+      - name: Build and sign APK (v1 + v2 + v3)
+        if: steps.signing.outputs.has_key == 'true'
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          EDUFLOW_KEYSTORE: ${{ runner.temp }}/keys/eduflow-release.jks
+          EDUFLOW_KS_PASS_FILE: ${{ runner.temp }}/keys/password.txt
+          EDUFLOW_KEY_ALIAS: eduflow
+        run: |
+          set -euo pipefail
+          bash scripts/build-android.sh
+          python3 scripts/android-apk.test.py
+
+      - name: Upload APK artifact
+        if: steps.signing.outputs.has_key == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduFlow-Android-APK
+          path: public/eduflow.apk
+          retention-days: 30
+
+      - name: Commit APK into public/
+        if: steps.signing.outputs.has_key == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- public/eduflow.apk; then
+            echo "APK не изменился — коммит не нужен."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/eduflow.apk
+          git commit -m "build(android): rebuild and sign EduFlow APK (v1/v2/v3)"
+          git push

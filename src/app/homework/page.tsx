@@ -109,7 +109,7 @@ export default async function HomeworkPage() {
             <ArrowLeft className="h-3.5 w-3.5" />
             В кабинет
           </Link>
-          <h1 className="mt-4 flex items-center gap-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+          <h1 className="mt-4 flex items-center gap-3 text-lg font-semibold tracking-tight sm:text-xl">
             <ClipboardList className="h-7 w-7 text-brand-300" />
             Домашние задания
           </h1>

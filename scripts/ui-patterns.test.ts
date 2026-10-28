@@ -636,8 +636,16 @@ describe("мобильный Safe Area, 100dvh и PWA-манифест для с
     assert.match(appShell, /min-h-\[100dvh\]/, "AppShell не использует min-h-[100dvh]");
     assert.match(room, /pb-\[calc\(1\.25rem\+env\(safe-area-inset-bottom\)\)\]|safe-pb/, "панель управления MeetingRoom не учитывает safe-area");
     assert.match(widget, /safe-mb|safe-pb|pb-\[calc\(1\.25rem\+env\(safe-area-inset-bottom\)\)\]/, "AIWidget не учитывает safe-area");
-    assert.match(bottomNav, /pb-\[calc\(1\.25rem\+env\(safe-area-inset-bottom\)\)\]|safe-pb/, "BottomNav не учитывает safe-area");
-    assert.match(navbar, /pb-\[calc\(1\.25rem\+env\(safe-area-inset-bottom\)\)\]|safe-pb/, "Navbar не учитывает safe-area");
+    assert.match(
+      bottomNav,
+      /pb-\[env\(safe-area-inset-bottom\)\]|pb-\[calc\([^\]]*env\(safe-area-inset-bottom\)[^\]]*\)\]|safe-pb/,
+      "BottomNav не учитывает safe-area",
+    );
+    assert.match(
+      navbar,
+      /pt-\[env\(safe-area-inset-top\)\]/,
+      "Navbar не учитывает safe-area сверху (edge-to-edge APK/PWA)",
+    );
   });
 
   it("PWA-манифест, иконки, sw.js и метатеги готовы для сборки .apk", () => {
@@ -657,8 +665,8 @@ describe("мобильный Safe Area, 100dvh и PWA-манифест для с
     assert.equal(manifest.description, "Платформа для онлайн-уроков, ДЗ и обучения с ИИ");
     assert.equal(manifest.start_url, "/");
     assert.equal(manifest.display, "standalone");
-    assert.equal(manifest.background_color, "#0f172a");
-    assert.equal(manifest.theme_color, "#0f172a");
+    assert.equal(manifest.background_color, "#0B0F17");
+    assert.equal(manifest.theme_color, "#0B0F17");
     assert.equal(manifest.orientation, "any");
     assert.equal(manifest.icons.length, 2);
     assert.deepEqual(
@@ -675,7 +683,11 @@ describe("мобильный Safe Area, 100dvh и PWA-манифест для с
     assert.match(sw, /addEventListener\("fetch"/, "sw.js не обрабатывает fetch");
 
     assert.match(layout, /<link rel="manifest" href="\/manifest\.json"\s*\/>/, "нет ссылки на manifest.json в layout.tsx");
-    assert.match(layout, /<meta name="theme-color" content="#0f172a"\s*\/>/, "нет meta theme-color #0f172a");
+    assert.match(
+      layout,
+      /<meta name="theme-color" content="#0B0F17"\s*\/>/,
+      "нет meta theme-color #0B0F17 (--bg-primary дизайн-системы)",
+    );
     assert.match(layout, /<meta name="apple-mobile-web-app-capable" content="yes"\s*\/>/, "нет apple-mobile-web-app-capable");
     assert.match(layout, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"\s*\/>/, "нет apple-mobile-web-app-status-bar-style");
   });
@@ -1243,17 +1255,19 @@ describe("Hero-секция главной страницы", () => {
     assert.ok(ctaAt > installAt, "кнопки «Начать урок» стоят выше блока установки");
   });
 
-  it("фон секции — градиент из глубокого тёмно-синего в чёрный", () => {
-    assert.match(hero, /linear-gradient\(180deg,#0A1B3D[_ ]0%/, "нет тёмно-синего старта градиента");
-    assert.match(hero, /#000000[_ ]100%/, "градиент не уходит в чёрный");
-    assert.match(hero, /rgba\(245,158,11/, "нет золотого свечения под иконки и кнопки");
+  it("фон секции — ровный графит дизайн-системы без золотого свечения", () => {
+    assert.match(hero, /bg-brand-500\/\[0\.07\]/, "нет тихого свечения акцента темы");
+    assert.doesNotMatch(hero, /#0A1B3D/, "остался тёмно-синий градиент старого дизайна");
+    assert.doesNotMatch(hero, /rgba\(245,158,11/, "осталось золотое свечение");
+    assert.match(hero, /text-brand-400/, "акцент заголовка не привязан к теме");
   });
 
-  it("InstallBlock центрирован и оформлен в едином дизайне №9", () => {
+  it("InstallBlock оформлен карточкой дизайн-системы", () => {
     assert.match(installBlock, /mx-auto[^"]*max-w-2xl/, "блок установки не отцентрирован");
-    assert.match(installBlock, /bg-\[#0F172A\]/, "нет тёмно-сланцевого фона панели");
-    assert.match(installBlock, /border-white\/10/, "нет белой окантовки панели");
-    assert.match(installBlock, /text-amber-400/, "нет золотых иконок");
+    assert.match(installBlock, /className="card px-3 py-3 sm:px-4"/, "нет карточки bg-surface/rounded-2xl");
+    assert.match(installBlock, /border-white\/10/, "нет окантовки border-white/10");
+    assert.match(installBlock, /text-brand-400/, "иконки не используют акцент темы");
+    assert.doesNotMatch(installBlock, /text-amber-400|bg-\[#0F172A\]/, "остались золото и navy старого дизайна");
   });
 });
 
@@ -1447,8 +1461,8 @@ describe("динамическая тема окна Electron и перетас�
       assert.match(source, /ipcMain\.on\(['"]update-titlebar-theme['"]/, `${name}: нет IPC-обработчика темы`);
       assert.match(source, /mainWindow && !mainWindow\.isDestroyed\(\) && process\.platform !== ['"]darwin['"]/, `${name}: нет проверки живого окна/платформы`);
       assert.match(source, /setTitleBarOverlay\(/, `${name}: не обновляется нативная полоса заголовка`);
-      assert.match(source, /backgroundColor \|\| ['"]#0F172A['"]/, `${name}: нет fallback фона`);
-      assert.match(source, /symbolColor \|\| ['"]#F8FAFC['"]/, `${name}: нет fallback цвета символов`);
+      assert.match(source, /backgroundColor \|\| ['"]#0B0F17['"]/, `${name}: нет fallback фона`);
+      assert.match(source, /symbolColor \|\| ['"]#F9FAFB['"]/, `${name}: нет fallback цвета символов`);
       assert.match(source, /height:\s*38/, `${name}: высота overlay не равна 38px`);
       assert.match(source, /Failed to update titleBarOverlay theme/, `${name}: ошибки не обрабатываются`);
     }
@@ -1461,12 +1475,236 @@ describe("динамическая тема окна Electron и перетас�
     ] as const) {
       assert.match(source, /useTheme\(\)/, `${name}: не наблюдает за активной темой`);
       assert.match(source, /window\.eduflowDesktop\?\.setTheme\?\.\(/, `${name}: не отправляет тему в Electron`);
-      assert.match(source, /backgroundColor:\s*currentTheme\.background/, `${name}: не передаёт фон темы`);
-      assert.match(source, /symbolColor:\s*currentTheme\.accent/, `${name}: не передаёт цвет символов темы`);
+      assert.match(source, /backgroundColor:\s*currentTheme\.titlebar/, `${name}: не передаёт цвет title bar темы`);
+      assert.match(source, /symbolColor:\s*currentTheme\.symbol/, `${name}: не передаёт цвет символов темы`);
       assert.match(source, /paddingRight:\s*["']env\(titlebar-area-width, 140px\)["']/, `${name}: нет отступа для кнопок окна`);
       assert.match(source, /WebkitAppRegion:\s*["']drag["']/, `${name}: область шапки не перетаскивается`);
       const noDragCount = (source.match(/WebkitAppRegion:\s*["']no-drag["']/g) ?? []).length + (source.match(/style=\{NO_DRAG_STYLE\}/g) ?? []).length;
       assert.ok(noDragCount >= 5, `${name}: интерактивные элементы не исключены из drag-region`);
+    }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Дизайн-система Telegram × Twitch Dark                                      */
+/* -------------------------------------------------------------------------- */
+
+/** Фрагмент design-tokens.css для одной темы. */
+function themeBlock(tokens: string, themeId: string): string {
+  const marker = `:root[data-theme="${themeId}"]`;
+  const start = tokens.indexOf(marker);
+  assert.notEqual(start, -1, `в design-tokens.css нет темы ${themeId}`);
+  const end = tokens.indexOf("}", start);
+  assert.notEqual(end, -1, `не закрыт блок темы ${themeId}`);
+  return tokens.slice(start, end);
+}
+
+describe("единая дизайн-система Telegram × Twitch Dark", () => {
+  const tokens = readSource("src/styles/design-tokens.css");
+  const globals = readSource("src/app/globals.css");
+  const layout = readSource("src/app/layout.tsx");
+  const tailwind = readSource("tailwind.config.ts");
+  const themeSource = readSource("src/lib/theme.ts");
+  const nativeChrome = readSource("src/lib/native-chrome.ts");
+  const switcher = readSource("src/components/theme/ThemeSwitcher.tsx");
+
+  it("токены: графит #0B0F17, карточки #111827, изумруд #10B981, тексты #F9FAFB/#9CA3AF", () => {
+    assert.match(tokens, /--bg-primary:\s*#0b0f17/i, "нет --bg-primary #0B0F17");
+    assert.match(tokens, /--bg-card:\s*#111827/i, "нет --bg-card #111827");
+    assert.match(tokens, /--accent-primary:\s*#10b981/i, "нет --accent-primary #10B981");
+    assert.match(tokens, /--text-primary:\s*#f9fafb/i, "нет --text-primary #F9FAFB");
+    assert.match(tokens, /--text-secondary:\s*#9ca3af/i, "нет --text-secondary #9CA3AF");
+    assert.match(tokens, /--radius-card:\s*1rem/, "карточки должны быть rounded-2xl (1rem)");
+    assert.match(tokens, /--titlebar-color:\s*#0b0f17/i, "нет --titlebar-color");
+    assert.match(tokens, /--titlebar-height:\s*38px/, "высота системной полосы не 38px");
+    assert.match(tokens, /--navbar-height:\s*56px/, "высота шапки не 56px");
+  });
+
+  it("пять тем переопределяют --accent-primary и --titlebar-color", () => {
+    const expected: Array<[string, string]> = [
+      ["graphite", "#10b981"],
+      ["indigo", "#6366f1"],
+      ["emerald", "#34d399"],
+      ["violet", "#a855f7"],
+      ["slate", "#94a3b8"],
+    ];
+
+    for (const [id, accent] of expected) {
+      const block = themeBlock(tokens, id);
+      assert.match(
+        block,
+        new RegExp(`--accent-primary:\\s*${accent}`, "i"),
+        `тема ${id}: акцент не ${accent}`,
+      );
+      assert.match(
+        block,
+        /--titlebar-color:\s*#[0-9a-f]{6}/i,
+        `тема ${id}: не задан --titlebar-color`,
+      );
+    }
+  });
+
+  it("Tailwind-классы и layout читают токены, тема применяется до отрисовки", () => {
+    assert.match(tailwind, /canvas:\s*themeRgb\("--bg-primary-rgb"\)/);
+    assert.match(tailwind, /DEFAULT:\s*themeRgb\("--bg-card-rgb"\)/, "surface не привязан к --bg-card");
+    assert.match(tailwind, /nav:\s*"56px"/, "нет токена высоты шапки в Tailwind");
+    assert.match(
+      tailwind,
+      /titlebar:\s*"38px"/,
+      "нет токена высоты системной полосы в Tailwind",
+    );
+
+    assert.match(layout, /import "@\/styles\/design-tokens\.css"/, "layout.tsx не подключает design-tokens.css");
+    assert.match(layout, /data-theme=\{DEFAULT_THEME\}/, "тема не выставляется на <html>");
+    assert.match(layout, /appearanceBootstrapScript/, "нет bootstrap-скрипта темы");
+    assert.match(layout, /themeBootstrapMap\(\)/, "bootstrap-скрипт не берёт темы из темы-карты");
+    assert.match(globals, /--bg-primary/, "globals.css не использует токены дизайн-системы");
+  });
+
+  it("тема описывает акцент, фон, title bar и переносит старые id", () => {
+    for (const id of ["graphite", "indigo", "emerald", "violet", "slate"]) {
+      assert.match(themeSource, new RegExp(`id: "${id}"`), `в THEME_OPTIONS нет темы ${id}`);
+    }
+    assert.match(themeSource, /titlebar:\s*"#[0-9A-Fa-f]{6}"/, "темы не задают titlebar");
+    assert.match(themeSource, /bgColor:\s*"#[0-9A-Fa-f]{6}"/, "нет bgColor для Android-моста");
+    assert.match(themeSource, /LEGACY_THEME_ALIASES/, "нет миграции старых id тем");
+    assert.match(themeSource, /DEFAULT_THEME = "graphite"/, "базовая тема — не Dark Graphite");
+
+    assert.match(nativeChrome, /window\.AndroidApp\.setStatusBarColor\(theme\.bgColor\)/, "нет Android-моста темы");
+    assert.match(nativeChrome, /window\.eduflowDesktop\?\.setTheme\?\.\(/, "нет Electron-моста темы");
+
+    assert.match(switcher, /THEME_OPTIONS\.map/, "переключатель не показывает все темы");
+  });
+});
+
+describe("одноэкранный кабинет и Zero-Scroll", () => {
+  const globals = readSource("src/app/globals.css");
+  const layout = readSource("src/app/layout.tsx");
+  const dashboard = readSource("src/app/dashboard/page.tsx");
+  const shell = readSource("src/components/layout/app-shell.tsx");
+  const bottomNav = readSource("src/components/layout/bottom-nav.tsx");
+  const navbar = readSource("src/components/layout/Navbar.tsx");
+  const siteHeader = readSource("src/components/landing/site-header.tsx");
+
+  it("на мобильных страница не прокручивается: overflow hidden + внутренний .app-frame", () => {
+    const mobileBlock = globals.slice(globals.indexOf("@media (max-width: 767px)"));
+    assert.match(mobileBlock, /html,\s*body\s*\{[^}]*height:\s*100dvh/, "body не ограничен 100dvh");
+    assert.match(mobileBlock, /overflow:\s*hidden/, "нет overflow: hidden на мобильных");
+    assert.match(globals, /\.app-frame/, "нет внутренней прокручиваемой области .app-frame");
+    assert.match(globals, /overscroll-behavior-y:\s*contain/, "нет контроля overscroll");
+    assert.match(layout, /className="app-frame"/, "layout не оборачивает приложение в .app-frame");
+  });
+
+  it("кабинет — один экран: h-[100dvh] flex flex-col без гигантского H1", () => {
+    assert.match(dashboard, /<AppShell flush>/, "кабинет не использует полноэкранный каркас");
+    assert.match(shell, /flush && "h-\[100dvh\]/, "каркас кабинета не 100dvh");
+    assert.match(shell, /overflow-hidden/, "каркас кабинета не фиксирует экран");
+    assert.match(dashboard, /flex h-full min-h-0 flex-col/, "мобильный экран не заполняет высоту");
+    assert.match(dashboard, /👋|emoji\} \{greeting\}/, "нет компактного приветствия");
+    assert.match(dashboard, /text-base font-medium/, "приветствие не text-base font-medium");
+    assert.doesNotMatch(dashboard, /text-4xl|text-3xl|text-2xl/, "в кабинете остались гигантские заголовки");
+    assert.match(dashboard, /grid-cols-3 gap-2/, "статистика не в плотной сетке");
+  });
+
+  it("нижняя навигация прижата к низу и учитывает safe-area", () => {
+    assert.match(bottomNav, /fixed inset-x-0 bottom-0/, "панель не прижата к низу");
+    assert.match(bottomNav, /pb-\[env\(safe-area-inset-bottom\)\]/, "нет safe-area внизу");
+    assert.match(bottomNav, /bg-canvas\/95/, "фон панели не из токенов");
+  });
+
+  it("шапка 56px, safe-area сверху и скрытие установки внутри приложения", () => {
+    for (const [name, source] of [
+      ["Navbar.tsx", navbar],
+      ["site-header.tsx", siteHeader],
+    ] as const) {
+      assert.match(source, /h-14\b/, `${name}: высота шапки не 56px (h-14)`);
+      assert.match(source, /pt-\[env\(safe-area-inset-top\)\]/, `${name}: нет safe-area сверху`);
+      assert.match(source, /border-b border-white\/10/, `${name}: нет тонкой окантовки снизу`);
+      assert.match(source, /useIsApp\(\)/, `${name}: не использует useIsApp`);
+      assert.match(source, /\{!isApp \? <PwaInstallButton \/> : null\}/, `${name}: кнопка установки не скрывается в приложении`);
+    }
+  });
+});
+
+describe("Android APK: edge-to-edge, NoActionBar и мост AndroidApp", () => {
+  const activity = readSource("android/app/src/main/java/ru/eduflow/app/MainActivity.java");
+  const web = readSource("android/app/src/main/java/ru/eduflow/app/WebWorkspace.java");
+  const windowCompat = readSource("android/app/src/main/java/ru/eduflow/app/WindowCompat.java");
+  const baseStyle = readSource("android/app/src/main/res/values/styles.xml");
+  const accentColor = readSource("android/app/src/main/res/values/colors.xml");
+  const workflow = readSource(".github/workflows/android-build.yml");
+
+  it("серый заголовок «< EduFlow» убран: NoActionBar + FEATURE_NO_TITLE", () => {
+    assert.match(baseStyle, /Theme\.Material\.NoActionBar/, "тема не NoActionBar");
+    assert.match(baseStyle, /windowNoTitle">true/, "у окна остался заголовок");
+    assert.match(baseStyle, /windowActionBar">false/, "ActionBar не отключён");
+    assert.match(activity, /requestWindowFeature\(Window\.FEATURE_NO_TITLE\)/, "нет запроса без title");
+    assert.doesNotMatch(web, /bar\.addView|setText\("‹"\)/, "в WebView осталась серая нативная шапка");
+  });
+
+  it("edge-to-edge: WindowCompat, прозрачный статус-бар, отступы системных панелей", () => {
+    assert.match(activity, /WindowCompat\.setDecorFitsSystemWindows\(getWindow\(\), false\)/);
+    assert.match(activity, /setStatusBarColor\(Color\.TRANSPARENT\)/, "статус-бар не прозрачный");
+    assert.match(activity, /setOnApplyWindowInsetsListener/, "нет обработчика WindowInsets");
+    assert.match(windowCompat, /class WindowCompat/, "нет локального WindowCompat-шимма");
+    assert.match(windowCompat, /setDecorFitsSystemWindows/, "шим не реализует setDecorFitsSystemWindows");
+    assert.match(baseStyle, /statusBarColor">@android:color\/transparent/, "стиль не делает статус-бар прозрачным");
+    assert.match(accentColor, /#10B981/, "акцент Android не #10B981");
+    assert.match(accentColor, /#0B0F17/, "фон Android не #0B0F17");
+  });
+
+  it("JavaScript-мост AndroidApp.setStatusBarColor доступен вебу", () => {
+    assert.match(activity, /@JavascriptInterface/, "нет @JavascriptInterface");
+    assert.match(activity, /public void setStatusBarColor\(final String colorHex\)/, "нет метода setStatusBarColor");
+    assert.match(activity, /Color\.parseColor\(colorHex\)/, "цвет не парсится из hex");
+    assert.match(activity, /runOnUiThread/, "смена цвета не в UI-потоке");
+    assert.match(activity, /addJavascriptInterface\(new AndroidBridge\(this\), "AndroidApp"\)/, "мост не зарегистрирован");
+    assert.match(web, /activity\.attachJavascriptBridge\(web\)/, "WebView не подключает мост");
+  });
+
+  it("APK пересобирается и подписывается workflow-ом (v1/v2/v3)", () => {
+    assert.match(workflow, /bash scripts\/build-android\.sh/, "workflow не вызывает сборку");
+    assert.match(workflow, /EDUFLOW_KEYSTORE_B64/, "нет секрета keystore");
+    assert.match(workflow, /platforms;android-34/, "не ставится SDK 34");
+    assert.match(workflow, /public\/eduflow\.apk/, "APK не коммитится в public/");
+  });
+});
+
+describe("Electron: статический title bar по теме", () => {
+  const desktopMain = readSource("desktop/main.js");
+  const electronMain = readSource("electron-app/main.js");
+  const desktopPreload = readSource("desktop/preload.js");
+  const electronPreload = readSource("electron-app/preload.js");
+
+  it("оба окна используют titleBarOverlay #0B0F17 / #F9FAFB высотой 38px", () => {
+    for (const [name, source] of [
+      ["desktop/main.js", desktopMain],
+      ["electron-app/main.js", electronMain],
+    ] as const) {
+      assert.match(source, /titleBarStyle:\s*["']hidden["']/, `${name}: нет titleBarStyle: hidden`);
+      assert.match(
+        source,
+        /titleBarOverlay:\s*\{\s*color:\s*(?:BACKGROUND_COLOR|["']#0B0F17["']),\s*symbolColor:\s*(?:SYMBOL_COLOR|["']#F9FAFB["']),\s*height:\s*38\s*\}/,
+        `${name}: неверный titleBarOverlay`,
+      );
+    }
+  });
+
+  it("preload прокидывает setTheme, main обновляет overlay по IPC", () => {
+    for (const [name, source] of [
+      ["desktop/preload.js", desktopPreload],
+      ["electron-app/preload.js", electronPreload],
+    ] as const) {
+      assert.match(source, /setTheme:\s*\(themeColors\)\s*=>\s*ipcRenderer\.send\(["']update-titlebar-theme["'],\s*themeColors\)/, `${name}: нет setTheme`);
+    }
+
+    for (const [name, source] of [
+      ["desktop/main.js", desktopMain],
+      ["electron-app/main.js", electronMain],
+    ] as const) {
+      assert.match(source, /ipcMain\.on\(["']update-titlebar-theme["']/, `${name}: нет IPC-обработчика`);
+      assert.match(source, /setTitleBarOverlay\(\{/, `${name}: overlay не обновляется`);
+      assert.match(source, /height:\s*38/, `${name}: высота overlay не 38px`);
     }
   });
 });
