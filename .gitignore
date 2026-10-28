@@ -64,3 +64,9 @@ electron-app/dist/
 # Android tooling cache and private release signing material
 /.cache/
 /.android-signing/
+
+# Android local IDE / Gradle output (release APK under public/ is tracked)
+/android/.gradle/
+/android/local.properties
+/android/**/build/
+/android-smoke-artifacts/

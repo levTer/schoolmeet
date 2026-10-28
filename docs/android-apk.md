@@ -1,71 +1,119 @@
-# Android APK repair and release signing
+# EduFlow for Android
 
-`public/eduflow.apk` is the existing TWA application, repackaged rather than
-replaced with a placeholder. Its original `classes.dex` is preserved byte for
-byte. The original APK failed `apksigner verify` with
-`ERROR: Missing META-INF/MANIFEST.MF`.
+`public/eduflow.apk` is a rebuilt, signed Android application with application ID
+`ru.eduflow.app`, launcher name **EduFlow**, minimum API 24 and target API 34.
+The source lives in `android/`. It is not the former Chrome Trusted Web Activity.
 
-## Package changes
+## Scope and architecture
 
-- Application ID and resource package: `ru.eduflow.app`.
-- min SDK 24; target SDK 34 (compile SDK metadata remains 36).
-- Existing launcher class and MAIN/LAUNCHER intent filter preserved;
-  `android:exported="true"` confirmed in the compiled manifest.
-- FileProvider authority, AndroidX startup authority and signature permission
-  renamed to the new application ID, avoiding collisions with the old package.
-- Original fully qualified Java class names retained: renaming them in the
-  manifest without rebuilding DEX would cause a launch-time class-not-found error.
+This is a **hybrid Android container, not a completely native rewrite of the
+entire product**. Its home screen and the read-only schedule and homework lists
+are native Android views. They use the existing HTTPS session and API, with
+native loading, error, retry and navigation states. Login, editing, the existing
+WebRTC video lessons, chat, whiteboard, and other features still run in a
+restricted in-app WebView at `https://schoolmeet-vb96.onrender.com`, the same
+production URL as the existing desktop clients. An internet connection and
+that deployment are required; no Next.js bundle or server/database is embedded.
+Moving every screen, WebRTC and real-time features to native code is separate
+work. The package ID is not the website hostname.
 
-## Verification performed
+Android supplies the launch window: on API 31+ the platform SplashScreen uses
+the option #9 logo and `#0F172A`; on API 24–30 the window background provides
+the same image. A native view fades into the app. Status and navigation bars use
+`#0F172A`, with light icons. The launcher includes all five densities, adaptive
+icons on API 26+ and a monochrome themed icon on API 33+. PNGs are generated
+from `public/icon.svg` with `npm run android:icons`.
 
-Android build-tools 33.0.2 `zipalign -v 4`, then `apksigner sign` with explicit
-v1/v2/v3 enabled; `zipalign -c -v 4` passed on the signed output.
-`apksigner verify --verbose --print-certs --min-sdk-version 23` reported all
-three schemes **true**, RSA 2048, with a SHA256withRSA certificate. The verification
-SDK override exercises v1 too (normal verification starting at min SDK 24 uses
-v2/v3 and reports v1 as unused). V1-only verification warns about upstream
-META-INF version/build metadata; v2/v3 protect the complete APK.
+Back traverses the workspace history, then native screens, and at home opens a
+native confirmation dialog that uses `moveTaskToBack`. The app declares
+`CAMERA`, `RECORD_AUDIO`, and `MODIFY_AUDIO_SETTINGS`; the first two are requested
+by the Android runtime only when the trusted lesson requests them. The last is a
+normal install-time permission, so Android does not show a runtime dialog for
+it. Only the resources actually authorized by the user are granted to WebRTC.
 
-Certificate SHA-256:
-`f2bf4b851bcb69fcb39f80070be9414014bf5dc1bfafa4c6faac218b3aaaeb75`
+Only the fixed HTTPS origin is allowed inside the workspace. Other HTTP(S),
+mail and telephone links open in the appropriate external app. Mixed content,
+cleartext traffic, file URL access, third-party cookies and app backups are
+disabled. File selection and saving use Android's document pickers; authenticated
+file downloads do not forward cookies through redirects. No JavaScript-to-Java
+bridge is exposed.
 
-APK SHA-256:
-`5b88894b37f7d4fea0db202bbabcd3b98209d95a24ae75270ef06bc75855c2ca`
+## Build, align and sign
 
-`npm test` and `npm run lint` passed. The Android regression runs as part of
-`npm test` (or `npm run test:android`) and requires Python 3. It checks ZIP CRCs,
-required files, stored-entry alignment, compiled manifest settings and launcher,
-v1 certificate/signature files and v2/v3 signing-block structures. Structural
-checks do not replace cryptographic verification with Android's `apksigner`.
-The repaired APK was also decoded independently with apktool to check its
-manifest and resource authority. No physical device/emulator installation was
-available; device installation and launch are still a release smoke test.
+Android Studio can open `android/`; the Gradle wrapper uses Gradle 8.7 and the
+project uses Android Gradle Plugin 8.5.2. A debug build can be made with
+`cd android && ./gradlew :app:assembleDebug`.
 
-## Reproduce with Android SDK build-tools and a JDK
+The release script independently compiles the same Java/resources with the
+Android SDK tools, embeds a source fingerprint, performs `zipalign -f -v 4`,
+and signs with **v1, v2 and v3 explicitly enabled**. It checks alignment,
+verifies all schemes with Android `apksigner` using min SDK 23 (to exercise v1),
+and rejects a signer different from `android/release-certificate.sha256` before
+replacing `public/eduflow.apk`. It does not build Next.js or run Prisma.
+
+Requirements: JDK, Android SDK platform 34, Android build-tools 34.0.0 (aapt2,
+d8, zipalign, apksigner), Python 3, `zip`, and a secure keystore. Use the same
+password for the keystore and its key. No private key belongs in Git.
 
 ```sh
-python3 scripts/repack-android.py input.apk unsigned.apk
-zipalign -f -v 4 unsigned.apk aligned.apk
-# KEYSTORE and KS_PASSWORD_FILE refer to securely stored release material.
-apksigner sign --ks "$KEYSTORE" --ks-key-alias eduflow \
-  --ks-pass "file:$KS_PASSWORD_FILE" \
-  --v1-signing-enabled true --v2-signing-enabled true \
-  --v3-signing-enabled true --v4-signing-enabled false \
-  --out public/eduflow.apk aligned.apk
-zipalign -c -v 4 public/eduflow.apk
-apksigner verify --verbose --print-certs --min-sdk-version 23 public/eduflow.apk
+export ANDROID_HOME=/path/to/Android/Sdk
+export JAVA_HOME=/path/to/jdk
+export EDUFLOW_KEYSTORE=/secure/path/eduflow-release.jks
+export EDUFLOW_KS_PASS_FILE=/secure/path/password.txt
+export EDUFLOW_KEY_ALIAS=eduflow
+npm run android:build
 npm run test:android
+# Optional independent SDK verification of the exact committed binary:
+"$ANDROID_HOME/build-tools/34.0.0/zipalign" -c -v 4 public/eduflow.apk
+"$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs \
+  --min-sdk-version 23 public/eduflow.apk
 ```
 
-A new release keystore was generated using `keytool -genkeypair -keyalg RSA
--keysize 2048 -sigalg SHA256withRSA -validity 10000`, alias `eduflow`.
-The local keystore and its randomly generated password file are in the ignored,
-permission-restricted `.android-signing/` directory. **Back them up into secure
-release-key storage before discarding this workspace.** Neither is committed.
-Future updates to `ru.eduflow.app` must use this same key; another certificate
-would require uninstalling the installed app first.
+Tool paths can also be supplied as `ANDROID_JAR`, `AAPT2`, `D8`, `ZIPALIGN`,
+and `APKSIGNER`. For an older SDK, `DX_JAR` selects dx instead of d8; the native
+source deliberately avoids Java 8 language features that require desugaring.
+The committed APK was compiled with platform 34, aapt2 2.20, Android dx and
+zipalign 27.0.1, and Android 13 apksig; the resulting APK was aligned and
+cryptographically verified with v1/v2/v3 all true.
 
-This remains a web-backed TWA and uses the original website URL. For verified
-full-screen TWA behavior, the website's `/.well-known/assetlinks.json` must list
-`ru.eduflow.app` and the new certificate SHA-256 above. That server-side
-association is separate from APK installability and is not changed here.
+## Signing continuity — action required
+
+The former TWA's signing key was **not present** in this checkout. This APK was
+signed with a newly generated RSA-2048 key:
+
+- New certificate SHA-256: `719237b5918361e9507195c17d0ddecd41df87217015207428604974b40e5e47`
+- Former TWA certificate SHA-256: `f2bf4b851bcb69fcb39f80070be9414014bf5dc1bfafa4c6faac218b3aaaeb75`
+- APK SHA-256: `86ecc1abc27e5149af025b0244722003cc54296a5f4ba8bba9b914cbb76f4741`
+
+Android **will not install this APK as an update over the old TWA** because its
+certificate differs. Without the original key, an existing installation must be
+uninstalled first (which removes its local app data). If the original key exists,
+use it for the release and deliberately update the pinned certificate fingerprint
+before rebuilding, then verify upgrade on a device. The newly generated keystore
+and password file are in the ignored `.android-signing/` directory in this
+workspace only. Back them up to secure release-key storage immediately; losing
+this key prevents future updates to installations made with this APK. They are
+never committed or sent in the PR.
+
+## Tests
+
+`npm test` includes `npm run test:android`; `npm run lint` checks the web code.
+The Android regression needs Python 3 and OpenSSL. It checks APK ZIP integrity,
+4-byte stored-entry alignment, compiled manifest identity and permissions,
+native logo/splash resources and all icon densities, and that the embedded
+source fingerprint matches the checkout. It verifies the v1 PKCS#7 signature and
+all manifest digests, and independently verifies both v2 and v3 RSA signatures,
+the Android chunked APK content digest, and certificate consistency. Tampering
+checks ensure the verifiers reject modified data. Set `APKSIGNER` to additionally
+run Android's own verifier during the test.
+
+`.github/workflows/android-smoke.yml` runs `scripts/android-device-smoke.py` on
+API 26 and 34 emulators on relevant PRs. It installs the committed binary and
+exercises the native home, schedule, homework, hardware back and minimize
+dialog. To run it locally, boot a device/emulator with adb and run
+`python3 scripts/android-device-smoke.py`.
+
+A real Android device/emulator is still required to validate system permission
+decisions, file pickers and a live video lesson against the deployed server. These require a working Android system
+image and server/account; the checks above are not a substitute for that smoke
+test.

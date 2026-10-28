@@ -1,0 +1,24 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'ru.eduflow.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'ru.eduflow.app'
+        minSdk 24
+        targetSdk 34
+        versionCode 2
+        versionName '1.1.0'
+    }
+    // Release APKs are signed by scripts/build-android.sh, never with a key in git.
+    buildTypes {
+        release { minifyEnabled false }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
