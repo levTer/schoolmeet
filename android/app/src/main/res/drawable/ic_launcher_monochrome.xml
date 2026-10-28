@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="512" android:viewportHeight="512">
+    <!-- Geometry of logo option #9, in the adaptive icon's safe area. -->
+    <group android:translateX="16" android:translateY="10">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M140,160 C140,140 160,120 210,120 L330,120 C355,120 370,135 370,152 C370,170 355,184 330,184 L220,184 C185,184 165,200 165,230 C165,235 166,240 168,245 C150,240 140,220 140,160 Z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M145,250 C160,215 200,210 240,225 L340,265 C370,278 385,300 365,325 C350,342 325,345 290,330 L195,290 C165,278 145,265 145,250 Z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M140,332 C140,295 175,284 210,284 L330,284 C355,284 370,299 370,316 C370,334 355,348 330,348 L210,348 C175,348 140,365 140,332 Z" />
+    </group>
+</vector>

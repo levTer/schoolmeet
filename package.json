@@ -8,6 +8,8 @@
     "start": "NODE_ENV=production tsx server.ts",
     "lint": "next lint",
     "icons:generate": "tsx scripts/generate-icons.ts",
+    "android:icons": "node scripts/generate-android-icons.mjs",
+    "android:build": "bash scripts/build-android.sh",
     "build:windows": "tsx scripts/build-windows-installer.ts",
     "desktop": "electron desktop",
     "test:ai": "tsx scripts/smoke-ai.ts",
