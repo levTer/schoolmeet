@@ -60,3 +60,7 @@ electron-app/dist/
 # отслеживается намеренно — это закоммиченный HFS+/UDZO launcher-образ
 # (56 КБ), его проверяет и пересобирает .github/workflows/build-mac-dmg.yml.
 # Игнор скрыл бы изменения важного для лендинга бинаря.
+
+# Android tooling cache and private release signing material
+/.cache/
+/.android-signing/
