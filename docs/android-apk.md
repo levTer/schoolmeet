@@ -48,6 +48,14 @@ Android Studio can open `android/`; the Gradle wrapper uses Gradle 8.7 and the
 project uses Android Gradle Plugin 8.5.2. A debug build can be made with
 `cd android && ./gradlew :app:assembleDebug`.
 
+`.github/workflows/android-build.yml` runs Gradle from `android/` (that is where
+`gradlew` lives). Without `EDUFLOW_KEYSTORE_B64` / `EDUFLOW_KS_PASS` it only
+compiles an unsigned debug APK as a build check and publishes it as a workflow
+artifact; it never replaces the committed release binary. `assembleRelease` is
+deliberately not used: `android/app/build.gradle` has no `signingConfig` (no key
+in git), so Gradle would produce an unsigned APK without the embedded source
+fingerprint, and `scripts/android-apk.test.py` would reject it.
+
 The release script independently compiles the same Java/resources with the
 Android SDK tools, embeds a source fingerprint, performs `zipalign -f -v 4`,
 and signs with **v1, v2 and v3 explicitly enabled**. It checks alignment,
