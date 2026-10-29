@@ -47,6 +47,14 @@ export interface CloseRoomOptions {
   actorId?: string;
 }
 
+export interface EndCallRoomOptions {
+  schoolId: string;
+  meetingId: string;
+  meetingCode: string;
+  endedBy: { id: string; name: string };
+  endedAt: string;
+}
+
 export interface RealtimeControl {
   /** Комнаты, в которых прямо сейчас есть участники. */
   listLiveRooms(schoolId: string): LiveRoom[];
@@ -58,6 +66,11 @@ export interface RealtimeControl {
    * Возвращает число отключённых сокетов и затронутые коды комнат.
    */
   closeMeeting(meetingId: string, options: CloseRoomOptions): { closedSockets: number; roomIds: string[] };
+  /**
+   * Завершает урок для всех участников: рассылает `CALL_ENDED`, очищает
+   * состояние комнаты и оповещает лобби школы (`ACTIVE_CALLS_CHANGED`).
+   */
+  endCallForAll(options: EndCallRoomOptions): { closedSockets: number; roomId: string };
   /** Разрывает все соединения пользователя (используется при блокировке). */
   disconnectUser(userId: string, options: { reason: string; message: string }): number;
   /** Есть ли у пользователя активные сокеты. */

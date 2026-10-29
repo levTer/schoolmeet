@@ -8,15 +8,24 @@ import { cn } from "@/lib/utils";
 
 export interface CallRoomControlsProps {
   isHost: boolean;
+  isAdmin?: boolean;
   participantCount: number;
   ending: boolean;
   onEndForAll: () => void;
   onLeave: () => void;
 }
 
-/** Host-only “end for all” plus a personal “leave”, with confirmation. */
-export function CallRoomControls({ isHost, participantCount, ending, onEndForAll, onLeave }: CallRoomControlsProps) {
+/** Host/Admin “end for all” plus a personal “leave”, with confirmation. */
+export function CallRoomControls({
+  isHost,
+  isAdmin = false,
+  participantCount,
+  ending,
+  onEndForAll,
+  onLeave,
+}: CallRoomControlsProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const canEnd = isHost || isAdmin;
 
   return (
     <>
@@ -33,17 +42,23 @@ export function CallRoomControls({ isHost, participantCount, ending, onEndForAll
         <button
           type="button"
           onClick={() => setConfirmOpen(true)}
-          disabled={!isHost || ending}
+          disabled={!canEnd || ending}
           aria-label="Завершить для всех"
-          title={isHost ? "Завершить звонок для всех участников" : "Только организатор может завершить звонок для всех"}
+          title={
+            canEnd
+              ? "Завершить урок для всех участников"
+              : "Только организатор или администратор может завершить урок для всех"
+          }
           className={cn(
             "inline-flex h-11 items-center gap-2 rounded-2xl px-4 text-sm font-semibold text-white transition focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-500/40",
-            "bg-rose-600 shadow-[0_0_30px_-8px_rgba(244,63,94,0.8)] hover:bg-rose-500",
-            "disabled:cursor-not-allowed disabled:bg-rose-900/50 disabled:text-rose-200/50 disabled:shadow-none",
+            "border border-rose-400/40 bg-rose-600 shadow-[0_0_30px_-8px_rgba(244,63,94,0.85)] hover:bg-rose-500",
+            "disabled:cursor-not-allowed disabled:border-rose-500/20 disabled:bg-rose-900/50 disabled:text-rose-200/50 disabled:shadow-none",
           )}
         >
-          <PhoneOff className="h-4 w-4" />
-          <span className="hidden sm:inline">{ending ? "Завершаем…" : "Завершить для всех"}</span>
+          <PhoneOff className="h-4 w-4 shrink-0" />
+          <span className={cn(!canEnd && "hidden sm:inline")}>
+            {ending ? "Завершаем…" : "Завершить для всех"}
+          </span>
         </button>
       </div>
 
@@ -61,11 +76,13 @@ export function CallRoomControls({ isHost, participantCount, ending, onEndForAll
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-300">
               <PhoneOff className="h-5 w-5" />
             </span>
-            <h2 id="end-call-title" className="text-lg font-semibold text-white">Завершить звонок для всех?</h2>
+            <h2 id="end-call-title" className="text-lg font-semibold text-white">
+              Завершить этот урок для всех участников?
+            </h2>
           </div>
           <p id="end-call-description" className="text-sm leading-relaxed text-slate-300">
-            Звонок будет остановлен для всех участников ({participantCount}). Камеры и микрофоны отключатся,
-            комната будет закрыта. Это действие нельзя отменить.
+            Урок будет остановлен для всех участников ({participantCount}). Камеры и микрофоны отключатся,
+            комната будет закрыта, а участники вернутся в кабинет.
           </p>
           <div className="flex justify-end gap-2">
             <button

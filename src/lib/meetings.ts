@@ -80,6 +80,7 @@ export async function listOpenSchoolMeetings(schoolId: string, since: Date): Pro
     where: {
       schoolId,
       endTime: null,
+      status: { not: "ended" },
       OR: [{ isActive: true }, { createdAt: { gte: since }, schedule: { is: null } }],
     },
     include: meetingInclude,

@@ -29,8 +29,8 @@ import { useWebRTC } from "@/hooks/useWebRTC";
 import type { WhiteboardSync } from "@/hooks/useWhiteboard";
 import type { DrawingInstruction } from "@/lib/ai-provider";
 import { canPinChatMessage } from "@/lib/chat-rules";
-import { registerCallCleanup } from "@/lib/call-events";
-import { participantCount } from "@/lib/call-rules";
+import { publishCallEnded, registerCallCleanup } from "@/lib/call-events";
+import { canManageLessonEnd, participantCount } from "@/lib/call-rules";
 import { decryptMessage, encryptMessage } from "@/lib/crypto";
 import { drawCommand, getCanvasSnapshot } from "@/lib/whiteboard-bridge";
 import type { JoinRoomResult } from "@/lib/realtime";
@@ -76,7 +76,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
   const [phase, setPhase] = useState<Phase>("precheck");
   const [joinError, setJoinError] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [callMeta, setCallMeta] = useState<{ hostId: string; roomId: string } | null>(null);
+  const [callMeta, setCallMeta] = useState<{ hostId: string; roomId: string; meetingId: string } | null>(null);
   const [endingCall, setEndingCall] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
@@ -122,8 +122,8 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
     onCallEnded: (payload) => {
       hangUpRef.current();
       setClosure({
-        title: "Звонок завершён",
-        message: `Организатор ${payload.endedBy.name} завершил звонок для всех участников.`,
+        title: "Урок завершён организатором",
+        message: `Организатор ${payload.endedBy.name} завершил урок для всех участников.`,
         tone: "info",
       });
     },
@@ -212,7 +212,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
     rejoinRef.current = (result) => {
       // Сервер забыл нас при разрыве связи: пересоздаём все соединения.
       dropAllPeers();
-      setCallMeta({ hostId: result.hostId, roomId: result.roomId });
+      setCallMeta({ hostId: result.hostId, roomId: result.roomId, meetingId: result.meetingId });
       setStartedAt(Date.parse(result.startedAt));
       const others = result.participants
         .filter((participant) => participant.socketId !== result.self.socketId)
@@ -264,7 +264,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
 
       // Пока подключаемся, уже пришедшие сообщения не считаем новыми.
       setSeenCount(ack.data.history.length);
-      setCallMeta({ hostId: ack.data.hostId, roomId: ack.data.roomId });
+      setCallMeta({ hostId: ack.data.hostId, roomId: ack.data.roomId, meetingId: ack.data.meetingId });
       setStartedAt(Date.parse(ack.data.startedAt));
       await connectToPeers(others, ack.data.self.socketId);
       setPhase("live");
@@ -283,17 +283,56 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
   };
 
   const isHost = callMeta?.hostId === self.id;
+  const isAdmin = self.role === "ADMIN";
+  const canEndCall = canManageLessonEnd(self, { hostId: callMeta?.hostId ?? null });
 
   const endForAll = async () => {
-    if (!isHost || endingCall) return;
+    if (!canEndCall || endingCall) return;
     setEndingCall(true);
     const ack = await socket.endCallForAll(callMeta?.roomId);
-    if (!ack.ok) {
-      setEndingCall(false);
-      toast.error(ack.error);
+    if (ack.ok) {
+      // Server broadcasts CALL_ENDED; publish locally as well (idempotent by meetingId:endedAt)
+      // so the caller always cleans up and redirects to the dashboard even on flaky transport.
+      publishCallEnded({
+        roomId: callMeta?.roomId ?? "",
+        meetingId: ack.data.meetingId,
+        meetingCode,
+        endedBy: { id: self.id, name: self.name },
+        endedAt: ack.data.endedAt,
+        reason: "host_ended",
+      });
+      return;
     }
-    // On success the server broadcasts CALL_ENDED; root useCallEvents cleans up
-    // and redirects. Do not optimistically close the host before confirmation.
+
+    if (ack.code === "OFFLINE" || ack.code === "TIMEOUT") {
+      try {
+        const target = callMeta?.meetingId ?? meetingCode;
+        const response = await fetch(`/api/meetings/${encodeURIComponent(target)}/end`, {
+          method: "POST",
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | { ok?: boolean; data?: { meetingId?: string; endedAt?: string } }
+          | null;
+        if (response.ok && payload?.ok) {
+          socket.disconnect();
+          hangUp();
+          publishCallEnded({
+            roomId: callMeta?.roomId ?? "",
+            meetingId: payload.data?.meetingId ?? target,
+            meetingCode,
+            endedBy: { id: self.id, name: self.name },
+            endedAt: payload.data?.endedAt ?? new Date().toISOString(),
+            reason: "host_ended",
+          });
+          return;
+        }
+      } catch {
+        /* fall through to socket error toast */
+      }
+    }
+
+    setEndingCall(false);
+    toast.error(ack.error);
   };
 
   /**
@@ -770,6 +809,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
             onToggleRecording={toggleRecording}
             onLeave={leave}
             isHost={isHost}
+            isAdmin={isAdmin}
             participantCount={participantCount(socket.participants)}
             endingCall={endingCall}
             onEndForAll={() => void endForAll()}

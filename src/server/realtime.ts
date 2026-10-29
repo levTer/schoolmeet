@@ -17,6 +17,7 @@ import {
   buildSchoolRoomId,
   isValidRoomCode,
   type Ack,
+  type CallEndedPayload,
   type ChatEnvelope,
   type ClientToServerEvents,
   type JoinRoomResult,
@@ -473,6 +474,24 @@ function buildRealtimeControl(io: RealtimeServer): RealtimeControl {
       });
 
       return { closedSockets, roomIds };
+    },
+
+    endCallForAll(options) {
+      const roomId = buildSchoolRoomId(options.schoolId, options.meetingCode);
+      const event: CallEndedPayload = {
+        roomId,
+        meetingId: options.meetingId,
+        meetingCode: options.meetingCode,
+        endedBy: options.endedBy,
+        endedAt: options.endedAt,
+        reason: "host_ended",
+      };
+      const targets = socketsInRoom(roomId);
+      io.in(roomId).emit("CALL_ENDED", event);
+      targets.forEach((target) => leaveCurrentRoom(target));
+      clearRoomState(roomId);
+      io.to(buildLobbyRoomId(options.schoolId)).emit("ACTIVE_CALLS_CHANGED");
+      return { closedSockets: targets.length, roomId };
     },
 
     disconnectUser(userId, options) {

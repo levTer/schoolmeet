@@ -173,6 +173,7 @@ export function useSocket(options: UseSocketOptions = {}) {
       setPinnedMessage(null);
       setTypingUsers([]);
       setStatus("disconnected");
+      socket.disconnect();
       publishCallEnded(payload);
       optionsRef.current.onCallEnded?.(payload);
     });

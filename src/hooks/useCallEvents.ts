@@ -12,7 +12,7 @@ export const CALL_ENDED_REDIRECT_MS = 2_500;
 /**
  * Root-level CALL_ENDED listener. The active room socket publishes into the
  * call-events bridge; this hook performs global cleanup exactly once per end
- * event, shows the organizer toast, then returns the user to the lobby.
+ * event, shows the organizer toast, then redirects participants to the dashboard.
  */
 export function useCallEvents(): void {
   const router = useRouter();
@@ -26,14 +26,17 @@ export function useCallEvents(): void {
       handledRef.current.add(key);
       // Stop/save recorders before WebRTC tracks are stopped (priority order).
       cleanupAllCalls();
-      toast.info(`Организатор ${payload.endedBy.name} завершил звонок`, {
+      toast.info("Урок завершён организатором", {
         id: `call-ended-${payload.meetingId}`,
-        description: "Возвращаемся в лобби…",
+        description: payload.endedBy?.name
+          ? `Организатор: ${payload.endedBy.name}. Возвращаемся в кабинет…`
+          : "Возвращаемся в кабинет…",
       });
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
-        router.replace("/meeting");
+        router.replace("/dashboard");
+        router.refresh();
       }, CALL_ENDED_REDIRECT_MS);
     });
     return () => {

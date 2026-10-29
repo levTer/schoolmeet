@@ -1741,3 +1741,46 @@ describe("Electron: статический title bar по теме", () => {
     }
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Завершение урока («Завершить урок» / «Завершить для всех»)                 */
+/* -------------------------------------------------------------------------- */
+
+describe("завершение активного урока с баннера кабинета и внутри видеокомнаты", () => {
+  const banner = readSource("src/components/dashboard/live-lesson-card.tsx");
+  const dashboard = readSource("src/app/dashboard/page.tsx");
+  const controls = readSource("src/components/CallRoom/CallRoomControls.tsx");
+  const room = readSource("src/components/meeting/MeetingRoom.tsx");
+  const callEvents = readSource("src/hooks/useCallEvents.ts");
+  const endService = readSource("src/lib/end-meeting.ts");
+  const endRoute = readSource("src/app/api/meetings/[code]/end/route.ts");
+
+  it("баннер кабинета рендерит «🔴 Завершить урок» для организатора/ADMIN и использует общий <Modal>", () => {
+    assert.match(dashboard, /LiveLessonCard lesson=\{liveLesson\} currentUser=\{currentViewer\}/);
+    assert.match(banner, /import \{ Modal \} from "@\/components\/ui\/modal"/);
+    assert.ok(!banner.includes("fixed inset-0"), "баннер не должен верстать собственный оверлей");
+    assert.match(banner, /canManageLessonEnd\(currentUser, lesson\)/);
+    assert.match(banner, /🔴 Завершить урок/);
+    assert.match(banner, /Завершить этот урок для всех участников\?/);
+    assert.match(banner, /\/api\/meetings\/\$\{encodeURIComponent\(target\)\}\/end/);
+    assert.match(banner, /router\.refresh\(\)/);
+  });
+
+  it("внутри комнаты доступна красная кнопка «Завершить для всех» с тостом и редиректом в кабинет", () => {
+    assert.match(controls, /aria-label="Завершить для всех"/);
+    assert.match(controls, /bg-rose-600/);
+    assert.match(controls, /const canEnd = isHost \|\| isAdmin/);
+    assert.match(room, /isAdmin=\{isAdmin\}/);
+    assert.match(callEvents, /Урок завершён организатором/);
+    assert.match(callEvents, /router\.replace\("\/dashboard"\)/);
+  });
+
+  it("API завершения проверяет schoolId и права организатора/ADMIN, ставит status='ended' и шлёт CALL_ENDED", () => {
+    assert.match(endRoute, /requireSchoolViewer\(\)/);
+    assert.match(endService, /schoolScope\(actor\.schoolId\)/);
+    assert.match(endService, /canEndCallForAll\(/);
+    assert.match(endService, /status: "ended"/);
+    assert.match(endService, /control\.endCallForAll\(/);
+  });
+});
+
