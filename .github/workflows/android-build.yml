@@ -10,7 +10,16 @@
 # Actions два секрета:
 #   • EDUFLOW_KEYSTORE_B64 — release-keystore (.jks) в base64;
 #   • EDUFLOW_KS_PASS      — пароль keystore (тот же, что у ключа alias eduflow).
-# Без секретов job завершается без сборки (шаги пропускаются), ничего не ломая.
+#
+# Без секретов job не трогает public/eduflow.apk: вместо этого он собирает
+# Unsigned Debug APK через Gradle (`./gradlew assembleDebug`) как проверку
+# компиляции нативных исходников и публикует его только как артефакт.
+# Release APK всегда собирает и подписывает scripts/build-android.sh: он
+# вкладывает в APK отпечаток исходников (assets/native-build.json) и включает
+# v1+v2+v3, без чего scripts/android-apk.test.py и android-smoke отвергнут APK.
+# Поэтому `./gradlew assembleRelease` здесь намеренно не вызывается: в
+# android/app/build.gradle нет signingConfig (ключ не попадает в репозиторий),
+# такой APK вышел бы неподписанным и со «старым» отпечатком.
 #
 # Запуск: push в main / arena/** с изменениями android/**, либо вручную
 # (Actions → Build Android APK → Run workflow). Готовый APK коммитится в ветку —
@@ -58,13 +67,13 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_B64" ] && [ -n "$KS_PASS" ]; then
             echo "has_key=true" >> "$GITHUB_OUTPUT"
+            echo "Ключ подписи найден — будет собран подписанный Release APK."
           else
             echo "has_key=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::EDUFLOW_KEYSTORE_B64 / EDUFLOW_KS_PASS не заданы — APK не пересобирается."
+            echo "::warning::EDUFLOW_KEYSTORE_B64 / EDUFLOW_KS_PASS не заданы — APK не пересобирается, public/eduflow.apk не меняется. Соберём Unsigned Debug APK как проверку компиляции."
           fi
 
       - name: Install Android SDK 34 and build tools
-        if: steps.signing.outputs.has_key == 'true'
         uses: android-actions/setup-android@v3
         with:
           packages: "platforms;android-34 build-tools;34.0.0"
@@ -81,19 +90,37 @@ jobs:
           printf '%s' "$KS_PASS" > "$RUNNER_TEMP/keys/password.txt"
           chmod 600 "$RUNNER_TEMP/keys/"*
 
-      - name: Build and sign APK (v1 + v2 + v3)
-        if: steps.signing.outputs.has_key == 'true'
+      # gradlew и весь Gradle-проект лежат в android/ — шаг обязан работать
+      # оттуда, иначе `./gradlew` не находится (прежняя причина падения за 21 с).
+      - name: Сборка с помощью Gradle
+        working-directory: android
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
           EDUFLOW_KEYSTORE: ${{ runner.temp }}/keys/eduflow-release.jks
           EDUFLOW_KS_PASS_FILE: ${{ runner.temp }}/keys/password.txt
           EDUFLOW_KEY_ALIAS: eduflow
         run: |
           set -euo pipefail
-          bash scripts/build-android.sh
+          chmod +x gradlew
+          if [ -n "${{ secrets.EDUFLOW_KEYSTORE_B64 }}" ] && [ -n "${{ secrets.EDUFLOW_KS_PASS }}" ]; then
+            echo "Сборка подписанного Release APK..."
+            # Подпись v1+v2+v3 и отпечаток исходников — только в release-скрипте.
+            bash ../scripts/build-android.sh
+          else
+            echo "Сборка Unsigned Debug APK..."
+            ./gradlew assembleDebug
+          fi
+
+      - name: Проверка подписи и ресурсов Release APK
+        if: steps.signing.outputs.has_key == 'true'
+        env:
+          APKSIGNER: ${{ env.ANDROID_HOME }}/build-tools/34.0.0/apksigner
+        run: |
+          set -euo pipefail
           python3 scripts/android-apk.test.py
 
-      - name: Upload APK artifact
+      - name: Upload Release APK artifact
         if: steps.signing.outputs.has_key == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -101,6 +128,17 @@ jobs:
           path: public/eduflow.apk
           retention-days: 30
 
+      - name: Upload Debug APK artifact
+        if: steps.signing.outputs.has_key != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduFlow-Android-APK-debug-unsigned
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # public/eduflow.apk — подписанный релизный бинарь, его проверяет
+      # android-smoke.yml и отдаёт лендинг. Debug-сборка его не перезаписывает.
       - name: Commit APK into public/
         if: steps.signing.outputs.has_key == 'true'
         shell: bash
