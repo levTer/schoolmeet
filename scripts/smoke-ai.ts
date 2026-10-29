@@ -50,7 +50,7 @@ import {
 } from "../src/lib/ai-provider";
 import { extractJsonObject, extractLatex, stripThinkTags } from "../src/lib/ai-providers/shared";
 import { parseDrawingInstructions } from "../src/lib/drawing-engine";
-import { getIceServers, GOOGLE_STUN_URLS } from "../src/lib/webrtc-config";
+import { getIceServers, getRelayIceServers, getRelayRtcConfiguration, GOOGLE_STUN_URLS } from "../src/lib/webrtc-config";
 
 let passed = 0;
 let failed = 0;
@@ -689,7 +689,7 @@ async function main(): Promise<void> {
   console.log("9. WebRTC: STUN/TURN-конфигурация");
   const defaults = getIceServers({} as NodeJS.ProcessEnv);
   const defaultUrls = defaults.flatMap((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]));
-  check("по умолчанию — STUN-пул Google", defaultUrls.includes("stun:stun.l.google.com:19302") && defaultUrls.length === GOOGLE_STUN_URLS.length);
+  check("по умолчанию — STUN-пул Google + публичные TURN", defaultUrls.includes("stun:stun.l.google.com:19302") && defaultUrls.some((u) => u.startsWith("turn:")));
   check("зеркала Google STUN на месте", defaultUrls.includes("stun:stun4.l.google.com:19302"));
 
   const withTurn = getIceServers({
@@ -711,6 +711,12 @@ async function main(): Promise<void> {
   const broken = getIceServers({ NEXT_PUBLIC_TURN_SERVERS: "{не json" } as NodeJS.ProcessEnv);
   const brokenUrls = broken.flatMap((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]));
   check("битый JSON → дефолтный STUN без падения", brokenUrls.includes("stun:stun.l.google.com:19302"));
+  const relay0 = getRelayIceServers(0, {} as NodeJS.ProcessEnv);
+  check("relay-only стадия 0: только TURNS/TCP 443", relay0.length > 0 && relay0.every((s) => String(s.urls).startsWith("turns:") && String(s.urls).includes("transport=tcp")));
+  const relayConfig = getRelayRtcConfiguration(1, {} as NodeJS.ProcessEnv);
+  check("конфигурация звонка: relay-only", relayConfig.iceTransportPolicy === "relay" && (relayConfig.iceServers ?? []).every((s) => String(s.urls).startsWith("turn:")));
+  const customRelay = getRelayIceServers(0, { NEXT_PUBLIC_TURN_SERVERS: '[{"urls":"turns:turn.school.ru:443?transport=tcp","username":"u","credential":"p"}]' } as NodeJS.ProcessEnv);
+  check("свой TURN приоритетнее публичного", String(customRelay[0]?.urls).includes("turn.school.ru"));
 
   const junk = getIceServers({ NEXT_PUBLIC_TURN_SERVERS: '[{"urls":"http://bad"},{"urls":"turn:ok.example:3478"}]' } as NodeJS.ProcessEnv);
   const junkUrls = junk.flatMap((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]));

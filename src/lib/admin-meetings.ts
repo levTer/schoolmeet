@@ -195,7 +195,7 @@ export async function forceEndMeeting(meetingId: string): Promise<ForceEndResult
 
   await prisma.meeting.update({
     where: { id: meetingId },
-    data: { isActive: false, endTime: now },
+    data: { isActive: false, endTime: now, status: "ended" },
   });
 
   const closedAttendance = await closeMeetingAttendance(meetingId, now);

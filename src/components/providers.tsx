@@ -4,6 +4,7 @@ import { SessionProvider } from "next-auth/react";
 import { Toaster } from "sonner";
 
 import { ThemeProvider } from "@/components/theme/theme-provider";
+import { useCallEvents } from "@/hooks/useCallEvents";
 
 /**
  * Клиентские провайдеры приложения.
@@ -11,6 +12,7 @@ import { ThemeProvider } from "@/components/theme/theme-provider";
  * навбар, кнопка «Выйти» и формы авторизации.
  */
 export function Providers({ children }: { children: React.ReactNode }) {
+  useCallEvents();
   return (
     <ThemeProvider>
       <SessionProvider>

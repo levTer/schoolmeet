@@ -5,7 +5,7 @@ import { getServerSession } from "next-auth";
 import { ArrowLeft, Video } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { MeetingLobby } from "@/components/meeting/MeetingLobby";
+import { LobbyScreen } from "@/components/Lobby/LobbyScreen";
 import { authOptions } from "@/lib/auth";
 import { findMeetingCodeById } from "@/lib/meetings";
 import { isValidRoomCode } from "@/lib/realtime";
@@ -84,7 +84,7 @@ export default async function MeetingPage({ searchParams }: MeetingPageProps) {
       </header>
 
       <div className="mt-8">
-        <MeetingLobby canHost={canHost} />
+        <LobbyScreen canHost={canHost} selfId={session.user.id} />
       </div>
     </AppShell>
   );

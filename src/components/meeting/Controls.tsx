@@ -9,13 +9,13 @@ import {
   MessageSquare,
   MonitorOff,
   MonitorUp,
-  PhoneOff,
   Video,
   VideoOff,
   type LucideIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { CallRoomControls } from "@/components/CallRoom/CallRoomControls";
 
 export interface ControlsProps {
   micOn: boolean;
@@ -42,6 +42,10 @@ export interface ControlsProps {
   onToggleHand: () => void;
   onToggleRecording: () => void;
   onLeave: () => void;
+  isHost: boolean;
+  participantCount: number;
+  endingCall: boolean;
+  onEndForAll: () => void;
 }
 
 /** Таймер записи: «12:05» (минуты:секунды). */
@@ -79,10 +83,14 @@ export function Controls(props: ControlsProps) {
     onToggleHand,
     onToggleRecording,
     onLeave,
+    isHost,
+    participantCount,
+    endingCall,
+    onEndForAll,
   } = props;
 
   return (
-    <div className="meeting-controls glass-strong flex items-center justify-center gap-1.5 rounded-3xl px-2 py-2 sm:gap-3 sm:px-4 sm:py-2.5 shadow-glow">
+    <div className="meeting-controls glass-strong flex flex-wrap items-center justify-center gap-1.5 rounded-3xl px-2 py-2 sm:gap-3 sm:px-4 sm:py-2.5 shadow-glow">
       <ControlButton
         label={!hasMic ? "Микрофон недоступен" : micOn ? "Выключить микрофон" : "Включить микрофон"}
         active={micOn && hasMic}
@@ -167,15 +175,13 @@ export function Controls(props: ControlsProps) {
 
       <div className="mx-0.5 hidden h-8 w-px bg-white/10 sm:block" />
 
-      <button
-        type="button"
-        onClick={onLeave}
-        className="group relative inline-flex h-11 items-center gap-2 rounded-2xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-[0_0_30px_-8px_rgba(244,63,94,0.8)] transition hover:bg-rose-500 focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-500/40"
-      >
-        <PhoneOff className="h-4.5 w-4.5" />
-        <span className="hidden sm:inline">Выйти</span>
-        <Tooltip>Выйти из урока</Tooltip>
-      </button>
+      <CallRoomControls
+        isHost={isHost}
+        participantCount={participantCount}
+        ending={endingCall}
+        onEndForAll={onEndForAll}
+        onLeave={onLeave}
+      />
     </div>
   );
 }

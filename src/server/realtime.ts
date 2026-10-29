@@ -33,6 +33,8 @@ import {
   type WhiteboardState,
 } from "@/lib/realtime";
 import { canPinChatMessage, canViewChatEnvelope, resolveRecipientId } from "@/lib/chat-rules";
+import { buildLobbyRoomId, withRoomLock } from "@/lib/call-room";
+import { registerCallHandlers, type CallSocketData } from "@/server/signaling/callHandlers";
 import { closeAttendance, openAttendance } from "@/lib/attendance";
 import {
   checkMeetingAccess,
@@ -78,26 +80,7 @@ import type { Role } from "@/types";
 /** Пока урок закрыт администратором, повторный вход запрещён (кроме ведущего). */
 const CLOSED_ROOM_COOLDOWN_MS = 30 * 60_000;
 
-interface SocketData {
-  user: SocketUser;
-  roomId?: string;
-  meetingId?: string;
-  /** Открытая запись посещаемости текущей комнаты. */
-  attendanceId?: string;
-  /** Время входа в комнату (ms) — для метрик «урок идёт с…». */
-  joinedAt?: number;
-  /** Заголовок урока — показываем в админ-панели. */
-  meetingTitle?: string;
-  media: MediaState;
-  handRaised: boolean;
-  chatWindowStart: number;
-  chatCount: number;
-  wbWindowStart: number;
-  wbCount: number;
-  wbCursorWindowStart: number;
-  wbCursorCount: number;
-  typingLastSentAt: number;
-}
+type SocketData = CallSocketData;
 
 type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 type RealtimeSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
@@ -197,7 +180,7 @@ async function listParticipants(io: RealtimeServer, roomId: string): Promise<Roo
 
 /** Покидает текущую комнату сокета и сообщает остальным. */
 function leaveCurrentRoom(socket: RealtimeSocket): void {
-  const { roomId } = socket.data;
+  const { roomId, meetingId } = socket.data;
   if (!roomId) return;
 
   void socket.leave(roomId);
@@ -217,6 +200,19 @@ function leaveCurrentRoom(socket: RealtimeSocket): void {
   socket.data.handRaised = false;
 
   removeRoomMember(roomId);
+  socket.nsp.to(buildLobbyRoomId(socket.data.user.schoolId)).emit("ACTIVE_CALLS_CHANGED");
+
+  // When the last socket leaves, release the DB "active" marker as well. The
+  // lock serializes this with join/end; an ended call is never reopened here.
+  if (meetingId) {
+    void withRoomLock(meetingId, async () => {
+      if (roomMemberCounts.has(roomId)) return;
+      await prisma.meeting.updateMany({
+        where: { id: meetingId, status: "active" },
+        data: { status: "idle", isActive: false, callStartedAt: null },
+      });
+    }).catch((error) => console.error("[realtime] release idle room:", error));
+  }
 }
 
 function reply<T>(ack: unknown, result: Ack<T>): void {
@@ -232,9 +228,17 @@ function isSignalData(value: unknown): value is SignalData {
   if (typeof value !== "object" || value === null) return false;
   const data = value as { type?: unknown; sdp?: unknown; candidate?: unknown };
 
+  const generation = (data as { generation?: unknown }).generation;
+  if (generation !== undefined && (typeof generation !== "string" || generation.length === 0 || generation.length > 128)) return false;
   if (data.type === "offer" || data.type === "answer") {
-    return typeof data.sdp === "string" && data.sdp.length > 0 && data.sdp.length <= SDP_MAX_LENGTH;
+    if (typeof data.sdp !== "string" || data.sdp.length === 0 || data.sdp.length > SDP_MAX_LENGTH) return false;
+    if (data.type === "offer") {
+      const stage = (data as { relayStage?: unknown }).relayStage;
+      if (stage !== undefined && (typeof stage !== "number" || !Number.isInteger(stage) || stage < 0 || stage > 3)) return false;
+    }
+    return true;
   }
+  if (data.type === "restart-request") return typeof generation === "string";
   if (data.type === "candidate") {
     return data.candidate === null || (typeof data.candidate === "object" && data.candidate !== null);
   }
@@ -525,12 +529,16 @@ function addRoomMember(roomId: string): void {
 function removeRoomMember(roomId: string): void {
   const next = (roomMemberCounts.get(roomId) ?? 1) - 1;
   if (next <= 0) {
-    roomMemberCounts.delete(roomId);
-    whiteboardRooms.delete(roomId);
-    pinnedMessages.delete(roomId);
+    clearRoomState(roomId);
   } else {
     roomMemberCounts.set(roomId, next);
   }
+}
+
+function clearRoomState(roomId: string): void {
+  roomMemberCounts.delete(roomId);
+  whiteboardRooms.delete(roomId);
+  pinnedMessages.delete(roomId);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -610,6 +618,8 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           wbCursorWindowStart: 0,
           wbCursorCount: 0,
           typingLastSentAt: 0,
+          endCallWindowStart: 0,
+          endCallCount: 0,
         };
         next();
       })
@@ -675,47 +685,61 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const lessonId = meeting.meetingCode;
         const roomId = buildSchoolRoomId(socket.data.user.schoolId, lessonId);
 
-        // Урок закрыт администратором: пускаем только ведущего и администратора,
-        // и только в течение «карантина» — иначе комната снова станет открытой.
-        if (isRoomClosed(meeting)) {
-          const isHost = meeting.hostId === socket.data.user.id;
+        // Serialize join with END_CALL_FOR_ALL and last-leave cleanup. Re-read
+        // lifecycle inside the lock so a stale pre-end object cannot revive it.
+        await withRoomLock(meeting.id, async () => {
+          const fresh = await prisma.meeting.findUnique({
+            where: { id: meeting.id },
+            select: { status: true, endTime: true, startTime: true, callStartedAt: true, hostId: true },
+          });
+          if (!fresh) {
+            reply<JoinRoomResult>(ack, { ok: false, code: "NOT_FOUND", error: "Урок с таким кодом не найден" });
+            return;
+          }
+          const isHost = fresh.hostId === socket.data.user.id;
           const isAdmin = socket.data.user.role === "ADMIN";
-          if (!isHost && !isAdmin) {
+          if ((fresh.status === "ended" || isRoomClosed(fresh)) && !isHost && !isAdmin) {
             reply<JoinRoomResult>(ack, {
               ok: false,
-              code: "ROOM_CLOSED",
-              error: "Урок завершён администратором. Обновите страницу позже.",
+              code: "ROOM_ENDED",
+              error: "Организатор завершил звонок. Дождитесь нового запуска урока.",
             });
             return;
           }
-        }
 
-        // Повторный вход (в ту же или другую комнату) — сначала выходим, чтобы
-        // остальные получили user-left и не держали старый peer.
-        leaveCurrentRoom(socket);
+          leaveCurrentRoom(socket);
+          const startedAt = fresh.status === "active" && fresh.callStartedAt ? fresh.callStartedAt : new Date();
+          await prisma.meeting.update({
+            where: { id: meeting.id },
+            data: { status: "active", isActive: true, endTime: null, callStartedAt: startedAt },
+          });
 
-        socket.data.roomId = roomId;
-        socket.data.meetingId = meeting.id;
-        socket.data.meetingTitle = meeting.title;
-        socket.data.joinedAt = Date.now();
-        await socket.join(roomId);
-        addRoomMember(roomId);
+          socket.data.roomId = roomId;
+          socket.data.meetingId = meeting.id;
+          socket.data.meetingTitle = meeting.title;
+          socket.data.joinedAt = Date.now();
+          await socket.join(roomId);
+          addRoomMember(roomId);
+          socket.nsp.to(buildLobbyRoomId(socket.data.user.schoolId)).emit("ACTIVE_CALLS_CHANGED");
 
-        // Посещаемость: открываем запись входа (переиспользуем свежую при
-        // переподключении). Не блокируем вход, если БД не ответила.
-        socket.data.attendanceId =
-          (await openAttendance({ meetingId: meeting.id, userId: socket.data.user.id })) ?? undefined;
+          socket.data.attendanceId =
+            (await openAttendance({ meetingId: meeting.id, userId: socket.data.user.id })) ?? undefined;
 
-        socket.to(roomId).emit("user-joined", toParticipant(socket));
-
-        const [participants, history] = await Promise.all([
-          listParticipants(io, roomId),
-          loadRecentMessages(meeting.id, socket.data.user.schoolId, socket.data.user.id),
-        ]);
-
-        reply<JoinRoomResult>(ack, {
-          ok: true,
-          data: { self: toParticipant(socket), participants, history, pinned: getPinnedMessage(roomId) },
+          socket.to(roomId).emit("user-joined", toParticipant(socket));
+          const [participants, history] = await Promise.all([
+            listParticipants(io, roomId),
+            loadRecentMessages(meeting.id, socket.data.user.schoolId, socket.data.user.id),
+          ]);
+          reply<JoinRoomResult>(ack, {
+            ok: true,
+            data: {
+              roomId,
+              meetingId: meeting.id,
+              hostId: fresh.hostId,
+              startedAt: startedAt.toISOString(),
+              self: toParticipant(socket), participants, history, pinned: getPinnedMessage(roomId),
+            },
+          });
         });
       } catch (error) {
         console.error("[realtime] join-room:", error);
@@ -1064,6 +1088,8 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         data: snapshotWhiteboard(getWhiteboardState(roomId)),
       });
     });
+
+    registerCallHandlers({ io, socket, leaveCurrentRoom, clearRoomState });
 
     socket.on("disconnect", () => {
       leaveCurrentRoom(socket);

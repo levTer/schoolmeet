@@ -3,8 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
+import { publishCallEnded } from "@/lib/call-events";
+
 import {
   SOCKET_PATH,
+  type CallEndedPayload,
+  type EndCallResult,
   type Ack,
   type ChatEnvelope,
   type ClientToServerEvents,
@@ -57,6 +61,10 @@ export interface UseSocketOptions {
   onRoomClosed?: (payload: RoomClosedPayload) => void;
   /** Доступ отозван (блокировка аккаунта) — сокет будет разорван сервером. */
   onSessionRevoked?: (payload: SessionRevokedPayload) => void;
+  /** Организатор завершил звонок для всех. */
+  onCallEnded?: (payload: CallEndedPayload) => void;
+  /** Список активных звонков школы изменился (лобби). */
+  onActiveCallsChanged?: () => void;
 }
 
 export function useSocket(options: UseSocketOptions = {}) {
@@ -155,6 +163,22 @@ export function useSocket(options: UseSocketOptions = {}) {
       // поэтому делаем это вручную. Если сессия истекла, connect_error вернёт UNAUTHORIZED.
       setStatus("reconnecting");
       if (reason === "io server disconnect") socket.connect();
+    });
+
+    socket.on("CALL_ENDED", (payload) => {
+      terminatedRef.current = true;
+      roomRef.current = null;
+      setParticipants([]);
+      setMessages([]);
+      setPinnedMessage(null);
+      setTypingUsers([]);
+      setStatus("disconnected");
+      publishCallEnded(payload);
+      optionsRef.current.onCallEnded?.(payload);
+    });
+
+    socket.on("ACTIVE_CALLS_CHANGED", () => {
+      optionsRef.current.onActiveCallsChanged?.();
     });
 
     /* Админ завершил урок: комната закрыта, участники выходят. */
@@ -284,6 +308,7 @@ export function useSocket(options: UseSocketOptions = {}) {
       roomId: string,
       options: { classCodeGrant?: string | null } = {},
     ): Promise<Ack<JoinRoomResult>> => {
+      terminatedRef.current = false;
       await connect();
       const socket = getSocket();
 
@@ -328,6 +353,28 @@ export function useSocket(options: UseSocketOptions = {}) {
     roomRef.current = null;
     socketRef.current?.disconnect();
     setStatus("disconnected");
+  }, []);
+
+  const getSelfId = useCallback((): string | null => socketRef.current?.id ?? null, []);
+
+  const watchLobby = useCallback(async (): Promise<Ack> => {
+    await connect();
+    const socket = getSocket();
+    return new Promise((resolve) => {
+      socket.emit("watch-lobby", (ack) => resolve(ack));
+    });
+  }, [connect, getSocket]);
+
+  const endCallForAll = useCallback(async (roomId?: string): Promise<Ack<EndCallResult>> => {
+    const socket = socketRef.current;
+    if (!socket?.connected) return { ok: false, code: "OFFLINE", error: "Нет соединения с сервером" };
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ ok: false, code: "TIMEOUT", error: "Сервер не подтвердил завершение звонка" }), 10_000);
+      socket.emit("END_CALL_FOR_ALL", roomId ? { roomId } : {}, (ack) => {
+        clearTimeout(timer);
+        resolve(ack);
+      });
+    });
   }, []);
 
   const sendSignal = useCallback(
@@ -493,6 +540,9 @@ export function useSocket(options: UseSocketOptions = {}) {
     typingUsers,
     connect,
     joinRoom,
+    watchLobby,
+    endCallForAll,
+    getSelfId,
     leaveRoom,
     disconnect,
     sendSignal,
