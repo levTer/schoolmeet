@@ -6,26 +6,28 @@ The source lives in `android/`. It is not the former Chrome Trusted Web Activity
 
 ## Scope and architecture
 
-This is a **hybrid Android container, not a completely native rewrite of the
-entire product**. Its home screen and the read-only schedule and homework lists
-are native Android views. They use the existing HTTPS session and API, with
-native loading, error, retry and navigation states. Login, editing, the existing
-WebRTC video lessons, chat, whiteboard, and other features still run in a
-restricted in-app WebView at `https://schoolmeet-vb96.onrender.com`, the same
-production URL as the existing desktop clients. An internet connection and
-that deployment are required; no Next.js bundle or server/database is embedded.
-Moving every screen, WebRTC and real-time features to native code is separate
-work. The package ID is not the website hostname.
+This is a **native Android WebView shell around the existing product, not a
+native rewrite of it**. At launch the app opens the site straight away in a
+restricted, edge-to-edge in-app WebView at `https://schoolmeet-vb96.onrender.com`,
+the same production URL as the existing desktop clients. There are **no native
+home screen, quick-access buttons or schedule/homework lists** and no native
+screens before the site loads — only the splash logo fades into the WebView.
+Login, editing, the existing WebRTC video lessons, chat, whiteboard, and other
+features run in that WebView. An internet connection and that deployment are
+required; no Next.js bundle or server/database is embedded. The package ID is
+not the website hostname.
 
 Android supplies the launch window: on API 31+ the platform SplashScreen uses
-the option #9 logo and `#0F172A`; on API 24–30 the window background provides
-the same image. A native view fades into the app. Status and navigation bars use
-`#0F172A`, with light icons. The launcher includes all five densities, adaptive
+the option #9 logo and `#0B0F17`; on API 24–30 the window background provides
+the same image. The splash logo overlay fades into the WebView. Status and
+navigation bars use `#0B0F17`, with light icons, and are repainted live by the
+web theme. The launcher includes all five densities, adaptive
 icons on API 26+ and a monochrome themed icon on API 33+. PNGs are generated
 from `public/icon.svg` with `npm run android:icons`.
 
-Back traverses the workspace history, then native screens, and at home silently
-moves the task to the background via `moveTaskToBack` (no confirmation dialog).
+Back closes fullscreen video first, then traverses the WebView history, and at
+the root page silently moves the task to the background via `moveTaskToBack` (no
+confirmation dialog).
 The app declares
 `CAMERA`, `RECORD_AUDIO`, and `MODIFY_AUDIO_SETTINGS`; the first two are requested
 by the Android runtime only when the trusted lesson requests them. The last is a
@@ -36,8 +38,9 @@ Only the fixed HTTPS origin is allowed inside the workspace. Other HTTP(S),
 mail and telephone links open in the appropriate external app. Mixed content,
 cleartext traffic, file URL access, third-party cookies and app backups are
 disabled. File selection and saving use Android's document pickers; authenticated
-file downloads do not forward cookies through redirects. No JavaScript-to-Java
-bridge is exposed.
+file downloads do not forward cookies through redirects. The only
+JavaScript-to-Java bridge is the read-only theme sync
+(`AndroidApp.setStatusBarColor`), which repaints the system bars.
 
 ## Build, align and sign
 
@@ -110,8 +113,9 @@ run Android's own verifier during the test.
 
 `.github/workflows/android-smoke.yml` runs `scripts/android-device-smoke.py` on
 API 26 and 34 emulators on relevant PRs. It installs the committed binary and
-exercises the native home, schedule, homework, hardware back and silent
-minimize. To run it locally, boot a device/emulator with adb and run
+exercises the direct fullscreen WebView start (asserting the native
+quick-access screen is gone), hardware back and silent minimize. To run it
+locally, boot a device/emulator with adb and run
 `python3 scripts/android-device-smoke.py`.
 
 A real Android device/emulator is still required to validate system permission
