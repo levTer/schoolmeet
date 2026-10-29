@@ -195,7 +195,9 @@ export function LessonModal({ open, subjects, classes, defaultDay, onClose, onCr
             onChange={(event) => {
               const selectedClass = classes.find((schoolClass) => schoolClass.id === event.target.value);
               update("classId", event.target.value);
-              if (selectedClass) update("grade", selectedClass.grade);
+              // Классы без параллели («Общий») номер не задают — см. схему:
+              // `Schedule.grade` остаётся прежним.
+              if (selectedClass?.grade) update("grade", selectedClass.grade);
             }}
             error={errors.classId}
             hint={classes.length === 0 ? "В школе ещё не созданы классы." : undefined}

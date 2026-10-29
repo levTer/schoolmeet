@@ -60,6 +60,50 @@ export async function findMeetingByCode(meetingCode: string): Promise<MeetingWit
 }
 
 /**
+ * Открытые комнаты школы — для карточки «прямо сейчас идёт урок» в кабинете.
+ *
+ * Возвращаются только незавершённые комнаты (`endTime = null`):
+ *  - `isActive = true` — учитель отметил урок как идущий (сид/админ-панель);
+ *  - либо комната, созданная ПОСЛЕ `since` и не привязанная к расписанию:
+ *    это «открытый урок», который учитель запустил вручную
+ *    (`POST /api/meetings`, лобби «Урок») — именно так проходят большие
+ *    открытые уроки школы.
+ *
+ * Слоты расписания здесь не нужны: их «живость» считается по часам школы
+ * (`findLiveLesson` в `@/lib/schedule-rules`), а комната слота создаётся
+ * базой задолго до урока.
+ */
+export async function listOpenSchoolMeetings(schoolId: string, since: Date): Promise<MeetingWithHost[]> {
+  const meetings = await prisma.meeting.findMany({
+    where: {
+      schoolId,
+      endTime: null,
+      OR: [{ isActive: true }, { createdAt: { gte: since }, schedule: { is: null } }],
+    },
+    include: meetingInclude,
+    orderBy: { startTime: "desc" },
+    take: 10,
+  });
+  return meetings as MeetingWithHost[];
+}
+
+/**
+ * Код комнаты по id урока.
+ *
+ * Нужен входу «в один клик» по ссылке `/meeting?lessonId=<id>`: id комнаты
+ * (cuid) не является кодом, поэтому его надо разрешить в `meetingCode`.
+ * Возвращает `null`, если такой комнаты нет.
+ */
+export async function findMeetingCodeById(meetingId: string): Promise<string | null> {
+  if (!meetingId) return null;
+  const meeting = await prisma.meeting.findUnique({
+    where: { id: meetingId },
+    select: { meetingCode: true },
+  });
+  return meeting?.meetingCode ?? null;
+}
+
+/**
  * Полная проверка доступа к уроку: школа + политика классов (H-02).
  *
  * Единая точка для HTTP-роутов и Socket.IO: раньше проверялась только школа,

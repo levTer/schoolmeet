@@ -7,6 +7,8 @@ import {
   type DashboardData,
 } from "@/lib/dashboard-fallback";
 import { getReviewQueue, getUrgentHomework } from "@/lib/homework";
+import { findLiveLessonForViewer } from "@/lib/live-lesson";
+import type { LiveLesson } from "@/lib/live-lesson-rules";
 import { listLessonsForViewer } from "@/lib/schedule";
 import { findLiveLesson, findNextLesson, getSchoolClock, type NextLesson, type SchoolClock } from "@/lib/schedule-rules";
 import { getSchoolViewer, type SchoolViewer } from "@/lib/school-viewer";
@@ -97,11 +99,28 @@ export async function loadDashboardData(input: LoadDashboardInput): Promise<Dash
     degraded = true;
   }
 
+  /*
+    5. Урок «прямо сейчас»: карточка входа в 1 клик.
+    Источник — уже загруженное расписание зрителя и открытые комнаты школы;
+    сбой здесь не должен ломать кабинет, поэтому секция изолирована.
+  */
+  let liveLesson: LiveLesson | null = null;
+  try {
+    liveLesson = await withDeadline(
+      findLiveLessonForViewer(activeViewer, lessons, now),
+      "findLiveLessonForViewer",
+      timeoutMs,
+    );
+  } catch (error) {
+    console.error("[DASHBOARD_LIVE_LESSON_WARN]", error);
+  }
+
   return buildDashboardFallback({
     lessons,
     urgent: urgent.items,
     review: review.queue,
     announcements,
+    liveLesson,
     viewer,
     degraded,
   });

@@ -10,7 +10,9 @@ import {
   getSchoolInviteSummary,
   getSchoolPolicy,
   normalizeSchoolCode,
+  resolveSingleClassId,
 } from "@/lib/schools";
+import { SINGLE_CLASS_NAME, isSingleClassSchool } from "@/lib/school-config";
 import { validateRegisterInput, type RegisterResponse } from "@/lib/validation";
 import type { Role } from "@/types";
 
@@ -113,7 +115,7 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
     );
   }
 
-  const { name, email, password, role, classId } = validation.data;
+  const { name, email, password, role, classId: requestedClassId } = validation.data;
 
   /**
    * Единственная форма email для проверок и для записи в БД.
@@ -126,6 +128,15 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
   const cleanEmail = email.toLowerCase().trim();
 
   try {
+    /*
+      Одноклассная школа («Школа Душа»): класс не выбирается — ученик сразу
+      попадает в единственный класс школы, даже если форма не прислала
+      `classId`. Так регистрация остаётся «в один клик»: код школы → ФИО →
+      email → пароль.
+    */
+    const classId =
+      role === "STUDENT" && !requestedClassId ? await resolveSingleClassId(school.id) : requestedClassId;
+
     const schoolClass = role === "STUDENT" && classId
       ? await prisma.class.findFirst({
           where: { id: classId, schoolId: school.id },
@@ -158,7 +169,11 @@ export async function POST(request: Request): Promise<NextResponse<RegisterRespo
     }
 
     const grade = schoolClass ? gradeFromClassName(schoolClass.name) : null;
-    if (role === "STUDENT" && schoolClass && !grade) {
+    // У единственного класса школы («Общий») нет номера параллели — это не
+    // ошибка: `users.grade` остаётся null, доступ к урокам даёт сам класс.
+    const gradeMayBeMissing =
+      isSingleClassSchool(school.code) || schoolClass?.name === SINGLE_CLASS_NAME;
+    if (role === "STUDENT" && schoolClass && !grade && !gradeMayBeMissing) {
       return NextResponse.json(
         {
           ok: false,

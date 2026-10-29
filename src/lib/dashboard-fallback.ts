@@ -1,5 +1,6 @@
 import type { AnnouncementDto } from "@/lib/announcements";
 import type { ReviewQueue, UrgentHomeworkItem } from "@/lib/homework";
+import type { LiveLesson } from "@/lib/live-lesson-rules";
 import type { SchoolViewer } from "@/lib/school-viewer";
 import type { Role, Schedule } from "@/types";
 
@@ -29,6 +30,11 @@ export interface DashboardData {
   review: ReviewQueue;
   /** Баннер объявлений школы. */
   announcements: AnnouncementDto[];
+  /**
+   * Урок, который идёт прямо сейчас (слот расписания или открытая комната
+   * школы). `null` — живого урока нет, крупная карточка входа не рисуется.
+   */
+  liveLesson: LiveLesson | null;
   /** Зритель из БД; null, если БД не ответила (тогда работает `viewerFromClaims`). */
   viewer: SchoolViewer | null;
   /**
@@ -45,6 +51,7 @@ export function emptyDashboardData(): DashboardData {
     urgent: [],
     review: { count: 0, items: [] },
     announcements: [],
+    liveLesson: null,
     viewer: null,
     degraded: true,
   };

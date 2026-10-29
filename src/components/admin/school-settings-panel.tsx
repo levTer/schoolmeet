@@ -17,7 +17,8 @@ interface SchoolSettings {
 interface SchoolClass {
   id: string;
   name: string;
-  grade: GradeCode;
+  /** `null` — у класса нет номера параллели (единственный «Общий» класс школы). */
+  grade: GradeCode | null;
 }
 
 export function SchoolSettingsPanel({

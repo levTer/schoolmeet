@@ -18,7 +18,7 @@ import {
 
 import { FormAlert } from "@/components/ui/form-alert";
 import { PasswordField, TextField } from "@/components/ui/field";
-import { normalizeSchoolCode } from "@/lib/school-rules";
+import { canonicalSchoolCode, normalizeSchoolCode } from "@/lib/school-rules";
 import { GradientButton } from "@/components/ui/gradient-button";
 import { normalizeInviteToken, rolesForInvite, type InviteRole } from "@/lib/invite-rules";
 import {
@@ -63,8 +63,15 @@ interface SchoolCheckData {
      */
     strictClassIsolation?: boolean;
   };
-  classes: Array<{ id: string; name: string; grade: string }>;
+  classes: Array<{ id: string; name: string; grade: string | null }>;
   inviteRole?: InviteRole | null;
+  /**
+   * У школы ровно один класс («Общий»): сетку выбора класса не показываем,
+   * а `defaultClassId` подставляем в форму автоматически.
+   */
+  isSingleClass?: boolean;
+  /** id единственного класса школы (заполнен, когда `isSingleClass === true`). */
+  defaultClassId?: string | null;
 }
 
 interface SchoolCheckResponse {
@@ -74,14 +81,27 @@ interface SchoolCheckResponse {
   school?: SchoolCheckData["school"];
   classes?: SchoolCheckData["classes"];
   inviteRole?: InviteRole | null;
+  isSingleClass?: boolean;
+  defaultClassId?: string | null;
   error?: string;
   fields?: FieldErrors;
 }
 
 function schoolCheckDataFrom(payload: SchoolCheckResponse): SchoolCheckData | null {
-  if (payload.data?.school && Array.isArray(payload.data.classes)) return payload.data;
+  const isSingleClass = payload.isSingleClass ?? payload.data?.isSingleClass;
+  const defaultClassId = payload.defaultClassId ?? payload.data?.defaultClassId ?? null;
+
+  if (payload.data?.school && Array.isArray(payload.data.classes)) {
+    return { ...payload.data, isSingleClass, defaultClassId };
+  }
   if (payload.valid && payload.school && Array.isArray(payload.classes)) {
-    return { school: payload.school, classes: payload.classes, inviteRole: payload.inviteRole ?? null };
+    return {
+      school: payload.school,
+      classes: payload.classes,
+      inviteRole: payload.inviteRole ?? null,
+      isSingleClass,
+      defaultClassId,
+    };
   }
   return null;
 }
@@ -143,6 +163,17 @@ export function RegisterForm({
    */
   const classIsRequired = schoolCheck?.school.strictClassIsolation !== false;
 
+  /**
+   * У школы ровно один класс («Общий», «Школа Душа»): сетку выбора класса
+   * СТРОГО не показываем, а `defaultClassId` подставляем в форму. Ученик
+   * регистрируется в один клик: код школы → ФИО → email → пароль.
+   */
+  const singleClassId =
+    schoolCheck?.isSingleClass === true
+      ? schoolCheck.defaultClassId ?? schoolCheck.classes[0]?.id ?? ""
+      : "";
+  const isSingleClass = singleClassId !== "";
+
   /** Автопроверка кода школы из ссылки-приглашения при открытии страницы. */
   const didAutoCheckRef = useRef(false);
   useEffect(() => {
@@ -160,7 +191,14 @@ export function RegisterForm({
     setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
   }
 
-  async function handleCheckSchool() {
+  /**
+   * Проверяет код школы и возвращает подтверждённые данные (или `null`).
+   *
+   * Возвращаемое значение нужно отправке формы: если человек ввёл код и сразу
+   * нажал «Зарегистрироваться», проверка выполняется в том же нажатии —
+   * регистрация ученика одноклассной школы остаётся в один клик.
+   */
+  async function handleCheckSchool(): Promise<SchoolCheckData | null> {
     const normalizedCode = normalizeSchoolCode(schoolCode);
     if (!normalizedCode) {
       setSchoolCheck(null);
@@ -168,7 +206,7 @@ export function RegisterForm({
         ...previous,
         schoolCode: "Введите корректный код школы, выданный администратором",
       }));
-      return;
+      return null;
     }
 
     const requestId = ++schoolLookupRequestRef.current;
@@ -185,7 +223,7 @@ export function RegisterForm({
         cache: "no-store",
       });
       const payload = (await response.json()) as SchoolCheckResponse;
-      if (schoolLookupRequestRef.current !== requestId) return;
+      if (schoolLookupRequestRef.current !== requestId) return null;
 
       const data = schoolCheckDataFrom(payload);
       if (!response.ok || payload.ok === false || payload.valid === false || !data) {
@@ -195,7 +233,7 @@ export function RegisterForm({
           ...previous,
           schoolCode: payload.fields?.schoolCode ?? payload.error ?? "Школа с таким кодом не найдена",
         }));
-        return;
+        return null;
       }
 
       // Уровень ссылки перепроверяем для каждого кода школы: токен действует
@@ -204,7 +242,13 @@ export function RegisterForm({
       setInviteRole(nextInviteRole);
       setRole(nextInviteRole === "TEACHER" ? "TEACHER" : "STUDENT");
       setSchoolCheck(data);
+      // Одноклассная школа: класс подставляем сразу — пользователь его не
+      // выбирает и вообще не видит сетку классов.
+      const autoClassId =
+        data.isSingleClass === true ? data.defaultClassId ?? data.classes[0]?.id ?? "" : "";
+      if (autoClassId) setClassId(autoClassId);
       setFieldErrors((previous) => ({ ...previous, schoolCode: undefined, classId: undefined, role: undefined }));
+      return data;
     } catch {
       if (schoolLookupRequestRef.current === requestId) {
         setFieldErrors((previous) => ({
@@ -212,6 +256,7 @@ export function RegisterForm({
           schoolCode: "Не удалось проверить код школы. Попробуйте ещё раз.",
         }));
       }
+      return null;
     } finally {
       if (schoolLookupRequestRef.current === requestId) setIsCheckingSchool(false);
     }
@@ -219,6 +264,20 @@ export function RegisterForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    /*
+      Код школы проверяем прямо здесь, если он ещё не подтверждён: человек мог
+      ввести код и сразу нажать «Зарегистрироваться». Для одноклассной школы
+      это и есть регистрация в один клик — лишних нажатий не требуется.
+    */
+    const activeSchoolCheck =
+      schoolCheck ?? (normalizeSchoolCode(schoolCode) ? await handleCheckSchool() : null);
+    // Класс одноклассной школы (может появиться только что, вместе с проверкой).
+    const activeSingleClassId =
+      activeSchoolCheck?.isSingleClass === true
+        ? activeSchoolCheck.defaultClassId ?? activeSchoolCheck.classes[0]?.id ?? ""
+        : singleClassId;
+    const classIdForSubmit = classId || activeSingleClassId;
 
     const normalizedEmail = normalizeEmail(email);
     const normalizedSchoolCode = normalizeSchoolCode(schoolCode);
@@ -230,22 +289,34 @@ export function RegisterForm({
         password,
         role: effectiveRole,
         schoolCode,
-        classId: effectiveRole === "STUDENT" ? classId : null,
+        classId: effectiveRole === "STUDENT" ? classIdForSubmit : null,
       },
       { allowedRoles, classIdOptional: !classIsRequired },
     );
 
     const nextErrors: FieldErrors = validation.ok ? {} : { ...validation.fields };
-    if (!schoolCheck || schoolCheck.school.code.toUpperCase() !== normalizedSchoolCode) {
+    // Сравниваем канонические коды: `DUSHA`/`SOUL` — псевдонимы «Школы Душа»,
+    // поэтому регистрация принимает и короткий код, и полный.
+    if (
+      !activeSchoolCheck ||
+      canonicalSchoolCode(activeSchoolCheck.school.code) !== canonicalSchoolCode(normalizedSchoolCode)
+    ) {
       nextErrors.schoolCode = "Сначала проверьте код школы";
     }
+    // Для одноклассной школы класс уже подставлен автоматически: проверяем
+    // именно то значение, которое уйдёт на сервер (`classId || singleClassId`).
     if (
       effectiveRole === "STUDENT" &&
-      schoolCheck &&
+      activeSchoolCheck &&
       classIsRequired &&
-      !schoolCheck.classes.some((item) => item.id === classId)
+      !activeSchoolCheck.classes.some((item) => item.id === classIdForSubmit)
     ) {
       nextErrors.classId = "Выберите класс из списка школы";
+    }
+    // Класс подставлен, но в состояние ещё не попал — синхронизируем, чтобы
+    // тело запроса взяло именно его.
+    if (effectiveRole === "STUDENT" && activeSingleClassId && classId !== activeSingleClassId) {
+      setClassId(activeSingleClassId);
     }
 
     /* Подтверждение пароля проверяем здесь: в БД оно не нужно. */
@@ -361,6 +432,12 @@ export function RegisterForm({
             clearFieldError("classId");
             clearFieldError("role");
           }}
+          onBlur={() => {
+            // Автопроверка кода: ученик «одноклассной» школы проходит
+            // регистрацию в один клик — код подтверждается, как только поле
+            // покинуто, и единственный класс подставляется сам.
+            if (!schoolCheck && schoolCode.trim() && !isCheckingSchool) void handleCheckSchool();
+          }}
         />
         <button
           type="button"
@@ -469,7 +546,17 @@ export function RegisterForm({
         {fieldErrors.role && <p className="text-xs text-rose-300">{fieldErrors.role}</p>}
       </div>
 
-      {effectiveRole === "STUDENT" && schoolCheck ? (
+      {/* Одноклассная школа: сетку выбора класса СТРОГО скрываем — класс
+          («Общий») уже подставлен автоматически из `defaultClassId`. */}
+      {effectiveRole === "STUDENT" && schoolCheck && isSingleClass ? (
+        <p
+          role="status"
+          className="rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200"
+        >
+          Класс: <span className="font-medium">{schoolCheck.classes[0]?.name ?? "Общий"}</span> —
+          назначается автоматически, выбирать не нужно.
+        </p>
+      ) : effectiveRole === "STUDENT" && schoolCheck ? (
         <div className="space-y-1.5">
           <span className="block text-xs font-medium uppercase tracking-wider text-slate-400">Класс</span>
           <div role="group" aria-label="Выбор класса" className="grid grid-cols-4 gap-1.5">

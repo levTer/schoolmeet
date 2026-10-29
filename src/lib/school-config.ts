@@ -1,3 +1,5 @@
+import { canonicalSchoolCode } from "@/lib/school-rules";
+
 /**
  * Настроенные школы, их секреты приглашений и гарантированные демо-админы.
  *
@@ -181,3 +183,45 @@ const DEFAULT_CLASS_LETTERS = ["А", "Б"] as const;
 export const DEFAULT_CLASS_NAMES = [5, 6, 7, 8, 9, 10, 11].flatMap((grade) =>
   DEFAULT_CLASS_LETTERS.map((letter) => `${grade}-${letter}`),
 );
+
+/* -------------------------------------------------------------------------- */
+/* Школы с ОДНИМ общим классом                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Название единственного класса «одноклассной» школы.
+ *
+ * Нужно школам без деления на параллели (например, «Школа Душа»): вместо
+ * 14 групп «5-А … 11-Б» у школы ровно одна группа, и ученик при регистрации
+ * не выбирает класс — он попадает в неё автоматически.
+ */
+export const SINGLE_CLASS_NAME = "Общий";
+
+/**
+ * Коды школ, у которых ровно один общий класс.
+ *
+ * Перепривязку данных выполняет `ensureSchoolClasses` в `@/lib/schools`:
+ * старые классы удаляются, а пользователи (ученики), уроки и ДЗ школы
+ * переводятся на `SINGLE_CLASS_NAME`. Список хранится отдельно от
+ * `CONFIGURED_SCHOOLS`, чтобы не менять контракт конфига школ
+ * (`scripts/rules.test.ts` сверяет его дословно).
+ */
+export const SINGLE_CLASS_SCHOOL_CODES = ["Anna.Terentieva77"] as const;
+
+/** Настроена ли школа на единственный общий класс (по коду, без учёта регистра). */
+export function isSingleClassSchool(code: string | null | undefined): boolean {
+  if (typeof code !== "string") return false;
+  // Псевдонимы (`DUSHA`, `SOUL`) раскрываются в код школы из базы.
+  const needle = (canonicalSchoolCode(code) ?? code.trim().toUpperCase()).toLowerCase();
+  return SINGLE_CLASS_SCHOOL_CODES.some((schoolCode) => schoolCode.toLowerCase() === needle);
+}
+
+/**
+ * Названия классов, которые обязаны существовать у школы.
+ *
+ * Обычная школа — стандартный набор «5-А … 11-Б»; школа из
+ * `SINGLE_CLASS_SCHOOL_CODES` — единственный класс `SINGLE_CLASS_NAME`.
+ */
+export function defaultClassNamesForSchool(code: string | null | undefined): readonly string[] {
+  return isSingleClassSchool(code) ? [SINGLE_CLASS_NAME] : DEFAULT_CLASS_NAMES;
+}
