@@ -20,7 +20,7 @@ import { sanitizeRedirectPath } from "@/lib/utils";
  * пользователя на `/dashboard` (или на `callbackUrl`, который middleware
  * добавил при редиректе с защищённого маршрута).
  */
-export function LoginForm() {
+export function LoginForm({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -127,19 +127,23 @@ export function LoginForm() {
         Войти
       </GradientButton>
 
-      <p className="text-center text-xs text-slate-500">
-        Забыли пароль? Восстановление доступа появится в следующем релизе.
-      </p>
+      {!compact && (
+        <>
+          <p className="text-center text-xs text-slate-500">
+            Забыли пароль? Восстановление доступа появится в следующем релизе.
+          </p>
 
-      <div className="space-y-3 rounded-2xl border border-brand-400/20 bg-brand-500/[0.06] p-4">
-        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-brand-100">
-          <ShieldCheck className="h-3.5 w-3.5 text-brand-300" />
-          Доступ выдаёт администратор лицея
-        </p>
-        <p className="text-[11px] leading-relaxed text-slate-400">
-          Если пароль не подходит или аккаунт заблокирован — обратитесь к администратору школы.
-        </p>
-      </div>
+          <div className="space-y-3 rounded-2xl border border-brand-400/20 bg-brand-500/[0.06] p-4">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-brand-100">
+              <ShieldCheck className="h-3.5 w-3.5 text-brand-300" />
+              Доступ выдаёт администратор лицея
+            </p>
+            <p className="text-[11px] leading-relaxed text-slate-400">
+              Если пароль не подходит или аккаунт заблокирован — обратитесь к администратору школы.
+            </p>
+          </div>
+        </>
+      )}
 
       <p className="text-center text-sm text-slate-400">
         Ещё нет аккаунта?{" "}
