@@ -18,7 +18,6 @@ import {
 
 import { FormAlert } from "@/components/ui/form-alert";
 import { PasswordField, TextField } from "@/components/ui/field";
-import { SelectField } from "@/components/ui/form-controls";
 import { normalizeSchoolCode } from "@/lib/school-rules";
 import { GradientButton } from "@/components/ui/gradient-button";
 import { normalizeInviteToken, rolesForInvite, type InviteRole } from "@/lib/invite-rules";
@@ -332,16 +331,17 @@ export function RegisterForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="space-y-5">
+    <form onSubmit={handleSubmit} noValidate className="space-y-4 max-md:space-y-2">
       {formError && (
         <FormAlert variant="error" onDismiss={() => setFormError(null)}>
           {formError}
         </FormAlert>
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-2.5 max-md:space-y-2">
         <TextField
           label="Код школы"
+          className="h-10 px-3 py-1.5 md:h-11"
           name="schoolCode"
           autoComplete="off"
           placeholder="Код, выданный администратором"
@@ -366,7 +366,7 @@ export function RegisterForm({
           type="button"
           onClick={() => void handleCheckSchool()}
           disabled={isCheckingSchool || !schoolCode.trim()}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-400/25 bg-brand-500/10 px-4 py-2.5 text-sm font-medium text-brand-100 transition hover:bg-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-400/25 bg-brand-500/10 px-4 py-2.5 text-sm font-medium text-brand-100 transition hover:bg-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50 max-md:h-9 max-md:px-3 max-md:py-0 max-md:text-xs"
         >
           {isCheckingSchool ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
           {isCheckingSchool ? "Проверяем…" : "Проверить код"}
@@ -380,6 +380,7 @@ export function RegisterForm({
 
       <TextField
         label="Имя и фамилия"
+        className="h-10 py-1.5 pr-3 md:h-11"
         name="name"
         autoComplete="name"
         placeholder="Анна Иванова"
@@ -394,6 +395,7 @@ export function RegisterForm({
 
       <TextField
         label="Email"
+        className="h-10 py-1.5 pr-3 md:h-11"
         type="email"
         name="email"
         autoComplete="email"
@@ -408,14 +410,14 @@ export function RegisterForm({
       />
 
       {/* Роль: публично — всегда Ученик; по teacher-ссылке — выбор Ученик/Учитель; по admin-ссылке — Администратор */}
-      <div className="space-y-2">
+      <div className="space-y-2.5 max-md:space-y-2">
         <span className="block text-xs font-medium uppercase tracking-wider text-slate-400">
           Я регистрируюсь как
         </span>
 
         {inviteRole === "ADMIN" ? (
           <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 p-1">
-            <div className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 py-2.5 text-sm font-semibold text-white shadow-glow">
+            <div className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 text-xs font-medium text-white shadow-glow">
               <Crown className="h-4 w-4" />
               {ROLE_LABELS.ADMIN}
             </div>
@@ -437,8 +439,8 @@ export function RegisterForm({
                   aria-pressed={isActive}
                   className={
                     isActive
-                      ? "relative inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 py-2.5 text-sm font-semibold text-white shadow-glow transition"
-                      : "relative inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white"
+                      ? "relative inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 py-2.5 text-sm font-semibold text-white shadow-glow transition max-md:h-9 max-md:px-2 max-md:py-0 max-md:text-xs max-md:font-medium"
+                      : "relative inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white max-md:h-9 max-md:px-2 max-md:py-0 max-md:text-xs max-md:font-medium"
                   }
                 >
                   <Icon className="h-4 w-4" />
@@ -449,7 +451,7 @@ export function RegisterForm({
           </div>
         ) : (
           <div className="rounded-2xl border border-white/10 bg-ink-900/60 p-1">
-            <div className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white/[0.06] px-3 py-2.5 text-sm font-semibold text-slate-200">
+            <div className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-white/[0.06] px-3 text-xs font-medium text-slate-200">
               <GraduationCap className="h-4 w-4" />
               {ROLE_LABELS.STUDENT}
               <Lock className="h-3.5 w-3.5 text-slate-500" />
@@ -468,31 +470,57 @@ export function RegisterForm({
       </div>
 
       {effectiveRole === "STUDENT" && schoolCheck ? (
-        <SelectField
-          label="Класс"
-          value={classId}
-          error={fieldErrors.classId}
-          hint={
-            classIsRequired
-              ? schoolCheck.classes.length === 0
-                ? "В школе пока не созданы классы. Обратитесь к администратору."
-                : undefined
-              : "Класс необязателен: школа без классной изоляции — вы сможете посещать любые уроки школы, а класс выбрать позже в меню."
-          }
-          onChange={(event) => {
-            setClassId(event.target.value);
-            clearFieldError("classId");
-          }}
-        >
-          <option value="" className="bg-ink-900">
-            {classIsRequired ? "Выберите свой класс" : "Без класса (необязательно)"}
-          </option>
-          {schoolCheck.classes.map((schoolClass) => (
-            <option key={schoolClass.id} value={schoolClass.id} className="bg-ink-900">
-              {schoolClass.name}
-            </option>
-          ))}
-        </SelectField>
+        <div className="space-y-1.5">
+          <span className="block text-xs font-medium uppercase tracking-wider text-slate-400">Класс</span>
+          <div role="group" aria-label="Выбор класса" className="grid grid-cols-4 gap-1.5">
+            {!classIsRequired && (
+              <button
+                type="button"
+                aria-pressed={!classId}
+                onClick={() => {
+                  setClassId("");
+                  clearFieldError("classId");
+                }}
+                className={`inline-flex h-8 min-w-0 items-center justify-center truncate rounded-lg border px-1 text-xs transition md:h-9 md:text-sm ${
+                  !classId
+                    ? "border-brand-400/50 bg-brand-500/15 text-white"
+                    : "border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/[0.07]"
+                }`}
+              >
+                Без класса
+              </button>
+            )}
+            {schoolCheck.classes.map((schoolClass) => {
+              const isSelected = classId === schoolClass.id;
+              return (
+                <button
+                  key={schoolClass.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => {
+                    setClassId(schoolClass.id);
+                    clearFieldError("classId");
+                  }}
+                  className={`inline-flex h-8 min-w-0 items-center justify-center truncate rounded-lg border px-1 text-xs transition md:h-9 md:text-sm ${
+                    isSelected
+                      ? "border-brand-400/50 bg-brand-500/15 text-white"
+                      : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"
+                  }`}
+                >
+                  {schoolClass.name}
+                </button>
+              );
+            })}
+          </div>
+          {fieldErrors.classId && <p role="alert" className="text-xs text-rose-300">{fieldErrors.classId}</p>}
+          {classIsRequired && schoolCheck.classes.length === 0 ? (
+            <p className="text-xs text-slate-500">В школе пока не созданы классы. Обратитесь к администратору.</p>
+          ) : !classIsRequired ? (
+            <p className="text-xs text-slate-500">
+              Класс необязателен: школа без классной изоляции — вы сможете посещать любые уроки школы, а класс выбрать позже в меню.
+            </p>
+          ) : null}
+        </div>
       ) : effectiveRole === "STUDENT" ? (
         <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-xs text-slate-500">
           Сначала подтвердите код школы — затем появится список классов.
@@ -502,6 +530,7 @@ export function RegisterForm({
       <div className="space-y-2">
         <PasswordField
           label="Пароль"
+          className="h-10 py-1.5 pr-3 md:h-11"
           name="new-password"
           autoComplete="new-password"
           placeholder="Минимум 8 символов"
@@ -530,6 +559,7 @@ export function RegisterForm({
 
       <PasswordField
         label="Подтверждение пароля"
+        className="h-10 py-1.5 pr-3 md:h-11"
         name="confirm-password"
         autoComplete="new-password"
         placeholder="Повторите пароль"
@@ -547,6 +577,7 @@ export function RegisterForm({
         loading={isSubmitting}
         loadingText="Создаём аккаунт…"
         icon={ArrowRight}
+        className="h-10 py-1.5 md:h-11"
       >
         Создать аккаунт
       </GradientButton>

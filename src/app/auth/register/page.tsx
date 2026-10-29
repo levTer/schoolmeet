@@ -107,6 +107,7 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
             : "Заполните форму — по умолчанию создаётся аккаунт ученика."
       }
       highlights={HIGHLIGHTS}
+      mobileScrollableCard
     >
       {inviteRole === "ADMIN" && schoolName ? (
         <p className="mb-4 flex items-center gap-2 rounded-xl border border-amber-400/25 bg-amber-500/10 px-3.5 py-3 text-xs text-amber-100">

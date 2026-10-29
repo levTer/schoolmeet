@@ -597,7 +597,7 @@ describe("регистрация без класса в гибкой школе"
     assert.match(form, /strictClassIsolation\?: boolean/, "форма не знает политику школы");
     assert.match(form, /classIsRequired = schoolCheck\?\.school\.strictClassIsolation !== false/, "нет признака обязательности класса");
     assert.match(form, /classIdOptional: !classIsRequired/, "форма не сообщает API, что класс необязателен");
-    assert.match(form, /Без класса \(необязательно\)/, "в селекте нет варианта «без класса»");
+    assert.match(form, /Без класса/, "в сетке нет варианта «без класса»");
     assert.match(validation, /classIdOptional\?: boolean/, "валидация не умеет необязательный класс");
     assert.match(route, /classIdOptional: !strictClassIsolation/, "роут регистрации игнорирует политику школы");
     assert.match(route, /getSchoolPolicy/, "роут не читает политику школы");
@@ -612,6 +612,29 @@ describe("регистрация без класса в гибкой школе"
   it("проверка кода школы отдаёт политику изоляции классов", () => {
     assert.match(check, /strictClassIsolation: true/, "проверка школы не забирает политику из БД");
     assert.match(check, /strictClassIsolation: school\.strictClassIsolation/, "проверка школы не отдаёт политику клиенту");
+  });
+});
+
+describe("мобильная регистрация с внутренней прокруткой", () => {
+  const form = readSource("src/components/auth/register-form.tsx");
+  const shell = readSource("src/components/auth/auth-shell.tsx");
+  const page = readSource("src/app/auth/register/page.tsx");
+
+  it("ограничивает карточку и прокручивает её содержимое на телефонах", () => {
+    assert.match(page, /mobileScrollableCard/, "страница регистрации не включает мобильный режим карточки");
+    assert.match(shell, /max-md:max-h-\[88dvh\].*max-md:w-full.*max-md:max-w-md/, "карточке не задан размер для мобильного экрана");
+    assert.match(shell, /max-md:overflow-y-auto max-md:no-scrollbar/, "карточка не прокручивается внутри");
+  });
+
+  it("компактно отображает поля, роли и классы, сохраняя отправку и вход", () => {
+    assert.match(form, /h-10 px-3 py-1\.5 md:h-11/, "код школы не компактный");
+    assert.match(form, /max-md:h-9.*max-md:text-xs.*max-md:font-medium/, "переключатель роли не компактный");
+    assert.match(form, /grid grid-cols-4 gap-1\.5/, "классы не отображаются компактной сеткой");
+    assert.match(form, /h-8 min-w-0/, "плитки классов не компактные");
+    assert.match(form, /Создать аккаунт/, "кнопка регистрации удалена");
+    assert.match(form, /Уже есть аккаунт\?/, "ссылка на вход удалена");
+    assert.match(form, /fetch\("\/api\/auth\/register"/, "регистрация через API удалена");
+    assert.match(form, /handleCheckSchool/, "проверка кода школы удалена");
   });
 });
 
