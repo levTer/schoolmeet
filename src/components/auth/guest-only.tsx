@@ -20,7 +20,7 @@ export function GuestOnly({ children }: { children: React.ReactNode }) {
         if (session?.user) router.replace("/dashboard");
         else setChecking(false);
       } catch {
-        // Не показываем гостевую страницу, если сессию проверить не удалось.
+        if (active) setChecking(false);
       }
     }
 

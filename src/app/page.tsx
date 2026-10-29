@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { getServerSession } from "next-auth";
+import { getServerSession, type Session } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { GuestOnly } from "@/components/auth/guest-only";
@@ -7,9 +7,16 @@ import { LoginForm, LoginFormSkeleton } from "@/components/auth/login-form";
 import { authOptions } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function HomePage() {
-  const session = await getServerSession(authOptions);
+  let session: Session | null = null;
+  try {
+    session = await getServerSession(authOptions);
+  } catch (error) {
+    console.error("[HOME_SESSION_ERROR]", error);
+  }
+
   if (session?.user) redirect("/dashboard");
 
   return (
@@ -22,7 +29,7 @@ export default async function HomePage() {
           <p className="mb-8 mt-2 text-center text-sm text-slate-400">
             Учиться вместе — проще
           </p>
-          <Suspense fallback={<LoginFormSkeleton />}>
+          <Suspense fallback={<LoginFormSkeleton compact />}>
             <LoginForm compact />
           </Suspense>
         </section>

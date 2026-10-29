@@ -84,6 +84,23 @@
       height: 3px;
     }
   }
+
+  /* Телефон: удобные touch-target по умолчанию (если размер не задан явно утилитами h-*). */
+  @media (max-width: 767px) {
+    button:not([class*="h-"]),
+    [role="button"]:not([class*="h-"]),
+    input:not([type="checkbox"]):not([type="radio"]):not([class*="h-"]),
+    select:not([class*="h-"]),
+    textarea:not([class*="h-"]) {
+      min-height: 44px;
+    }
+
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
 }
 
 @layer components {
@@ -415,22 +432,5 @@
   .animate-float,
   .animate-spin-slow {
     animation: none;
-  }
-}
-
-/* Телефон: удобные touch-target и поля >=16px (без автоматического zoom в iOS Safari). */
-@media (max-width: 767px) {
-  button,
-  [role="button"],
-  input:not([type="checkbox"]):not([type="radio"]),
-  select,
-  textarea {
-    min-height: 44px;
-  }
-
-  input:not([type="checkbox"]):not([type="radio"]),
-  select,
-  textarea {
-    font-size: 16px !important;
   }
 }

@@ -27,7 +27,7 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
   const describedById = `${inputId}-description`;
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1 md:space-y-1.5">
       <label
         htmlFor={inputId}
         className="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-400"

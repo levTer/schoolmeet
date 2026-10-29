@@ -39,7 +39,7 @@ export function AuthShell({
   return (
     <main
       className={`relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 py-10 sm:px-8 lg:py-16 ${
-        mobileScrollableCard ? "max-md:py-0" : ""
+        mobileScrollableCard ? "max-md:h-[100dvh] max-md:min-h-0 max-md:px-4 max-md:py-3" : ""
       }`}
     >
       {/* Декоративный фон: сетка + размытые градиентные пятна */}
@@ -50,7 +50,11 @@ export function AuthShell({
         <div className="absolute bottom-[-6rem] left-1/3 h-[24rem] w-[24rem] animate-float rounded-full bg-brand-500/[0.05] blur-[140px] [animation-delay:3s]" />
       </div>
 
-      <div className="relative grid w-full max-w-6xl items-center gap-10 lg:grid-cols-[1.05fr_minmax(0,27rem)] lg:gap-16">
+      <div
+        className={`relative grid w-full max-w-6xl items-center gap-10 lg:grid-cols-[1.05fr_minmax(0,27rem)] lg:gap-16 ${
+          mobileScrollableCard ? "max-md:min-h-0 max-md:justify-items-center" : ""
+        }`}
+      >
         {/* Презентационная колонка (только на широких экранах) */}
         <section className="hidden animate-fade-up lg:block">
           <Logo size="lg" />
@@ -88,7 +92,11 @@ export function AuthShell({
         </section>
 
         {/* Колонка с формой */}
-        <section className="w-full">
+        <section
+          className={`w-full ${
+            mobileScrollableCard ? "max-md:flex max-md:min-h-0 max-md:justify-center" : ""
+          }`}
+        >
           <div className={`mb-6 flex items-center justify-between lg:hidden ${mobileScrollableCard ? "max-md:hidden" : ""}`}>
             <Logo />
             <Link
@@ -100,14 +108,14 @@ export function AuthShell({
           </div>
 
           <div
-            className={`ring-gradient glass-card animate-fade-up p-6 shadow-glow sm:p-9 ${
+            className={`ring-gradient glass-card animate-fade-up shadow-glow ${
               mobileScrollableCard
-                ? "max-md:flex max-md:max-h-[88dvh] max-md:w-full max-md:max-w-md max-md:flex-col max-md:overflow-y-auto max-md:no-scrollbar"
-                : ""
+                ? "p-4 md:p-9 max-md:max-h-[85dvh] max-md:w-full max-md:max-w-md max-md:flex max-md:flex-col max-md:overflow-hidden"
+                : "p-6 sm:p-9"
             }`}
           >
             {mobileScrollableCard && (
-              <div className="mb-4 flex items-center justify-between md:hidden">
+              <div className="mb-2 flex shrink-0 items-center justify-between md:hidden">
                 <Logo />
                 <Link
                   href="/"
@@ -117,13 +125,34 @@ export function AuthShell({
                 </Link>
               </div>
             )}
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">
-              {eyebrow}
-            </p>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight">{title}</h2>
-            <p className="mt-2 text-sm leading-relaxed text-slate-400">{subtitle}</p>
 
-            <div className="mt-7">{children}</div>
+            <div
+              className={
+                mobileScrollableCard
+                  ? "min-h-0 flex-1 overflow-y-auto no-scrollbar px-1 py-2 overscroll-contain md:overflow-visible md:p-0"
+                  : ""
+              }
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">
+                {eyebrow}
+              </p>
+              <h2
+                className={`mt-3 text-2xl font-semibold tracking-tight ${
+                  mobileScrollableCard ? "max-md:mt-1 max-md:text-xl" : ""
+                }`}
+              >
+                {title}
+              </h2>
+              <p
+                className={`mt-2 text-sm leading-relaxed text-slate-400 ${
+                  mobileScrollableCard ? "max-md:mt-1 max-md:text-xs" : ""
+                }`}
+              >
+                {subtitle}
+              </p>
+
+              <div className={mobileScrollableCard ? "mt-3.5 md:mt-7" : "mt-7"}>{children}</div>
+            </div>
           </div>
 
           {footer && <div className="mt-6 text-center text-sm text-slate-400">{footer}</div>}

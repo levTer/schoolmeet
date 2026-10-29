@@ -620,18 +620,28 @@ describe("мобильная регистрация с внутренней пр
   const shell = readSource("src/components/auth/auth-shell.tsx");
   const page = readSource("src/app/auth/register/page.tsx");
 
-  it("ограничивает карточку и прокручивает её содержимое на телефонах", () => {
+  it("ограничивает карточку до 85dvh и прокручивает её содержимое внутри на телефонах", () => {
     assert.match(page, /mobileScrollableCard/, "страница регистрации не включает мобильный режим карточки");
-    assert.match(shell, /max-md:max-h-\[88dvh\].*max-md:w-full.*max-md:max-w-md/, "карточке не задан размер для мобильного экрана");
-    assert.match(shell, /max-md:overflow-y-auto max-md:no-scrollbar/, "карточка не прокручивается внутри");
+    assert.match(
+      shell,
+      /max-md:max-h-\[85dvh\].*max-md:w-full.*max-md:max-w-md.*max-md:flex.*max-md:flex-col/,
+      "карточке не задан мобильный flex-контейнер max-h-[85dvh] w-full max-w-md flex flex-col",
+    );
+    assert.match(
+      shell,
+      /overflow-y-auto no-scrollbar px-1 py-2/,
+      "содержимое карточки не прокручивается внутри с overflow-y-auto no-scrollbar px-1 py-2",
+    );
   });
 
-  it("компактно отображает поля, роли и классы, сохраняя отправку и вход", () => {
-    assert.match(form, /h-10 px-3 py-1\.5 md:h-11/, "код школы не компактный");
+  it("компактно отображает поля (gap-2.5, h-10 text-sm), роли и классы, сохраняя отправку и вход", () => {
+    assert.match(form, /gap-2\.5/, "нет компактного отступа gap-2.5 между полями");
+    assert.match(form, /h-10 text-sm px-3 py-1\.5 md:h-11/, "код школы не компактный (h-10 text-sm)");
+    assert.match(form, /h-10 text-sm py-1\.5 pr-3 md:h-11/, "инпуты не компактные (h-10 text-sm)");
     assert.match(form, /max-md:h-9.*max-md:text-xs.*max-md:font-medium/, "переключатель роли не компактный");
     assert.match(form, /grid grid-cols-4 gap-1\.5/, "классы не отображаются компактной сеткой");
     assert.match(form, /h-8 min-w-0/, "плитки классов не компактные");
-    assert.match(form, /Создать аккаунт/, "кнопка регистрации удалена");
+    assert.match(form, /Зарегистрироваться/, "кнопка регистрации удалена");
     assert.match(form, /Уже есть аккаунт\?/, "ссылка на вход удалена");
     assert.match(form, /fetch\("\/api\/auth\/register"/, "регистрация через API удалена");
     assert.match(form, /handleCheckSchool/, "проверка кода школы удалена");
