@@ -8,7 +8,7 @@ import { CalendarDays, ShieldCheck, Sparkles, Video } from "lucide-react";
 import { AuthShell, type AuthHighlight } from "@/components/auth/auth-shell";
 import { LoginForm, LoginFormSkeleton } from "@/components/auth/login-form";
 import { authOptions } from "@/lib/auth";
-import { sanitizeRedirectPath } from "@/lib/utils";
+import { GuestOnly } from "@/components/auth/guest-only";
 
 export const metadata: Metadata = {
   title: "Вход",
@@ -40,20 +40,7 @@ const HIGHLIGHTS: readonly AuthHighlight[] = [
   },
 ];
 
-/** Query-параметры страницы входа: `callbackUrl` (middleware) + данные из формы регистрации. */
-interface LoginPageProps {
-  searchParams: {
-    callbackUrl?: string | string[];
-    /** `true` — аккаунт только что создан (показываем подтверждение). */
-    registered?: string | string[];
-    /** Email нового аккаунта: подставляется в поле ввода (`LoginForm`). */
-    email?: string | string[];
-  };
-}
-
-export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const callbackUrl = sanitizeRedirectPath(searchParams.callbackUrl);
-
+export default async function LoginPage() {
   /* Реальный тип сессии: `Awaited<ReturnType<typeof getServerSession>>`
      в next-auth 4.24 схлопывается в `unknown` и ломает сборку. */
   let session: Session | null = null;
@@ -66,18 +53,20 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   // Уже авторизованных не держим на странице входа.
   const user = session && 'user' in session ? session.user : null;
-  if (user) redirect(callbackUrl);
+  if (user) redirect("/dashboard");
 
   return (
-    <AuthShell
-      eyebrow="Вход в EduFlow"
-      title="Добро пожаловать в EduFlow"
-      subtitle="Введите школьный email и пароль — сессия создаётся по JWT и хранится 30 дней."
-      highlights={HIGHLIGHTS}
-    >
-      <Suspense fallback={<LoginFormSkeleton />}>
-        <LoginForm />
-      </Suspense>
-    </AuthShell>
+    <GuestOnly>
+      <AuthShell
+        eyebrow="Вход в EduFlow"
+        title="Добро пожаловать в EduFlow"
+        subtitle="Введите школьный email и пароль — сессия создаётся по JWT и хранится 30 дней."
+        highlights={HIGHLIGHTS}
+      >
+        <Suspense fallback={<LoginFormSkeleton />}>
+          <LoginForm />
+        </Suspense>
+      </AuthShell>
+    </GuestOnly>
   );
 }

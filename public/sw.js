@@ -1,6 +1,5 @@
-const CACHE_NAME = "eduflow-pwa-v8";
+const CACHE_NAME = "eduflow-pwa-v9";
 const PRECACHE_URLS = [
-  "/",
   "/manifest.json",
   "/icon.svg",
   "/icon-192.png",
@@ -68,10 +67,23 @@ self.addEventListener("fetch", (event) => {
   // вместо 90-МБ установщика скачается страница сайта с расширением .exe.
   if (isBinaryDownload(url.pathname)) return;
 
+  // HTML и RSC авторизации всегда проходят middleware. В офлайне не
+  // подменяем их сохранённым лендингом с устаревшим состоянием сессии.
+  if (event.request.mode === "navigate" || url.pathname === "/" || url.pathname === "/login") {
+    event.respondWith(
+      fetch(event.request).catch(() => new Response("Нет соединения. Подключитесь к сети и повторите вход.", {
+        status: 503,
+        headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+      })),
+    );
+    return;
+  }
+
+
   event.respondWith(
     fetch(event.request).catch(async () => {
       const cached = await caches.match(event.request);
-      return cached || caches.match("/");
+      return cached || Response.error();
     }),
   );
 });

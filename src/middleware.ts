@@ -88,6 +88,7 @@ function rateLimitedResponse(retryAfterSeconds: number, isApi: boolean): NextRes
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isApi = pathname.startsWith("/api");
+  const isGuestEntry = pathname === "/" || pathname === "/login";
 
   /* 1. Rate-limit: общий лимит + строгие правила для /api/auth и /api/admin. */
   const { checks, blocked } = checkPathRateLimit(pathname, request.headers);
@@ -98,6 +99,9 @@ export async function middleware(request: NextRequest) {
     }
     return acc;
   }, {});
+
+  // Гостевые страницы зависят от cookie, их нельзя восстанавливать из HTTP-кэша.
+  if (isGuestEntry) limitHeaders["Cache-Control"] = "private, no-store, max-age=0";
 
   if (blocked) {
     const response = rateLimitedResponse(blocked.result.retryAfterSeconds, isApi);
@@ -122,6 +126,11 @@ export async function middleware(request: NextRequest) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", `${pathname}${search}`);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Авторизованный пользователь не видит лендинг даже с callbackUrl.
+  if (isGuestEntry) {
+    return NextResponse.redirect(new URL("/dashboard", request.url), { headers: limitHeaders });
   }
 
   const role = (token.role as Role | undefined) ?? "STUDENT";

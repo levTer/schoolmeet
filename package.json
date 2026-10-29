@@ -24,9 +24,10 @@
     "db:migrate": "prisma migrate dev --name init",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "test": "npm run test:ai && npm run test:rules && npm run test:ui && npm run test:pwa && npm run test:chat && npm run test:security && npm run test:bridge && npm run test:android",
+    "test": "npm run test:ai && npm run test:rules && npm run test:ui && npm run test:pwa && npm run test:chat && npm run test:security && npm run test:bridge && npm run test:android && npm run test:landing",
     "test:bridge": "tsx --test scripts/whiteboard-bridge.test.ts",
-    "test:android": "tsx --test scripts/android-apk.test.ts"
+    "test:android": "tsx --test scripts/android-apk.test.ts",
+    "test:landing": "tsx --test scripts/landing-auth.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
