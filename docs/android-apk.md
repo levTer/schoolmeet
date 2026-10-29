@@ -24,8 +24,9 @@ the same image. A native view fades into the app. Status and navigation bars use
 icons on API 26+ and a monochrome themed icon on API 33+. PNGs are generated
 from `public/icon.svg` with `npm run android:icons`.
 
-Back traverses the workspace history, then native screens, and at home opens a
-native confirmation dialog that uses `moveTaskToBack`. The app declares
+Back traverses the workspace history, then native screens, and at home silently
+moves the task to the background via `moveTaskToBack` (no confirmation dialog).
+The app declares
 `CAMERA`, `RECORD_AUDIO`, and `MODIFY_AUDIO_SETTINGS`; the first two are requested
 by the Android runtime only when the trusted lesson requests them. The last is a
 normal install-time permission, so Android does not show a runtime dialog for
@@ -109,8 +110,8 @@ run Android's own verifier during the test.
 
 `.github/workflows/android-smoke.yml` runs `scripts/android-device-smoke.py` on
 API 26 and 34 emulators on relevant PRs. It installs the committed binary and
-exercises the native home, schedule, homework, hardware back and minimize
-dialog. To run it locally, boot a device/emulator with adb and run
+exercises the native home, schedule, homework, hardware back and silent
+minimize. To run it locally, boot a device/emulator with adb and run
 `python3 scripts/android-device-smoke.py`.
 
 A real Android device/emulator is still required to validate system permission
