@@ -16,6 +16,13 @@ datasource db {
 // TEACHER — создаёт уроки, планирует расписание, проверяет ДЗ
 // STUDENT — посещает уроки, смотрит расписание своего класса, сдаёт ДЗ
 // ---------------------------------------------------------------------------
+/// Lifecycle of a video room. `idle` also covers scheduled rooms before join.
+enum MeetingStatus {
+  idle
+  active
+  ended
+}
+
 enum Role {
   ADMIN
   TEACHER
@@ -157,6 +164,9 @@ model Meeting {
   startTime     DateTime  @default(now())
   endTime       DateTime?
   isActive      Boolean   @default(false)
+  status        MeetingStatus @default(idle)
+  /// Actual first join, distinct from the scheduled/created startTime.
+  callStartedAt DateTime?
   encryptionKey String // ключ комнаты для AES-256 шифрования чата
   /// Школа-владелец комнаты; nullable только для миграции старых записей.
   schoolId      String?
@@ -174,6 +184,7 @@ model Meeting {
   @@index([hostId])
   @@index([schoolId])
   @@index([isActive])
+  @@index([status])
   @@map("meetings")
 }
 

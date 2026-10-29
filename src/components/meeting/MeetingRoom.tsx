@@ -29,6 +29,8 @@ import { useWebRTC } from "@/hooks/useWebRTC";
 import type { WhiteboardSync } from "@/hooks/useWhiteboard";
 import type { DrawingInstruction } from "@/lib/ai-provider";
 import { canPinChatMessage } from "@/lib/chat-rules";
+import { registerCallCleanup } from "@/lib/call-events";
+import { participantCount } from "@/lib/call-rules";
 import { decryptMessage, encryptMessage } from "@/lib/crypto";
 import { drawCommand, getCanvasSnapshot } from "@/lib/whiteboard-bridge";
 import type { JoinRoomResult } from "@/lib/realtime";
@@ -74,6 +76,8 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
   const [phase, setPhase] = useState<Phase>("precheck");
   const [joinError, setJoinError] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [callMeta, setCallMeta] = useState<{ hostId: string; roomId: string } | null>(null);
+  const [endingCall, setEndingCall] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
   const [seenCount, setSeenCount] = useState(0);
@@ -115,9 +119,17 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
       hangUpRef.current();
       setClosure({ title: "Доступ отозван", message: payload.message, tone: "info" });
     },
+    onCallEnded: (payload) => {
+      hangUpRef.current();
+      setClosure({
+        title: "Звонок завершён",
+        message: `Организатор ${payload.endedBy.name} завершил звонок для всех участников.`,
+        tone: "info",
+      });
+    },
   });
 
-  const rtc = useWebRTC({ sendSignal: socket.sendSignal, onSignal: socket.onSignal });
+  const rtc = useWebRTC({ sendSignal: socket.sendSignal, onSignal: socket.onSignal, getSelfId: socket.getSelfId });
   const { requestMedia, hangUp, connectToPeers, dropPeer, dropAllPeers, toggleMic, toggleCamera, toggleScreenShare } =
     rtc;
   const { sendMediaState, setHandRaised, sendChat, sendTyping, leaveRoom, disconnect } = socket;
@@ -200,10 +212,12 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
     rejoinRef.current = (result) => {
       // Сервер забыл нас при разрыве связи: пересоздаём все соединения.
       dropAllPeers();
+      setCallMeta({ hostId: result.hostId, roomId: result.roomId });
+      setStartedAt(Date.parse(result.startedAt));
       const others = result.participants
         .filter((participant) => participant.socketId !== result.self.socketId)
         .map((participant) => participant.socketId);
-      void connectToPeers(others);
+      void connectToPeers(others, result.self.socketId);
     };
   }, [connectToPeers, dropAllPeers, dropPeer, hangUp]);
 
@@ -250,9 +264,9 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
 
       // Пока подключаемся, уже пришедшие сообщения не считаем новыми.
       setSeenCount(ack.data.history.length);
-      await connectToPeers(others);
-
-      setStartedAt(Date.now());
+      setCallMeta({ hostId: ack.data.hostId, roomId: ack.data.roomId });
+      setStartedAt(Date.parse(ack.data.startedAt));
+      await connectToPeers(others, ack.data.self.socketId);
       setPhase("live");
     } catch (error) {
       setJoinError(describeJoinError(error));
@@ -261,10 +275,25 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
   };
 
   const leave = () => {
+    recorder.stop();
     hangUp();
     leaveRoom();
     disconnect();
-    router.push("/dashboard");
+    router.push("/meeting");
+  };
+
+  const isHost = callMeta?.hostId === self.id;
+
+  const endForAll = async () => {
+    if (!isHost || endingCall) return;
+    setEndingCall(true);
+    const ack = await socket.endCallForAll(callMeta?.roomId);
+    if (!ack.ok) {
+      setEndingCall(false);
+      toast.error(ack.error);
+    }
+    // On success the server broadcasts CALL_ENDED; root useCallEvents cleans up
+    // and redirects. Do not optimistically close the host before confirmation.
   };
 
   /**
@@ -359,6 +388,10 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
   });
 
   const recordingSeconds = useElapsedSeconds(recorder.startedAt);
+
+  // Global CALL_ENDED cleanup stops/saves the recording before tracks stop.
+  const stopRecording = recorder.stop;
+  useEffect(() => registerCallCleanup(stopRecording, 10), [stopRecording]);
   /** Имя файла текущей записи — показываем в подтверждении. */
   const recordingNameRef = useRef(lessonRecordingFileName());
 
@@ -605,6 +638,22 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
           </div>
         ) : (
           <>
+            {rtc.networkError && (
+              <div className="px-3 pt-3">
+                <FormAlert variant="error">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>{rtc.networkError}</span>
+                    <button
+                      type="button"
+                      onClick={rtc.retryConnections}
+                      className="rounded-lg border border-rose-300/30 px-3 py-1 text-xs font-semibold hover:bg-rose-500/10"
+                    >
+                      Повторить подключение
+                    </button>
+                  </div>
+                </FormAlert>
+              </div>
+            )}
             {/*
               Мобильные (< md): при демонстрации экрана лента участников идёт
               горизонтальной полоской в ОБЫЧНОМ потоке документа — не absolute
@@ -720,6 +769,10 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
             onToggleHand={() => setHandRaised(!handRaised)}
             onToggleRecording={toggleRecording}
             onLeave={leave}
+            isHost={isHost}
+            participantCount={participantCount(socket.participants)}
+            endingCall={endingCall}
+            onEndForAll={() => void endForAll()}
           />
         </footer>
       )}

@@ -29,6 +29,8 @@ export interface MeetingWithHost {
   hostId: string;
   schoolId: string | null;
   isActive: boolean;
+  status: "idle" | "active" | "ended";
+  callStartedAt: Date | null;
   startTime: Date;
   /** Заполняется при завершении урока (в том числе принудительном). */
   endTime: Date | null;

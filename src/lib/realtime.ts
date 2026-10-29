@@ -109,16 +109,48 @@ export interface ChatEnvelope {
 
 /** SDP-описание и ICE-кандидаты, которыми обмениваются пиры через сервер. */
 export type SignalData =
-  | { type: "offer"; sdp: string }
-  | { type: "answer"; sdp: string }
+  | { type: "offer"; sdp: string; generation?: string; relayStage?: number }
+  | { type: "answer"; sdp: string; generation?: string }
+  | { type: "restart-request"; generation: string }
   | {
       type: "candidate";
       candidate: { candidate: string; sdpMid: string | null; sdpMLineIndex: number | null } | null;
+      generation?: string;
     };
 
 export type Ack<T = undefined> = { ok: true; data: T } | { ok: false; code: string; error: string };
 
+export interface ActiveCall {
+  roomId: string;
+  meetingId: string;
+  meetingCode: string;
+  title: string;
+  hostId: string;
+  hostName: string;
+  startedAt: string;
+  participantCount: number;
+}
+
+export interface CallEndedPayload {
+  roomId: string;
+  meetingId: string;
+  meetingCode: string;
+  endedBy: { id: string; name: string };
+  endedAt: string;
+  reason: "host_ended";
+}
+
+export interface EndCallResult {
+  meetingId: string;
+  endedAt: string;
+  alreadyEnded: boolean;
+}
+
 export interface JoinRoomResult {
+  roomId: string;
+  meetingId: string;
+  hostId: string;
+  startedAt: string;
   self: RoomParticipant;
   participants: RoomParticipant[];
   history: ChatEnvelope[];
@@ -144,6 +176,13 @@ export interface ClientToServerEvents {
   "join-room": (
     payload: { roomId: string; classCodeGrant?: string | null },
     ack: (result: Ack<JoinRoomResult>) => void,
+  ) => void;
+  /** Subscribe to invalidations of the school's active-call list. */
+  "watch-lobby": (ack?: (result: Ack) => void) => void;
+  /** Host ends a call. roomId is required only when acting from the lobby. */
+  END_CALL_FOR_ALL: (
+    payload: { roomId?: string },
+    ack?: (result: Ack<EndCallResult>) => void,
   ) => void;
   /** Покинуть комнату (сокет остаётся подключённым). */
   "leave-room": () => void;
@@ -207,6 +246,9 @@ export interface SessionRevokedPayload {
 }
 
 export interface ServerToClientEvents {
+  CALL_ENDED: (payload: CallEndedPayload) => void;
+  /** No room data is broadcast: the lobby refetches with its own access filter. */
+  ACTIVE_CALLS_CHANGED: () => void;
   /** Другой участник вошёл в комнату. */
   "user-joined": (participant: RoomParticipant) => void;
   /** Участник вышел или отключился. */

@@ -204,29 +204,46 @@ Render/Railway/Fly.io (бесплатные или триальные тариф
 > используйте вариант с постоянным сервером или подключите объектное хранилище
 > (S3-совместимое: Cloudflare R2 бесплатно 10 ГБ, Supabase Storage 1 ГБ) в `src/lib/file-storage.ts`.
 
-### 3.4. WebRTC в школьных сетях: STUN и TURN
+### 3.4. WebRTC в школьных сетях и VPN: relay-only TCP TURN
 
-- **По умолчанию ничего настраивать не нужно**: в `src/lib/webrtc-config.ts` уже прописан проверенный
-  пул публичных STUN-серверов Google (`stun.l.google.com:19302` + зеркала `stun1…stun4`).
-  В домашних сетях и мобильном интернете видео работает peer-to-peer через них.
-- **Школьный Wi-Fi с симметричным NAT/файрволом** может блокировать прямые соединения —
-  тогда медиа идёт через TURN-релей. Задайте его переменной `NEXT_PUBLIC_TURN_SERVERS` (JSON-массив):
+Звонки больше не полагаются на прямой UDP/P2P. Движок (`src/hooks/useWebRTC.ts`) создаёт
+`RTCPeerConnection` с `iceTransportPolicy: "relay"` и перебирает транспорты каскадом:
 
-  ```json
-  [
-    {"urls": "turn:turn.school.ru:3478", "username": "schoolmeet", "credential": "секрет"},
-    {"urls": "turns:turn.school.ru:5349", "username": "schoolmeet", "credential": "секрет"}
-  ]
-  ```
+1. `turns:…:443?transport=tcp` — TLS/TCP 443;
+2. `turn:…:443?transport=tcp` — TCP 443;
+3. `turn:…:80?transport=tcp` — TCP 80;
+4. собственные TCP-порты TURN, если они заданы.
 
-  Поддерживаются и короткие формы: `"turn:host:3478"` (без авторизации) и `turns:` (TLS).
-- Где взять TURN бесплатно:
-  - для тестов — открытый релей **[metered.ca Open Relay](https://www.metered.ca/tools/openrelay/)**
-    (`openrelay.metered.ca:80/443/4455`, логин/пароль `openrelayproject`);
-  - для продакшена — собственный **[coturn](https://github.com/coturn/coturn)** на том же VPS
-    (5 минут настройки, безлимитно и под вашим контролем).
-- Legacy-переменная `NEXT_PUBLIC_ICE_SERVERS` по-прежнему работает и полностью переопределяет
-  список ICE-серверов (максимальный приоритет).
+На каждую стадию есть ограниченный таймаут; при смене сети (`online` / `connection.change`)
+ICE пересоздаётся автоматически. В сигналинг уходят только `relay`-кандидаты.
+
+**Для продуктива задайте собственный TURN** через `NEXT_PUBLIC_TURN_SERVERS`:
+
+```json
+[
+  {"urls": "turns:turn.school.ru:443?transport=tcp", "username": "schoolmeet", "credential": "краткоживущий-пароль"},
+  {"urls": "turn:turn.school.ru:443?transport=tcp", "username": "schoolmeet", "credential": "краткоживущий-пароль"},
+  {"urls": "turn:turn.school.ru:80?transport=tcp", "username": "schoolmeet", "credential": "краткоживущий-пароль"}
+]
+```
+
+- Значения `NEXT_PUBLIC_*` видны браузеру: используйте краткоживущие TURN-credentials
+  (например, REST API coturn / managed TURN), а не постоянный серверный секрет.
+- Публичные OpenRelay-точки в `GLOBAL_RTC_CONFIG` оставлены как best-effort пример и не
+  дают гарантии доступности. Если VPN/файрвол блокирует и TCP 443/80 к TURN, приложение
+  покажет ошибку подключения, а не бесконечный спиннер.
+- Legacy `NEXT_PUBLIC_ICE_SERVERS` полностью переопределяет список ICE; если в нём нет
+  TCP TURN, relay-only звонок не установится.
+
+### 3.5. Завершение звонка организатором
+
+- Хост видит «Завершить для всех» в комнате и «Завершить звонок» на карточке лобби.
+- Событие `END_CALL_FOR_ALL` проверяется сервером: только `Meeting.hostId` своей школы.
+- Сервер пишет `Meeting.status = ended`, рассылает `CALL_ENDED`, очищает signaling-комнату
+  и записи посещаемости. Клиенты останавливают треки, закрывают PC и через 2.5 с идут в лобби.
+- Обычный участник может только «Покинуть» — это не завершает звонок для остальных.
+- После изменений схемы выполните `npm run db:deploy` (prisma db push), чтобы добавить
+  `Meeting.status` и `Meeting.callStartedAt`.
 
 ---
 
@@ -364,7 +381,7 @@ bubblewrap build        # на выходе: app-release-signed.apk и .aab
 | `AI_PROVIDER` | — | `auto` (по умолчанию) / `groq` / `gemini` / `openrouter` / `mock` |
 | `AI_TIMEOUT_MS` | — | таймаут внешнего ИИ-вызова (по умолчанию 30000) |
 | `NEXT_PUBLIC_SCHOOL_TIMEZONE` | — | часовой пояс школы (`Europe/Moscow`) |
-| `NEXT_PUBLIC_TURN_SERVERS` | metered.ca / свой coturn | TURN-релеи для школьных Wi-Fi |
+| `NEXT_PUBLIC_TURN_SERVERS` | свой coturn / managed TURN | Relay-only TCP TURN для школьных Wi-Fi и VPN |
 | `NEXT_PUBLIC_ICE_SERVERS` | — | legacy: полный override списка ICE |
 | `UPLOAD_DIR` | — | каталог файлов ДЗ (по умолчанию `./storage/uploads`) |
 | `RATE_LIMIT_MAX_REQUESTS` / `RATE_LIMIT_WINDOW_MS` | — | рейт-лимит (100/мин по умолчанию) |
@@ -392,7 +409,7 @@ bubblewrap build        # на выходе: app-release-signed.apk и .aab
 | Gemini 404 NOT_FOUND | модель недоступна в аккаунте | код сам откатится на `gemini-3.6-flash` и далее по `GEMINI_FALLBACK_MODELS`; либо задайте `GEMINI_MODEL` |
 | Groq 404 `model_not_found` / 400 `model_decommissioned` | модель снята вендором | код мгновенно переходит на следующую из `GROQ_FALLBACK_MODELS`; при желании задайте `GROQ_MODEL` (актуальные ID: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`) |
 | Формулы/доска не распознаются | нет `GEMINI_API_KEY` и `GROQ_API_KEY` | добавьте `GROQ_API_KEY` (Gemini необязателен); Vision-цепочка: Gemini 1.5 Flash → Groq Vision (`llama-3.2-vision`) → OpenRouter Vision → Mock |
-| Видео не соединяется в школьной сети | симметричный NAT, нет TURN | задайте `NEXT_PUBLIC_TURN_SERVERS` (metered.ca или coturn) |
+| Видео не соединяется в школьной сети/VPN | нет доступного TCP TURN | задайте `NEXT_PUBLIC_TURN_SERVERS` с TURNS/TCP 443 и TURN/TCP 80 |
 
 Локальная проверка движка без сети и базы: `npm run test:ai` (84 смоук-проверки: парсинг
 ответов Groq/Gemini/OpenRouter, мгновенный перебор моделей при 404/`model_decommissioned`,
@@ -411,7 +428,7 @@ waterfall-переключения, STUN/TURN-конфиг).
 - [ ] Вход под `admin@schoolmeet.dev` работает, демо-пароль изменён
 - [ ] ИИ-панель учителя отвечает, бейдж показывает Groq/Gemini (не Mock)
 - [ ] (Для живых уроков) сервер `npm run start` поднят на хостинге с постоянным процессом
-- [ ] (Для школьного Wi-Fi) `NEXT_PUBLIC_TURN_SERVERS` задан
+- [ ] (Для школьного Wi-Fi/VPN) `NEXT_PUBLIC_TURN_SERVERS` задан (TURNS/TCP 443 + TURN/TCP 80)
 - [ ] PWA установлен на телефон / APK собран через PWABuilder
 
 **Готово! Школа в эфире. 🎓**
