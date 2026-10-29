@@ -147,7 +147,7 @@ export function registerCallHandlers({ io, socket, leaveCurrentRoom, clearRoomSt
         io.to(buildLobbyRoomId(actor.schoolId!)).emit("ACTIVE_CALLS_CHANGED");
 
         try {
-          await closeMeetingAttendance(meeting.id, endedAt);
+          await closeMeetingAttendance(meeting.id, actor.schoolId!, endedAt);
         } catch (error) {
           // The call is already ended; attendance repair must not revive it.
           console.error("[calls] close attendance after end:", error);

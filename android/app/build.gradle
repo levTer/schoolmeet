@@ -10,15 +10,34 @@ android {
         applicationId 'ru.eduflow.app'
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName '1.1.0'
+        versionCode 3
+        versionName '1.1.1'
     }
     // Release APKs are signed by scripts/build-android.sh, never with a key in git.
     buildTypes {
         release { minifyEnabled false }
     }
+    sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/native-build/assets'))
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
 }
+
+// Both Gradle and the standalone release script embed the same source fingerprint.
+// This prevents shipping a previously compiled APK after native Java/XML changes.
+def nativeBuildInfoScript = rootProject.file('../scripts/android-build-info.py')
+def nativeBuildInfoFile = layout.buildDirectory.file('generated/native-build/assets/native-build.json')
+def nativeBuildInfoOutput = new ByteArrayOutputStream()
+def generateNativeBuildInfo = tasks.register('generateNativeBuildInfo', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', nativeBuildInfoScript.absolutePath
+    standardOutput = nativeBuildInfoOutput
+    doLast {
+        nativeBuildInfoFile.get().asFile.parentFile.mkdirs()
+        nativeBuildInfoFile.get().asFile.bytes = nativeBuildInfoOutput.toByteArray()
+    }
+    outputs.upToDateWhen { false }
+}
+tasks.named('preBuild').configure { dependsOn(generateNativeBuildInfo) }

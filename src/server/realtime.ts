@@ -421,12 +421,12 @@ function buildRealtimeControl(io: RealtimeServer): RealtimeControl {
   const socketsInRoom = (roomId: string): RealtimeSocket[] => roomSockets(io, roomId);
 
   return {
-    listLiveRooms() {
+    listLiveRooms(schoolId) {
       const rooms = new Map<string, { meetingId: string | null; participants: LiveParticipant[] }>();
 
       io.sockets.sockets.forEach((socket) => {
         const roomId = socket.data.roomId;
-        if (!roomId) return;
+        if (!roomId || socket.data.user.schoolId !== schoolId) return;
 
         const entry = rooms.get(roomId) ?? { meetingId: socket.data.meetingId ?? null, participants: [] };
         entry.participants.push(toLiveParticipant(socket));

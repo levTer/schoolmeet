@@ -17,9 +17,8 @@
 # Release APK всегда собирает и подписывает scripts/build-android.sh: он
 # вкладывает в APK отпечаток исходников (assets/native-build.json) и включает
 # v1+v2+v3, без чего scripts/android-apk.test.py и android-smoke отвергнут APK.
-# Поэтому `./gradlew assembleRelease` здесь намеренно не вызывается: в
-# android/app/build.gradle нет signingConfig (ключ не попадает в репозиторий),
-# такой APK вышел бы неподписанным и со «старым» отпечатком.
+# Gradle отдельно проверяет компиляцию release variant и тоже встраивает
+# native-build.json. Подписывает только release-скрипт: ключ не попадает в Git.
 #
 # Запуск: push в main / arena/** с изменениями android/**, либо вручную
 # (Actions → Build Android APK → Run workflow). Готовый APK коммитится в ветку —
@@ -90,27 +89,29 @@ jobs:
           printf '%s' "$KS_PASS" > "$RUNNER_TEMP/keys/password.txt"
           chmod 600 "$RUNNER_TEMP/keys/"*
 
-      # gradlew и весь Gradle-проект лежат в android/ — шаг обязан работать
-      # оттуда, иначе `./gradlew` не находится (прежняя причина падения за 21 с).
-      - name: Сборка с помощью Gradle
+      - name: Gradle compile check
         working-directory: android
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          if [ "${{ steps.signing.outputs.has_key }}" = "true" ]; then
+            ./gradlew assembleRelease --no-daemon
+          else
+            ./gradlew assembleDebug --no-daemon
+          fi
+
+      - name: Build, align and sign the release APK
+        if: steps.signing.outputs.has_key == 'true'
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
           EDUFLOW_KEYSTORE: ${{ runner.temp }}/keys/eduflow-release.jks
           EDUFLOW_KS_PASS_FILE: ${{ runner.temp }}/keys/password.txt
           EDUFLOW_KEY_ALIAS: eduflow
-        run: |
-          set -euo pipefail
-          chmod +x gradlew
-          if [ -n "${{ secrets.EDUFLOW_KEYSTORE_B64 }}" ] && [ -n "${{ secrets.EDUFLOW_KS_PASS }}" ]; then
-            echo "Сборка подписанного Release APK..."
-            # Подпись v1+v2+v3 и отпечаток исходников — только в release-скрипте.
-            bash ../scripts/build-android.sh
-          else
-            echo "Сборка Unsigned Debug APK..."
-            ./gradlew assembleDebug
-          fi
+        run: bash scripts/build-android.sh
 
       - name: Проверка подписи и ресурсов Release APK
         if: steps.signing.outputs.has_key == 'true'

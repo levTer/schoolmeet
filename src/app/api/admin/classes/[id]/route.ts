@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { conflict, handleRouteError, jsonOk, notFound } from "@/lib/api";
-import { requireRole, requireViewer } from "@/lib/session-viewer";
+import { requireAdminViewer } from "@/lib/session-viewer";
 import { INTERACTIVE_TRANSACTION_OPTIONS, prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -13,14 +13,13 @@ export async function DELETE(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
-    requireRole(viewer, ["ADMIN"]);
+    const viewer = await requireAdminViewer();
     if (!viewer.schoolId) throw notFound("Школа не найдена");
 
     await prisma.$transaction(
       async (tx) => {
         const schoolClass = await tx.class.findFirst({
-          where: { id: params.id, schoolId: viewer.schoolId! },
+          where: { id: params.id, schoolId: viewer.schoolId },
           select: {
             id: true,
             _count: { select: { users: true, lessons: true, homeworks: true } },

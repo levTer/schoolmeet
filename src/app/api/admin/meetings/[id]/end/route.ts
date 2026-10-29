@@ -5,7 +5,7 @@ import { handleRouteError, jsonError, jsonOk } from "@/lib/api";
 import { getRequestIp, writeAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEndMeeting, meetingEndDenyReason } from "@/lib/admin-permissions";
-import { requireViewer } from "@/lib/session-viewer";
+import { requireAdminViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +24,10 @@ interface RouteContext {
  */
 export async function POST(request: Request, { params }: RouteContext): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
+    const viewer = await requireAdminViewer();
 
-    const meeting = await prisma.meeting.findUnique({
-      where: { id: params.id },
+    const meeting = await prisma.meeting.findFirst({
+      where: { id: params.id, schoolId: viewer.schoolId },
       select: { id: true, title: true, meetingCode: true, hostId: true, schoolId: true },
     });
     if (!meeting || !viewer.schoolId || meeting.schoolId !== viewer.schoolId) {
@@ -42,10 +42,11 @@ export async function POST(request: Request, { params }: RouteContext): Promise<
       return jsonError(403, "FORBIDDEN", "Недостаточно прав для завершения урока");
     }
 
-    const result = await forceEndMeeting(meeting.id);
+    const result = await forceEndMeeting(meeting.id, viewer.schoolId);
 
     void writeAuditLog({
       userId: viewer.id,
+      schoolId: viewer.schoolId,
       action: "meeting.force_end",
       ip: getRequestIp(request),
       details: {

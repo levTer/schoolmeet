@@ -99,6 +99,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     await writeAuditLog({
       userId: user.id,
+      schoolId: school.id,
       action: "user.role.change",
       details: { target: user.email, from: user.role, to: "ADMIN", via: "admin-invite", sessions },
       ip: getRequestIp(request),

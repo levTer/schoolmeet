@@ -9,7 +9,7 @@ import type { SchoolViewer } from "@/lib/school-viewer";
 export async function listActiveCallsForViewer(viewer: SchoolViewer): Promise<ActiveCall[]> {
   if (!viewer.schoolId) return [];
   const control = getRealtimeControl();
-  const liveRooms = control?.listLiveRooms() ?? [];
+  const liveRooms = control?.listLiveRooms(viewer.schoolId) ?? [];
   const ids = liveRooms.map((room) => room.meetingId).filter((id): id is string => Boolean(id));
   if (!ids.length) return [];
   const meetings = await prisma.meeting.findMany({

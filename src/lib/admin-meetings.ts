@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { schoolScope } from "@/lib/admin-tenant";
 import { closeMeetingAttendance } from "@/lib/attendance";
 import { getRealtimeControl, type LiveParticipant } from "@/lib/realtime-control";
 import { GRADE_LABELS, type GradeCode } from "@/lib/schedule-rules";
@@ -62,8 +63,9 @@ function majorityStudentGrade(grades: (GradeCode | null)[]): GradeCode | null {
 
 /** Список текущих уроков: кто ведёт, какой класс и предмет, сколько в комнате. */
 export async function listActiveMeetings(schoolId: string): Promise<ActiveMeetingsSummary> {
+  const tenant = schoolScope(schoolId);
   const control = getRealtimeControl();
-  const liveRooms = control?.listLiveRooms() ?? [];
+  const liveRooms = control?.listLiveRooms(schoolId) ?? [];
 
   const liveByMeeting = new Map<string, { roomId: string; participants: LiveParticipant[] }>();
   liveRooms.forEach((room) => {
@@ -75,7 +77,8 @@ export async function listActiveMeetings(schoolId: string): Promise<ActiveMeetin
 
   const meetings = await prisma.meeting.findMany({
     where: {
-      schoolId,
+      ...tenant,
+      host: { is: tenant },
       OR: [
         { id: { in: Array.from(liveByMeeting.keys()) } },
         {
@@ -93,13 +96,13 @@ export async function listActiveMeetings(schoolId: string): Promise<ActiveMeetin
         select: { grade: true, room: true, subject: { select: { name: true } } },
       },
       attendance: {
-        where: { leftAt: null },
+        where: { leftAt: null, user: { is: tenant } },
         select: {
           joinedAt: true,
           user: { select: { id: true, name: true, role: true, grade: true } },
         },
       },
-      _count: { select: { attendance: true } },
+      _count: { select: { attendance: { where: { user: { is: tenant } } } } },
     },
   });
 
@@ -173,9 +176,10 @@ export interface ForceEndResult {
  *
  * Возвращает статистику отключения — она попадает в уведомление админа и в журнал.
  */
-export async function forceEndMeeting(meetingId: string): Promise<ForceEndResult> {
-  const meeting = await prisma.meeting.findUnique({
-    where: { id: meetingId },
+export async function forceEndMeeting(meetingId: string, schoolId: string): Promise<ForceEndResult> {
+  const tenant = schoolScope(schoolId);
+  const meeting = await prisma.meeting.findFirst({
+    where: { id: meetingId, ...tenant },
     select: { id: true, endTime: true },
   });
   if (!meeting) {
@@ -185,6 +189,12 @@ export async function forceEndMeeting(meetingId: string): Promise<ForceEndResult
   const alreadyClosed = Boolean(meeting.endTime && Date.now() - meeting.endTime.getTime() < CLOSED_COOLDOWN_MS);
   const now = new Date();
 
+  const updated = await prisma.meeting.updateMany({
+    where: { id: meetingId, ...tenant },
+    data: { isActive: false, endTime: now, status: "ended" },
+  });
+  if (updated.count !== 1) throw new Error("MEETING_NOT_FOUND");
+
   const control = getRealtimeControl();
   const closed = control
     ? control.closeMeeting(meetingId, {
@@ -193,12 +203,7 @@ export async function forceEndMeeting(meetingId: string): Promise<ForceEndResult
       })
     : { closedSockets: 0, roomIds: [] as string[] };
 
-  await prisma.meeting.update({
-    where: { id: meetingId },
-    data: { isActive: false, endTime: now, status: "ended" },
-  });
-
-  const closedAttendance = await closeMeetingAttendance(meetingId, now);
+  const closedAttendance = await closeMeetingAttendance(meetingId, schoolId, now);
 
   return {
     meetingId,

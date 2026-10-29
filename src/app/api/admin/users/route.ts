@@ -13,7 +13,7 @@ import {
 } from "@/lib/admin-users";
 import { getRequestIp, writeAuditLog } from "@/lib/audit";
 import { invalidateAdminOverview } from "@/lib/admin-stats";
-import { requireCapability, requireSchoolViewer, requireViewer } from "@/lib/session-viewer";
+import { requireCapability, requireAdminViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -25,11 +25,11 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
+    const viewer = await requireAdminViewer();
     requireCapability(viewer, "users.view");
 
     const { searchParams } = new URL(request.url);
-    const result = await listUsersForAdmin({
+    const result = await listUsersForAdmin(viewer.schoolId, {
       search: normalizeSearchTerm(searchParams.get("search")),
       role: parseRole(searchParams.get("role")),
       grade: parseGrade(searchParams.get("grade")),
@@ -53,7 +53,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   try {
     // Школа нового пользователя — школа оператора (из сессии), а не из тела
     // запроса и не «основная школа по умолчанию» (исправление M-02).
-    const viewer = await requireSchoolViewer();
+    const viewer = await requireAdminViewer();
     requireCapability(viewer, "users.create");
 
     let payload: unknown;
@@ -69,10 +69,11 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     const user = await createUserAsAdmin(validation.data, viewer.schoolId);
-    invalidateAdminOverview();
+    invalidateAdminOverview(viewer.schoolId);
 
     void writeAuditLog({
       userId: viewer.id,
+      schoolId: viewer.schoolId,
       action: "user.create",
       ip: getRequestIp(request),
       details: { target: user.email, role: user.role, grade: user.grade ?? undefined, schoolId: viewer.schoolId },

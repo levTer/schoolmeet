@@ -51,10 +51,11 @@ project uses Android Gradle Plugin 8.5.2. A debug build can be made with
 `.github/workflows/android-build.yml` runs Gradle from `android/` (that is where
 `gradlew` lives). Without `EDUFLOW_KEYSTORE_B64` / `EDUFLOW_KS_PASS` it only
 compiles an unsigned debug APK as a build check and publishes it as a workflow
-artifact; it never replaces the committed release binary. `assembleRelease` is
-deliberately not used: `android/app/build.gradle` has no `signingConfig` (no key
-in git), so Gradle would produce an unsigned APK without the embedded source
-fingerprint, and `scripts/android-apk.test.py` would reject it.
+artifact; it never replaces the committed release binary. With signing secrets,
+CI first runs `./gradlew assembleRelease` as a native compile check. Both Gradle
+and the standalone script embed `assets/native-build.json`; Gradle has no
+`signingConfig`, so its unsigned output is never published as the release APK.
+The release script then compiles, aligns, signs and verifies the distributable.
 
 The release script independently compiles the same Java/resources with the
 Android SDK tools, embeds a source fingerprint, performs `zipalign -f -v 4`,
@@ -84,24 +85,31 @@ npm run test:android
 Tool paths can also be supplied as `ANDROID_JAR`, `AAPT2`, `D8`, `ZIPALIGN`,
 and `APKSIGNER`. For an older SDK, `DX_JAR` selects dx instead of d8; the native
 source deliberately avoids Java 8 language features that require desugaring.
-The committed APK was compiled with platform 34, aapt2 2.20, Android dx and
-zipalign 27.0.1, and Android 13 apksig; the resulting APK was aligned and
-cryptographically verified with v1/v2/v3 all true.
+The committed 1.1.1 (versionCode 3) APK was compiled with platform 34,
+aapt2 2.20, Eclipse Java compiler 3.45, D8 8.2.2-dev, AOSP zipalign and
+apksigner 0.9. It was aligned and cryptographically verified with v1/v2/v3 all
+true. The sandbox could not download Gradle or the Google Maven repository, so
+this binary used the repository's standalone native build path, not Gradle.
 
 ## Signing continuity — action required
 
-The former TWA's signing key was **not present** in this checkout. This APK was
-signed with a newly generated RSA-2048 key:
+Neither the former TWA key nor the previous native APK key was present in this
+checkout. This rebuild therefore uses another newly generated RSA-2048 key.
+Existing native installations cannot upgrade in place without the previous key
+or a valid signing-lineage rotation; they must be uninstalled first.
 
-- New certificate SHA-256: `719237b5918361e9507195c17d0ddecd41df87217015207428604974b40e5e47`
+- New certificate SHA-256: `8ff609b9cdec5edb30356bf86581813de678fba8cdcda5d6810d7f84ebe39a37`
+- Previous native certificate SHA-256: `719237b5918361e9507195c17d0ddecd41df87217015207428604974b40e5e47`
 - Former TWA certificate SHA-256: `f2bf4b851bcb69fcb39f80070be9414014bf5dc1bfafa4c6faac218b3aaaeb75`
-- APK SHA-256: `86ecc1abc27e5149af025b0244722003cc54296a5f4ba8bba9b914cbb76f4741`
+- APK SHA-256: `ba74a92d0356807d3778d50a0ef482f61f3a2a7350be488da9d2cfa041815f8b`
 
-Android **will not install this APK as an update over the old TWA** because its
-certificate differs. Without the original key, an existing installation must be
+Android **will not install this APK as an update over the old TWA or previous
+native APK** because its certificate differs. Without the original key, an existing installation must be
 uninstalled first (which removes its local app data). If the original key exists,
 use it for the release and deliberately update the pinned certificate fingerprint
-before rebuilding, then verify upgrade on a device. The newly generated keystore
+before rebuilding, then verify upgrade on a device. Update the GitHub Actions
+signing secrets to this new keystore/password before enabling automated release
+rebuilds; an old secret will fail the pinned-certificate check. The newly generated keystore
 and password file are in the ignored `.android-signing/` directory in this
 workspace only. Back them up to secure release-key storage immediately; losing
 this key prevents future updates to installations made with this APK. They are
@@ -113,7 +121,8 @@ never committed or sent in the PR.
 The Android regression needs Python 3 and OpenSSL. It checks APK ZIP integrity,
 4-byte stored-entry alignment, compiled manifest identity and permissions,
 native logo/splash resources and all icon densities, and that the embedded
-source fingerprint matches the checkout. It verifies the v1 PKCS#7 signature and
+source fingerprint matches the checkout (a stale APK fails, rather than being
+skipped). It verifies the v1 PKCS#7 signature and
 all manifest digests, and independently verifies both v2 and v3 RSA signatures,
 the Android chunked APK content digest, and certificate consistency. Tampering
 checks ensure the verifiers reject modified data. Set `APKSIGNER` to additionally

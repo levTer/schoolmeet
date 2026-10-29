@@ -7,8 +7,8 @@ import { FormAlert } from "@/components/ui/form-alert";
 import { canAdmin } from "@/lib/admin-permissions";
 import { listActiveMeetings, type ActiveMeetingsSummary } from "@/lib/admin-meetings";
 import { listAttendance, type AttendanceRow } from "@/lib/attendance";
-import { authOptions, canAccessAdminArea } from "@/lib/auth";
-import { getSchoolViewer } from "@/lib/school-viewer";
+import { authOptions } from "@/lib/auth";
+import { getLiveAdminViewer } from "@/lib/session-viewer";
 
 export const metadata: Metadata = {
   title: "Активные уроки",
@@ -26,19 +26,18 @@ export const dynamic = "force-dynamic";
 export default async function AdminMeetingsPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login?callbackUrl=/admin/meetings");
-  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
+
+  const admin = await getLiveAdminViewer();
+  if (!admin) redirect("/dashboard?denied=admin");
 
   let meetings: ActiveMeetingsSummary | null = null;
   let attendance: { items: AttendanceRow[]; total: number } | null = null;
 
   try {
-    const viewer = await getSchoolViewer(session.user.id);
-    if (viewer?.schoolId) {
-      [meetings, attendance] = await Promise.all([
-        listActiveMeetings(viewer.schoolId),
-        listAttendance({ schoolId: viewer.schoolId, limit: 25 }),
-      ]);
-    }
+    [meetings, attendance] = await Promise.all([
+      listActiveMeetings(admin.schoolId),
+      listAttendance({ schoolId: admin.schoolId, limit: 25 }),
+    ]);
   } catch (error) {
     console.error("[admin/meetings] Не удалось загрузить уроки:", error);
   }
@@ -51,7 +50,7 @@ export default async function AdminMeetingsPage() {
     );
   }
 
-  const actor = { id: session.user.id, role: session.user.role };
+  const actor = { id: admin.id, role: admin.role };
 
   return (
     <MeetingsBoard

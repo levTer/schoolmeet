@@ -29,8 +29,8 @@ python3 - "$ROOT/android/app/build.gradle" <<'PY'
 import pathlib, re, sys
 source = pathlib.Path(sys.argv[1]).read_text()
 for pattern in (r"applicationId\s+['\"]ru\.eduflow\.app['\"]", r'compileSdk\s+34\b',
-                r'minSdk\s+24\b', r'targetSdk\s+34\b', r'versionCode\s+2\b',
-                r"versionName\s+['\"]1\.1\.0['\"]"):
+                r'minSdk\s+24\b', r'targetSdk\s+34\b', r'versionCode\s+3\b',
+                r"versionName\s+['\"]1\.1\.1['\"]"):
     if not re.search(pattern, source):
         raise SystemExit('Android Gradle config does not match standalone build: ' + pattern)
 PY
@@ -50,7 +50,7 @@ PY
 "$AAPT2" compile --no-crunch --dir "$ROOT/android/app/src/main/res" -o "$WORK/res.zip"
 "$AAPT2" link -o "$WORK/resources.apk" -I "$ANDROID_JAR" --manifest "$WORK/AndroidManifest.xml" \
     --java "$WORK/gen" -A "$WORK/assets" --min-sdk-version 24 --target-sdk-version 34 \
-    --version-code 2 --version-name 1.1.0 "$WORK/res.zip"
+    --version-code 3 --version-name 1.1.1 "$WORK/res.zip"
 find "$ROOT/android/app/src/main/java" "$WORK/gen" -name '*.java' -print > "$WORK/sources.txt"
 "$JAVAC" -encoding UTF-8 -source 8 -target 8 -bootclasspath "$ANDROID_JAR" -d "$WORK/classes" @"$WORK/sources.txt"
 "$JAR" cf "$WORK/classes.jar" -C "$WORK/classes" .

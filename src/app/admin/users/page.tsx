@@ -5,7 +5,7 @@ import { getServerSession } from "next-auth";
 import { UsersTable } from "@/components/admin/users-table";
 import { FormAlert } from "@/components/ui/form-alert";
 import { listUsersForAdmin, type ListUsersResult } from "@/lib/admin-users";
-import { authOptions, canAccessAdminArea } from "@/lib/auth";
+import { authOptions } from "@/lib/auth";
 import { getRealtimeControl } from "@/lib/realtime-control";
 import { getLiveAdminViewer } from "@/lib/session-viewer";
 
@@ -26,7 +26,6 @@ export const dynamic = "force-dynamic";
 export default async function AdminUsersPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login?callbackUrl=/admin/users");
-  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
 
   // Права подтверждаем «живой» записью из БД, а не только claim из JWT (H-01).
   const admin = await getLiveAdminViewer();
@@ -34,12 +33,12 @@ export default async function AdminUsersPage() {
 
   let initial: ListUsersResult | null = null;
   try {
-    initial = await listUsersForAdmin({ page: 1 });
+    initial = await listUsersForAdmin(admin.schoolId, { page: 1 });
 
     const control = getRealtimeControl();
     if (control) {
       const online = new Set(
-        control.listLiveRooms().flatMap((room) => room.participants.map((participant) => participant.userId)),
+        control.listLiveRooms(admin.schoolId).flatMap((room) => room.participants.map((participant) => participant.userId)),
       );
       initial = {
         ...initial,

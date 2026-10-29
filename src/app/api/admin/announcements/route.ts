@@ -7,19 +7,19 @@ import {
 } from "@/lib/announcements";
 import { handleRouteError, jsonError, jsonOk, parseIntParam } from "@/lib/api";
 import { getRequestIp, writeAuditLog } from "@/lib/audit";
-import { requireCapability, requireSchoolViewer } from "@/lib/session-viewer";
+import { requireCapability, requireAdminViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/admin/announcements — все объявления СВОЕЙ школы (включая неактивные).
  *
- * Тенант берётся из сессии (`requireSchoolViewer`): межшкольный список больше
+ * Тенант берётся из сессии (`requireAdminViewer`): межшкольный список больше
  * недоступен (исправление H-03).
  */
 export async function GET(request: Request): Promise<NextResponse> {
   try {
-    const viewer = await requireSchoolViewer();
+    const viewer = await requireAdminViewer();
     requireCapability(viewer, "announcements.view");
 
     const { searchParams } = new URL(request.url);
@@ -46,7 +46,7 @@ export async function GET(request: Request): Promise<NextResponse> {
  */
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    const viewer = await requireSchoolViewer();
+    const viewer = await requireAdminViewer();
     requireCapability(viewer, "announcements.manage");
 
     let payload: unknown;
@@ -69,6 +69,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     void writeAuditLog({
       userId: viewer.id,
+      schoolId: viewer.schoolId,
       action: "announcement.create",
       ip: getRequestIp(request),
       details: {
