@@ -1,7 +1,7 @@
 /**
  * «Прямо сейчас идёт урок» — чистые правила и типы карточки кабинета.
  *
- * Модуль намеренно не импортирует Prisma/DOM: карточку рисует RSC-кабинет,
+ * Модуль намеренно не импортирует Prisma/DOM: карточку рисует кабинет,
  * а данные для неё собирают `@/lib/live-lesson` (сервер) и
  * `@/lib/dashboard-data`. Благодаря этому правила покрываются юнит-тестами
  * без базы и не тянут серверные зависимости в клиентский бандл.
@@ -17,10 +17,16 @@ export type LiveLessonOrigin = "schedule" | "meeting";
  *
  * `meetingCode` — ключ входа в комнату: кнопка ведёт на
  * `/meeting?room=<meetingCode>` и открывает видеоурок без пароля и кода.
+ * `meetingId` и `hostId` позволяют ведущему или администратору завершить
+ * урок прямо с баннера кабинета.
  */
 export interface LiveLesson {
+  /** Идентификатор комнаты (`Meeting.id`), если известен. */
+  meetingId: string | null;
   /** Код комнаты (`Meeting.meetingCode`) — то, что попадает в ссылку. */
   meetingCode: string;
+  /** Организатор комнаты (`Meeting.hostId` / `Schedule.teacherId`). */
+  hostId: string | null;
   /** Название урока для заголовка карточки. */
   title: string;
   /** Название предмета (для слота расписания — из каталога предметов). */
@@ -37,11 +43,16 @@ export interface LiveLesson {
 }
 
 /** Слот расписания, который идёт прямо сейчас → карточка урока. */
-export function liveLessonFromSchedule(lesson: Schedule): LiveLesson {
+export function liveLessonFromSchedule(
+  lesson: Schedule,
+  meeting?: { id?: string | null; hostId?: string | null } | null,
+): LiveLesson {
   const subjectName = lesson.subject?.name ?? lesson.className ?? "Урок";
 
   return {
+    meetingId: meeting?.id ?? null,
     meetingCode: lesson.meetingCode,
+    hostId: meeting?.hostId ?? lesson.teacherId ?? null,
     title: subjectName,
     subjectName,
     subjectEmoji: lesson.subject?.emoji ?? null,
@@ -54,12 +65,16 @@ export function liveLessonFromSchedule(lesson: Schedule): LiveLesson {
 
 /** Открытая комната школы (без слота расписания) → карточка урока. */
 export function liveLessonFromMeeting(meeting: {
+  id?: string | null;
+  hostId?: string | null;
   title: string;
   meetingCode: string;
-  host?: { name: string | null } | null;
+  host?: { id?: string | null; name: string | null } | null;
 }): LiveLesson {
   return {
+    meetingId: meeting.id ?? null,
     meetingCode: meeting.meetingCode,
+    hostId: meeting.hostId ?? meeting.host?.id ?? null,
     title: meeting.title,
     subjectName: meeting.title,
     subjectEmoji: null,

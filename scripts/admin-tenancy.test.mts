@@ -114,12 +114,15 @@ class PrismaClientKnownRequestError extends Error {
 mock.module("@prisma/client", { namedExports: { Prisma: { PrismaClientKnownRequestError } } });
 mock.module("@/lib/prisma", { namedExports: { prisma, INTERACTIVE_TRANSACTION_OPTIONS: { timeout: 15000 } } });
 mock.module("@/lib/auth", { namedExports: { authOptions: {} } });
+mock.module("@/lib/schools", { namedExports: { ensureUserSchoolMembership: async () => undefined } });
 mock.module("next-auth", { namedExports: { getServerSession: async () => { if (sessionFails) throw new Error("Session unavailable"); return session; } } });
 
 const usersRoute = await import("../src/app/api/admin/users/route");
 const userRoute = await import("../src/app/api/admin/users/[id]/route");
 const statsRoute = await import("../src/app/api/admin/stats/route");
 const auditRoute = await import("../src/app/api/admin/audit/route");
+const endMeetingRoute = await import("../src/app/api/meetings/[code]/end/route");
+const realtimeControl = await import("../src/lib/realtime-control");
 const adminUsers = await import("../src/lib/admin-users");
 const adminStats = await import("../src/lib/admin-stats");
 const audit = await import("../src/lib/audit");
@@ -326,6 +329,121 @@ describe("Admin boundary source audit", () => {
       const source = readFileSync(fileURLToPath(new URL(`../src/app/admin/${page}.tsx`, import.meta.url)), "utf8");
       assert.match(source, /const admin = await getLiveAdminViewer\(\)/, page);
       assert.ok(source.indexOf("await getLiveAdminViewer()") < source.search(/await (?:list|getAdmin|Promise\.all)/), page);
+    }
+  });
+});
+
+describe("POST /api/meetings/[id]/end: host/ADMIN authorization and schoolId tenancy", () => {
+  it("allows the meeting host (TEACHER) and school ADMIN to end an active meeting, emits CALL_ENDED, and blocks students, other teachers, and other schools", async () => {
+    const hostTeacherA = user("teacher-host-a", A, "TEACHER");
+    const otherTeacherA = user("teacher-other-a", A, "TEACHER");
+    users.push(hostTeacherA, otherTeacherA);
+    meetings.push({
+      id: "meeting-live-a",
+      schoolId: A,
+      hostId: "teacher-host-a",
+      host: hostTeacherA,
+      title: "Внеплановый урок",
+      meetingCode: "vneplanovyy-a",
+      isActive: true,
+      status: "active",
+      startTime: stamp,
+      endTime: null,
+      attendance: [],
+      _count: { attendance: 0 },
+    });
+
+    const broadcasted: Array<{ schoolId: string; meetingId: string; meetingCode: string }> = [];
+    realtimeControl.registerRealtimeControl({
+      listLiveRooms: () => [],
+      countParticipants: () => 0,
+      closeMeeting: () => ({ closedSockets: 0, roomIds: [] }),
+      endCallForAll: (opts) => {
+        broadcasted.push({ schoolId: opts.schoolId, meetingId: opts.meetingId, meetingCode: opts.meetingCode });
+        return { closedSockets: 2, roomId: `room:${opts.schoolId}:${opts.meetingCode}` };
+      },
+      disconnectUser: () => 0,
+      isUserOnline: () => false,
+    });
+
+    try {
+      // 1. Student in school A cannot end the meeting (403)
+      session = { user: { id: "student-a", role: "STUDENT", schoolId: A } };
+      const studentRes = await endMeetingRoute.POST(
+        new Request("https://example.test/api/meetings/meeting-live-a/end", { method: "POST" }),
+        { params: { code: "meeting-live-a" } },
+      );
+      assert.equal(studentRes.status, 403);
+      assert.equal(meetings.find((m) => m.id === "meeting-live-a")!.status, "active");
+
+      // 2. Non-host teacher in school A cannot end the meeting (403)
+      session = { user: { id: "teacher-other-a", role: "TEACHER", schoolId: A } };
+      const otherTeacherRes = await endMeetingRoute.POST(
+        new Request("https://example.test/api/meetings/meeting-live-a/end", { method: "POST" }),
+        { params: { code: "meeting-live-a" } },
+      );
+      assert.equal(otherTeacherRes.status, 403);
+      assert.equal(meetings.find((m) => m.id === "meeting-live-a")!.status, "active");
+
+      // 3. Admin in school B cannot see or end school A's meeting (404)
+      session = { user: { id: "admin-b", role: "ADMIN", schoolId: B } };
+      const crossTenantRes = await endMeetingRoute.POST(
+        new Request("https://example.test/api/meetings/meeting-live-a/end", { method: "POST" }),
+        { params: { code: "meeting-live-a" } },
+      );
+      assert.equal(crossTenantRes.status, 404);
+      assert.equal(meetings.find((m) => m.id === "meeting-live-a")!.status, "active");
+      assert.equal(broadcasted.length, 0);
+
+      // 4. Host teacher in school A ends their meeting -> 200, status = ended, CALL_ENDED emitted
+      session = { user: { id: "teacher-host-a", role: "TEACHER", schoolId: A } };
+      const hostRes = await endMeetingRoute.POST(
+        new Request("https://example.test/api/meetings/meeting-live-a/end", { method: "POST" }),
+        { params: { code: "meeting-live-a" } },
+      );
+      assert.equal(hostRes.status, 200);
+      const hostJson = await hostRes.json();
+      assert.equal(hostJson.ok, true);
+      assert.equal(hostJson.data.status, "ended");
+      const updatedByHost = meetings.find((m) => m.id === "meeting-live-a")!;
+      assert.equal(updatedByHost.status, "ended");
+      assert.equal(updatedByHost.isActive, false);
+      assert.ok(updatedByHost.endTime instanceof Date);
+      assert.equal(broadcasted.length, 1);
+      assert.deepEqual(broadcasted[0], {
+        schoolId: A,
+        meetingId: "meeting-live-a",
+        meetingCode: "vneplanovyy-a",
+      });
+
+      // 5. School ADMIN in school A can also end another teacher's active meeting
+      meetings.push({
+        id: "meeting-live-a2",
+        schoolId: A,
+        hostId: "teacher-host-a",
+        host: hostTeacherA,
+        title: "Внеплановый урок 2",
+        meetingCode: "vneplanovyy-a2",
+        isActive: true,
+        status: "active",
+        startTime: stamp,
+        endTime: null,
+        attendance: [],
+        _count: { attendance: 0 },
+      });
+      session = { user: { id: "admin-a", role: "ADMIN", schoolId: A } };
+      const adminRes = await endMeetingRoute.POST(
+        new Request("https://example.test/api/meetings/meeting-live-a2/end", { method: "POST" }),
+        { params: { code: "meeting-live-a2" } },
+      );
+      assert.equal(adminRes.status, 200);
+      const updatedByAdmin = meetings.find((m) => m.id === "meeting-live-a2")!;
+      assert.equal(updatedByAdmin.status, "ended");
+      assert.equal(updatedByAdmin.isActive, false);
+      assert.ok(updatedByAdmin.endTime instanceof Date);
+      assert.equal(broadcasted.length, 2);
+    } finally {
+      realtimeControl.unregisterRealtimeControl();
     }
   });
 });

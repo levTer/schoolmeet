@@ -109,21 +109,28 @@ export function registerCallHandlers({ io, socket, leaveCurrentRoom, clearRoomSt
     try {
       const [meeting, actor] = await Promise.all([
         findMeetingByCode(meetingCode),
-        prisma.user.findUnique({ where: { id: socket.data.user.id }, select: { id: true, name: true, schoolId: true, isBanned: true } }),
+        prisma.user.findUnique({
+          where: { id: socket.data.user.id },
+          select: { id: true, name: true, role: true, schoolId: true, isBanned: true },
+        }),
       ]);
       if (!meeting || meeting.schoolId !== socket.data.user.schoolId || buildSchoolRoomId(meeting.schoolId, meeting.meetingCode) !== roomId) {
         reply<EndCallResult>(ack, { ok: false, code: "NOT_FOUND", error: "Звонок не найден" });
         return;
       }
       if (!actor || !canEndCallForAll(actor, meeting)) {
-        reply<EndCallResult>(ack, { ok: false, code: "FORBIDDEN", error: "Завершить звонок для всех может только организатор" });
+        reply<EndCallResult>(ack, { ok: false, code: "FORBIDDEN", error: "Завершить урок для всех может только организатор или администратор" });
         return;
       }
 
       await withRoomLock(meeting.id, async () => {
         const endedAt = new Date();
         const updated = await prisma.meeting.updateMany({
-          where: { id: meeting.id, hostId: actor.id, schoolId: actor.schoolId, status: { not: "ended" } },
+          where: {
+            id: meeting.id,
+            schoolId: actor.schoolId,
+            OR: [{ status: { not: "ended" } }, { endTime: null }, { isActive: true }],
+          },
           data: { status: "ended", isActive: false, endTime: endedAt },
         });
         const targets = roomSockets(io, roomId);

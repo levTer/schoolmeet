@@ -13,7 +13,12 @@
  * не получают, поэтому кнопка «ВОЙТИ В УРОК» никогда не ведёт в отказ.
  */
 
-import { checkMeetingAccess, listOpenSchoolMeetings } from "@/lib/meetings";
+import {
+  checkMeetingAccess,
+  findMeetingByCode,
+  listOpenSchoolMeetings,
+  type MeetingWithHost,
+} from "@/lib/meetings";
 import { liveLessonFromMeeting, liveLessonFromSchedule, type LiveLesson } from "@/lib/live-lesson-rules";
 import type { SchoolViewer } from "@/lib/school-viewer";
 import {
@@ -52,18 +57,40 @@ export async function findLiveLessonForViewer(
 ): Promise<LiveLesson | null> {
   if (!viewer.schoolId) return null;
 
-  // 1. Урок расписания, который идёт прямо сейчас.
+  const todayStart = schoolDayStart(now);
+
+  // 1. Урок расписания, который идёт прямо сейчас (если он не был завершён сегодня).
   try {
     const clock: SchoolClock = getSchoolClock(now);
     const live = findLiveLesson(lessons, clock);
-    if (live) return liveLessonFromSchedule(live);
+    if (live) {
+      let scheduleMeeting: MeetingWithHost | null = null;
+      try {
+        const found = await findMeetingByCode(live.meetingCode);
+        if (found && found.schoolId === viewer.schoolId) {
+          scheduleMeeting = found;
+        }
+      } catch (meetingError) {
+        console.error("[LIVE_LESSON_SCHEDULE_MEETING_WARN]", meetingError);
+      }
+
+      const endedToday =
+        scheduleMeeting !== null &&
+        scheduleMeeting.status === "ended" &&
+        scheduleMeeting.endTime !== null &&
+        scheduleMeeting.endTime >= todayStart;
+
+      if (!endedToday) {
+        return liveLessonFromSchedule(live, scheduleMeeting);
+      }
+    }
   } catch (error) {
     console.error("[LIVE_LESSON_CLOCK_WARN]", error);
   }
 
   // 2. Открытая комната школы (ручной «открытый урок» или активный статус).
   try {
-    const meetings = await listOpenSchoolMeetings(viewer.schoolId, schoolDayStart(now));
+    const meetings = await listOpenSchoolMeetings(viewer.schoolId, todayStart);
     for (const meeting of meetings) {
       const decision = checkMeetingAccess(meeting, {
         id: viewer.id,

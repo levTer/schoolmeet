@@ -43,6 +43,7 @@ export interface ControlsProps {
   onToggleRecording: () => void;
   onLeave: () => void;
   isHost: boolean;
+  isAdmin?: boolean;
   participantCount: number;
   endingCall: boolean;
   onEndForAll: () => void;
@@ -84,6 +85,7 @@ export function Controls(props: ControlsProps) {
     onToggleRecording,
     onLeave,
     isHost,
+    isAdmin,
     participantCount,
     endingCall,
     onEndForAll,
@@ -177,6 +179,7 @@ export function Controls(props: ControlsProps) {
 
       <CallRoomControls
         isHost={isHost}
+        isAdmin={isAdmin}
         participantCount={participantCount}
         ending={endingCall}
         onEndForAll={onEndForAll}

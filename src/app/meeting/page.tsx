@@ -84,7 +84,7 @@ export default async function MeetingPage({ searchParams }: MeetingPageProps) {
       </header>
 
       <div className="mt-8">
-        <LobbyScreen canHost={canHost} selfId={session.user.id} />
+        <LobbyScreen canHost={canHost} selfId={session.user.id} selfRole={role} />
       </div>
     </AppShell>
   );

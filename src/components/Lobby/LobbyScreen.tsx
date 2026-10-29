@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PhoneOff, Radio } from "lucide-react";
 import { toast } from "sonner";
 
@@ -8,7 +9,9 @@ import { LobbyCallCard } from "@/components/Lobby/LobbyCallCard";
 import { MeetingLobby } from "@/components/meeting/MeetingLobby";
 import { Modal } from "@/components/ui/modal";
 import { useSocket } from "@/hooks/useSocket";
+import { canManageLessonEnd } from "@/lib/call-rules";
 import type { ActiveCall } from "@/lib/realtime";
+import type { Role } from "@/types";
 
 interface ActiveCallsResponse {
   ok: boolean;
@@ -17,7 +20,16 @@ interface ActiveCallsResponse {
 }
 
 /** Lobby screen: live call cards plus create/join forms. */
-export function LobbyScreen({ canHost, selfId }: { canHost: boolean; selfId: string }) {
+export function LobbyScreen({
+  canHost,
+  selfId,
+  selfRole,
+}: {
+  canHost: boolean;
+  selfId: string;
+  selfRole?: Role;
+}) {
+  const router = useRouter();
   const [calls, setCalls] = useState<ActiveCall[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,16 +73,37 @@ export function LobbyScreen({ canHost, selfId }: { canHost: boolean; selfId: str
   const endCall = async () => {
     if (!confirmCall) return;
     setEndingId(confirmCall.meetingId);
-    const ack = await socket.endCallForAll(confirmCall.roomId);
-    if (!mountedRef.current) return;
-    setEndingId(null);
-    setConfirmCall(null);
-    if (!ack.ok) {
-      toast.error(ack.error);
-      return;
+
+    try {
+      const response = await fetch(`/api/meetings/${encodeURIComponent(confirmCall.meetingId)}/end`, {
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+
+      if (!response.ok || !payload?.ok) {
+        const ack = await socket.endCallForAll(confirmCall.roomId);
+        if (!mountedRef.current) return;
+        setEndingId(null);
+        setConfirmCall(null);
+        if (!ack.ok) {
+          toast.error(payload?.error ?? ack.error);
+          return;
+        }
+      } else {
+        if (!mountedRef.current) return;
+        setEndingId(null);
+        setConfirmCall(null);
+      }
+
+      setCalls((prev) => prev.filter((item) => item.meetingId !== confirmCall.meetingId));
+      toast.success("Урок завершён для всех участников");
+      router.refresh();
+      void refresh();
+    } catch {
+      if (!mountedRef.current) return;
+      setEndingId(null);
+      toast.error("Не удалось завершить урок. Попробуйте ещё раз.");
     }
-    toast.success("Звонок завершён для всех участников");
-    void refresh();
   };
 
   return (
@@ -89,15 +122,20 @@ export function LobbyScreen({ canHost, selfId }: { canHost: boolean; selfId: str
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {calls.map((call) => (
-              <LobbyCallCard
-                key={call.meetingId}
-                call={call}
-                isHost={call.hostId === selfId}
-                ending={endingId === call.meetingId}
-                onEnd={setConfirmCall}
-              />
-            ))}
+            {calls.map((call) => {
+              const canEnd = selfRole
+                ? canManageLessonEnd({ id: selfId, role: selfRole }, { hostId: call.hostId })
+                : call.hostId === selfId;
+              return (
+                <LobbyCallCard
+                  key={call.meetingId}
+                  call={call}
+                  isHost={canEnd}
+                  ending={endingId === call.meetingId}
+                  onEnd={setConfirmCall}
+                />
+              );
+            })}
           </div>
         )}
       </section>
@@ -119,7 +157,9 @@ export function LobbyScreen({ canHost, selfId }: { canHost: boolean; selfId: str
               <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-300">
                 <PhoneOff className="h-5 w-5" />
               </span>
-              <h2 id="lobby-end-call-title" className="text-lg font-semibold text-white">Завершить звонок?</h2>
+              <h2 id="lobby-end-call-title" className="text-lg font-semibold text-white">
+                Завершить этот урок для всех участников?
+              </h2>
             </div>
             <p id="lobby-end-call-description" className="text-sm leading-relaxed text-slate-300">
               «{confirmCall.title}» будет остановлен для всех участников ({confirmCall.participantCount}).
@@ -140,7 +180,7 @@ export function LobbyScreen({ canHost, selfId }: { canHost: boolean; selfId: str
                 disabled={Boolean(endingId)}
                 className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
               >
-                {endingId ? "Завершаем…" : "Завершить звонок"}
+                {endingId ? "Завершаем…" : "Завершить урок"}
               </button>
             </div>
           </div>
