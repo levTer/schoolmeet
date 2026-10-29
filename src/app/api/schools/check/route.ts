@@ -2,15 +2,15 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_CLASS_NAMES, configuredStrictClassIsolation } from "@/lib/school-config";
+import { configuredStrictClassIsolation, isSingleClassSchool } from "@/lib/school-config";
 import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
 import {
   hasInviteTokenChanges,
   inviteTokensForNewSchool,
   provisioningInviteData,
 } from "@/lib/invite-tokens";
-import { normalizeSchoolCode } from "@/lib/school-rules";
-import { listClassesForSchool } from "@/lib/schools";
+import { canonicalSchoolCode, normalizeSchoolCode } from "@/lib/school-rules";
+import { ensureSchoolClasses, listClassesForSchool } from "@/lib/schools";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,7 +69,10 @@ async function readCodeAndInvite(request: Request): Promise<{ code: string; invi
   return { code, invite };
 }
 
-async function findOrCreateSchool(code: string) {
+async function findOrCreateSchool(rawCode: string) {
+  // Псевдонимы (`DUSHA`, `SOUL`) раскрываются в код школы из базы, поэтому
+  // инструкция «введите DUSHA» ведёт в «Школу Душа» и ничего не ломает.
+  const code = canonicalSchoolCode(rawCode) ?? rawCode.trim();
   const allowed = matchAllowedSchool(code);
   const lookup = allowed?.code ?? code;
 
@@ -119,10 +122,10 @@ async function findOrCreateSchool(code: string) {
         select: SCHOOL_SELECT,
       });
     }
-    await prisma.class.createMany({
-      data: DEFAULT_CLASS_NAMES.map((name) => ({ schoolId, name })),
-      skipDuplicates: true,
-    });
+    // Набор классов школы: «5-А … 11-Б» либо единственный «Общий».
+    // Для одноклассной школы старые параллели перепривязываются и удаляются,
+    // поэтому регистрация видит ровно один класс.
+    await ensureSchoolClasses(prisma, { schoolId, code: allowed.code });
   }
 
   return school;
@@ -161,6 +164,16 @@ async function checkSchool(request: Request): Promise<NextResponse> {
   }
 
   const classes = await listClassesForSchool(school.id);
+
+  /*
+    «Одноклассная» школа: форма регистрации не показывает сетку выбора класса,
+    а сразу подставляет единственный класс. Признак включается и для
+    настроенных одноклассных школ (`SINGLE_CLASS_SCHOOL_CODES`), и для любой
+    школы, где реально зарегистрирован ровно один класс.
+  */
+  const isSingleClass = isSingleClassSchool(school.code) || classes.length === 1;
+  const defaultClassId = isSingleClass ? classes[0]?.id ?? null : null;
+
   // Наружу отдаём ТОЛЬКО публичные поля школы: invite-токены (оба) остаются
   // на сервере и никогда не попадают в JSON ответа. `strictClassIsolation` —
   // публичная политика школы: в гибкой школе поле класса при регистрации
@@ -180,7 +193,9 @@ async function checkSchool(request: Request): Promise<NextResponse> {
     school: schoolView,
     classes,
     inviteRole,
-    data: { school: schoolView, classes, inviteRole },
+    isSingleClass,
+    defaultClassId,
+    data: { school: schoolView, classes, inviteRole, isSingleClass, defaultClassId },
   });
 }
 

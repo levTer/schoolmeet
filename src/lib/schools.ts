@@ -3,7 +3,7 @@ import bcryptjs from "bcryptjs";
 import { generateClassCode } from "@/lib/class-code";
 import { INTERACTIVE_TRANSACTION_OPTIONS, prisma } from "@/lib/prisma";
 import { GRADES, type GradeCode } from "@/lib/schedule-rules";
-import { gradeFromClassName, normalizeSchoolCode } from "@/lib/school-rules";
+import { canonicalSchoolCode, gradeFromClassName } from "@/lib/school-rules";
 import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
 import {
   inviteTokensForNewSchool,
@@ -12,12 +12,14 @@ import {
 } from "@/lib/invite-tokens";
 import {
   CONFIGURED_SCHOOLS,
-  DEFAULT_CLASS_NAMES,
   DEFAULT_SCHOOL,
   GUARANTEED_ADMINS,
   LEGACY_DEFAULT_SCHOOL_CODE,
+  SINGLE_CLASS_NAME,
+  defaultClassNamesForSchool,
   demoAdminPasswordResetEnabled,
   demoAdminSeedDisabled,
+  isSingleClassSchool,
 } from "@/lib/school-config";
 
 export { gradeFromClassName, normalizeClassName, normalizeSchoolCode } from "@/lib/school-rules";
@@ -29,7 +31,12 @@ export const DEFAULT_SCHOOL_CODE = DEFAULT_SCHOOL.code;
 export interface SchoolClassOption {
   id: string;
   name: string;
-  grade: GradeCode;
+  /**
+   * Параллель класса. `null` — у класса нет номера: единственный общий класс
+   * школы (`SINGLE_CLASS_NAME`, например «Общий») или класс, созданный вручную
+   * без формата «7-В».
+   */
+  grade: GradeCode | null;
 }
 
 export interface SchoolSummary {
@@ -217,6 +224,88 @@ export async function backfillAnnouncementSchools(db: PrismaClient = prisma): Pr
   return filled;
 }
 
+/**
+ * Приводит набор классов школы к настроенному виду.
+ *
+ * Обычная школа получает стандартные группы «5-А … 11-Б» (идемпотентный
+ * `createMany … skipDuplicates`). Школа из `SINGLE_CLASS_SCHOOL_CODES`
+ * («Школа Душа») — ровно ОДИН класс `SINGLE_CLASS_NAME`:
+ *  1. класс создаётся, если его ещё нет (upsert по `[schoolId, name]`);
+ *  2. ученики школы переводятся на него (`classId`), учителя и администраторы
+ *     класса не имеют — как и в остальных школах;
+ *  3. все уроки (`Schedule`) и ДЗ (`Homework`) школы перепривязываются к нему;
+ *  4. старые параллели («5-А», «10-Б», …) удаляются.
+ *
+ * Шаг 4 безопасен: `User.classId`, `Schedule.classId` и `Homework.classId`
+ * объявлены с `onDelete: SetNull`, а к моменту удаления ссылки уже переведены
+ * на единый класс. Функция идемпотентна и вызывается при старте приложения,
+ * в сиде и в публичной проверке кода школы (`/api/schools/check`).
+ */
+export async function ensureSchoolClasses(
+  db: PrismaClient,
+  params: { schoolId: string; code: string },
+): Promise<{ singleClassId: string | null }> {
+  const { schoolId, code } = params;
+
+  if (!isSingleClassSchool(code)) {
+    await db.class.createMany({
+      data: defaultClassNamesForSchool(code).map((name) => ({ schoolId, name })),
+      skipDuplicates: true,
+    });
+    return { singleClassId: null };
+  }
+
+  const singleClass = await db.class.upsert({
+    where: { schoolId_name: { schoolId, name: SINGLE_CLASS_NAME } },
+    update: {},
+    create: { schoolId, name: SINGLE_CLASS_NAME },
+    select: { id: true },
+  });
+
+  // Условие `OR: [null, not id]` обязательно: `classId: { not: id }` в SQL
+  // отсекает NULL, и ученики без класса (старые записи) остались бы снаружи.
+  const notSingleClass = { OR: [{ classId: null }, { classId: { not: singleClass.id } }] };
+
+  await db.$transaction(async (tx) => {
+    await tx.user.updateMany({
+      where: { schoolId, role: "STUDENT", ...notSingleClass },
+      data: { classId: singleClass.id },
+    });
+    await tx.schedule.updateMany({
+      where: { schoolId, ...notSingleClass },
+      data: { classId: singleClass.id },
+    });
+    await tx.homework.updateMany({
+      where: { schoolId, ...notSingleClass },
+      data: { classId: singleClass.id },
+    });
+    await tx.class.deleteMany({ where: { schoolId, id: { not: singleClass.id } } });
+  }, INTERACTIVE_TRANSACTION_OPTIONS);
+
+  return { singleClassId: singleClass.id };
+}
+
+/**
+ * id единственного класса «одноклассной» школы (иначе `null`).
+ *
+ * Нужен регистрации и досыпке членства: если школа настроена на единый класс,
+ * ученик попадает в него автоматически, даже когда форма не прислала `classId`.
+ */
+export async function resolveSingleClassId(schoolId: string): Promise<string | null> {
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: { code: true },
+  });
+  if (!school || !isSingleClassSchool(school.code)) return null;
+
+  const singleClass = await prisma.class.findFirst({
+    where: { schoolId },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  return singleClass?.id ?? null;
+}
+
 let defaultSchoolPromise: Promise<SchoolSummary> | null = null;
 
 /**
@@ -287,10 +376,10 @@ export async function provisionConfiguredSchools(db: PrismaClient = prisma): Pro
       select: SCHOOL_INVITE_SELECT,
     });
 
-    await db.class.createMany({
-      data: DEFAULT_CLASS_NAMES.map((name) => ({ schoolId, name })),
-      skipDuplicates: true,
-    });
+    // Набор классов зависит от школы: обычная — «5-А … 11-Б», школа с единым
+    // классом — ровно один «Общий» (старые параллели перепривязываются и
+    // удаляются, см. `ensureSchoolClasses`).
+    await ensureSchoolClasses(db, { schoolId, code: definition.code });
     schools.set(school.code, school);
   }
 
@@ -503,16 +592,23 @@ export async function ensureUserSchoolMembership(userId: string) {
 
   if (!user.schoolId) {
     await ensureDefaultSchool();
-  } else if (!user.classId && user.role === "STUDENT" && user.grade) {
-    const grade = user.grade as GradeCode;
-    const legacyClass = await prisma.class.findUnique({
-      where: { schoolId_name: { schoolId: user.schoolId, name: classNameForGrade(grade) } },
-      select: { id: true },
-    });
-    if (legacyClass) {
+  } else if (!user.classId && user.role === "STUDENT") {
+    // Одноклассная школа: единственный класс («Общий») назначается сразу —
+    // ученик не должен остаться без класса из-за старой записи или формы,
+    // которая его не присылала.
+    const singleClassId = await resolveSingleClassId(user.schoolId);
+    const legacyClass =
+      singleClassId || !user.grade
+        ? null
+        : await prisma.class.findUnique({
+            where: { schoolId_name: { schoolId: user.schoolId, name: classNameForGrade(user.grade as GradeCode) } },
+            select: { id: true },
+          });
+    const targetClassId = singleClassId ?? legacyClass?.id ?? null;
+    if (targetClassId) {
       await prisma.user.updateMany({
         where: { id: userId, schoolId: user.schoolId, classId: null },
-        data: { classId: legacyClass.id },
+        data: { classId: targetClassId },
       });
     }
   }
@@ -525,7 +621,9 @@ export async function ensureUserSchoolMembership(userId: string) {
 }
 
 export async function findSchoolByCode(value: unknown): Promise<SchoolSummary | null> {
-  const code = normalizeSchoolCode(value);
+  // Псевдонимы кодов (`DUSHA` / `SOUL` → «Школа Душа») раскрываются здесь:
+  // и проверка кода, и регистрация идут через один резолвер.
+  const code = canonicalSchoolCode(value);
   if (!code) return null;
   // Подготовка тенантов не должна ронять проверку/регистрацию, если школа уже есть
   // или её только что создал `/api/schools/check`.
@@ -596,9 +694,11 @@ export async function listClassesForSchool(schoolId: string): Promise<SchoolClas
     where: { schoolId },
     select: { id: true, name: true },
   });
+  // Классы без номера параллели («Общий» в одноклассной школе) тоже отдаём:
+  // иначе выбор класса при регистрации остался бы пустым, а API регистрации
+  // не смог бы проверить принадлежность класса школе.
   return rows
     .map((row) => ({ ...row, grade: gradeFromClassName(row.name) }))
-    .filter((row): row is SchoolClassOption => row.grade !== null)
     .sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true }));
 }
 

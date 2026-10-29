@@ -11,6 +11,29 @@ export function normalizeSchoolCode(value: unknown): string | null {
   return /^[A-Z0-9][A-Z0-9._-]{2,31}$/.test(code) ? code : null;
 }
 
+/**
+ * Псевдонимы кодов школ: короткий код из инструкции → код школы в базе.
+ *
+ * «Школа Душа» уже живёт в проде с кодом `Anna.Terentieva77` (по нему
+ * регистрируются родители), поэтому короткие `DUSHA` и `SOUL` не заменяют
+ * код, а ведут к той же школе. Так инструкция «введите DUSHA» работает,
+ * а старые ссылки не ломаются.
+ */
+const SCHOOL_CODE_ALIASES: Readonly<Record<string, string>> = {
+  DUSHA: "ANNA.TERENTIEVA77",
+  SOUL: "ANNA.TERENTIEVA77",
+};
+
+/**
+ * Канонический код школы: нормализованный код с раскрытыми псевдонимами.
+ * `null` — строка не является кодом школы.
+ */
+export function canonicalSchoolCode(value: unknown): string | null {
+  const normalized = normalizeSchoolCode(value);
+  if (!normalized) return null;
+  return SCHOOL_CODE_ALIASES[normalized] ?? normalized;
+}
+
 /** Canonical class label, e.g. "7-В". */
 export function normalizeClassName(value: unknown): string | null {
   if (typeof value !== "string") return null;

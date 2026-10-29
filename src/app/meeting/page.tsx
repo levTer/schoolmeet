@@ -7,6 +7,8 @@ import { ArrowLeft, Video } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { MeetingLobby } from "@/components/meeting/MeetingLobby";
 import { authOptions } from "@/lib/auth";
+import { findMeetingCodeById } from "@/lib/meetings";
+import { isValidRoomCode } from "@/lib/realtime";
 import { hasPermission } from "@/types";
 
 export const metadata: Metadata = {
@@ -16,15 +18,44 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+interface MeetingPageProps {
+  /** `room` — код комнаты, `lessonId` — id урока (cuid). Оба ведут в комнату сразу. */
+  searchParams: { room?: string; lessonId?: string };
+}
+
 /**
  * Раздел «Урок»: учитель создаёт комнату и получает код, ученик вводит код.
  * Сама комната — `/meeting/[id]`.
+ *
+ * Вход «в один клик»: карточка кабинета ведёт на `/meeting?room=<код>`
+ * (или `/meeting?lessonId=<id>`), и страница СРАЗУ редиректит в видеокомнату —
+ * пароли, коды и ссылки вводить не нужно. Доступ по-прежнему проверяет
+ * `/meeting/[code]` (сессия, школа, класс), поэтому «дыры» этот редирект
+ * не создаёт.
  */
-export default async function MeetingPage() {
+export default async function MeetingPage({ searchParams }: MeetingPageProps) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    redirect("/login?callbackUrl=/meeting");
+    const target = typeof searchParams?.room === "string" && searchParams.room.trim()
+      ? `/meeting?room=${encodeURIComponent(searchParams.room.trim())}`
+      : "/meeting";
+    redirect(`/login?callbackUrl=${encodeURIComponent(target)}`);
+  }
+
+  const directRoom = typeof searchParams?.room === "string" ? searchParams.room.trim().toLowerCase() : "";
+  if (directRoom && isValidRoomCode(directRoom)) {
+    redirect(`/meeting/${directRoom}`);
+  }
+
+  const directLessonId = typeof searchParams?.lessonId === "string" ? searchParams.lessonId.trim() : "";
+  if (directLessonId) {
+    // Сначала пробуем id комнаты (cuid), затем — код комнаты: так работают
+    // обе формы ссылки из карточки кабинета.
+    const code =
+      (await findMeetingCodeById(directLessonId)) ??
+      (isValidRoomCode(directLessonId) ? directLessonId.toLowerCase() : null);
+    if (code) redirect(`/meeting/${code}`);
   }
 
   const { role, name } = session.user;

@@ -16,7 +16,12 @@ import bcrypt from "bcryptjs";
 
 import { slugifyTitle } from "../src/lib/lesson-code";
 import { provisionConfiguredSchools } from "../src/lib/schools";
-import { DEFAULT_SCHOOL, DEFAULT_CLASS_NAMES } from "../src/lib/school-config";
+import {
+  DEFAULT_CLASS_NAMES,
+  DEFAULT_SCHOOL,
+  SINGLE_CLASS_NAME,
+  isSingleClassSchool,
+} from "../src/lib/school-config";
 import { DEFAULT_SUBJECTS } from "../src/lib/subjects";
 
 const prisma = new PrismaClient();
@@ -445,6 +450,53 @@ async function seedAttendance(schoolId: string): Promise<void> {
   console.log(`• Демо-посещаемость создана (${records.length} записей)`);
 }
 
+/**
+ * «Открытый урок» одноклассной школы («Школа Душа»).
+ *
+ * Школа настроена на единственный класс (`SINGLE_CLASS_NAME`), поэтому
+ * расписания с параллелями у неё нет, а карточка кабинета
+ * «🔴 Прямо сейчас идёт урок» показывается для активной комнаты школы
+ * (`findLiveLessonForViewer` в `@/lib/live-lesson`). Активная комната нужна,
+ * чтобы открытый урок можно было начать в один клик с любого устройства.
+ *
+ * Идемпотентно: код комнаты фиксированный, повторный запуск не создаёт
+ * дубликат, а возвращает комнату в активное состояние (завершить урок можно
+ * в админ-панели — `/admin/meetings`).
+ */
+async function seedOpenLesson(schoolId: string, schoolName: string): Promise<void> {
+  const host = await prisma.user.findFirst({
+    where: { schoolId, role: { in: ["ADMIN", "TEACHER"] }, isBanned: false },
+    select: { id: true },
+  });
+  if (!host) {
+    console.log(`• ${schoolName}: нет учителя или админа — открытый урок пропущен`);
+    return;
+  }
+
+  const meetingCode = "otkrytyy-urok-dusha";
+  const title = "Открытый урок: Школа Душа";
+  await prisma.meeting.upsert({
+    where: { meetingCode },
+    update: { title, isActive: true, endTime: null, schoolId },
+    create: {
+      title,
+      meetingCode,
+      hostId: host.id,
+      schoolId,
+      isActive: true,
+      encryptionKey: randomBytes(32).toString("hex"),
+    },
+  });
+
+  const singleClass = await prisma.class.findFirst({
+    where: { schoolId },
+    select: { name: true },
+  });
+  console.log(
+    `• ${schoolName}: класс «${singleClass?.name ?? SINGLE_CLASS_NAME}», открытый урок → /meeting/${meetingCode}`,
+  );
+}
+
 async function main(): Promise<void> {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   const schools = await provisionConfiguredSchools(prisma);
@@ -474,6 +526,12 @@ async function main(): Promise<void> {
   await seedAnnouncements(admin?.id ?? teacherIds.get("teacher") ?? "", primarySchool.id);
   await seedGradedHomework(primarySchool.id);
   await seedAttendance(primarySchool.id);
+
+  // Одноклассные школы (например, «Школа Душа»): ровно один класс «Общий»
+  // и активный открытый урок для входа в один клик.
+  for (const school of schools.values()) {
+    if (isSingleClassSchool(school.code)) await seedOpenLesson(school.id, school.name);
+  }
 
   console.log("\nДемо-данные готовы. Админ-панель: /admin — только для роли ADMIN.");
   console.log(

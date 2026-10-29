@@ -81,20 +81,31 @@ export function ClassSwitcher({ className }: { className?: string }) {
 
   const current = data.classes.find((item) => item.id === currentClassId) ?? null;
 
+  /** Класс не переключается — показываем бейдж вместо пустого списка. */
+  const badge = (title: string) => (
+    <span
+      title={title}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-slate-300",
+        className,
+      )}
+    >
+      <GraduationCap className="h-4 w-4 text-accent-300" />
+      {current?.name ?? "Без класса"}
+    </span>
+  );
+
   /** Строгая школа: класс задаёт администрация, показываем бейдж. */
   if (data.strictClassIsolation) {
-    return (
-      <span
-        title="Строгая школа: класс назначается администратором. Вход в чужой класс — по коду класса."
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-slate-300",
-          className,
-        )}
-      >
-        <GraduationCap className="h-4 w-4 text-accent-300" />
-        {current?.name ?? "Без класса"}
-      </span>
-    );
+    return badge("Строгая школа: класс назначается администратором. Вход в чужой класс — по коду класса.");
+  }
+
+  /**
+   * Одноклассная школа («Общий» класс, «Школа Душа»): переключать нечего —
+   * селект с единственным вариантом только путает.
+   */
+  if (data.classes.length <= 1) {
+    return badge("В школе один общий класс — выбирать нечего.");
   }
 
   const handleChange = async (nextClassId: string) => {

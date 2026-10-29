@@ -354,7 +354,9 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
               const selected = classes.find((schoolClass) => schoolClass.id === event.target.value);
               if (!selected) return;
               update("classId", selected.id);
-              update("grade", selected.grade);
+              // У класса без параллели («Общий») номер не меняем: ДЗ всё равно
+              // адресуется конкретному классу, а `grade` — совместимость.
+              if (selected.grade) update("grade", selected.grade);
             }}
             error={errors.classId}
           >

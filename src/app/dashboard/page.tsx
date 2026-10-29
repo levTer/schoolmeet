@@ -15,6 +15,7 @@ import {
 
 import { AdminDeniedNotice } from "@/components/dashboard/admin-denied-notice";
 import { AnnouncementBanner } from "@/components/dashboard/announcement-banner";
+import { LiveLessonCard } from "@/components/dashboard/live-lesson-card";
 import { NextLessonCompact } from "@/components/dashboard/next-lesson-compact";
 import {
   NextLessonWidgetLive,
@@ -134,6 +135,7 @@ export default async function DashboardPage({
   }
 
   const { live, next } = resolveLessonSnapshot(data.lessons, now);
+  const liveLesson = data.liveLesson ?? null;
   const urgent = data.urgent;
   const review = data.review;
   const announcements = data.announcements;
@@ -166,6 +168,9 @@ export default async function DashboardPage({
           урок, статистика, дедлайны (внутренняя прокрутка) и быстрые ссылки.
           Нижняя навигация прижата к низу и учитывает safe-area.           */}
       <div className="no-scrollbar flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto px-3 pb-1 pt-2.5 md:hidden">
+        {/* Самый верх кабинета: урок идёт прямо сейчас → вход в 1 клик. */}
+        {liveLesson ? <LiveLessonCard lesson={liveLesson} /> : null}
+
         <header
           id="profile"
           className="flex scroll-mt-16 items-center justify-between gap-2 py-1 mb-2"
@@ -257,6 +262,9 @@ export default async function DashboardPage({
 
       {/* ───────────────────────── Десктопный экран ───────────────────────── */}
       <div className="mx-auto hidden w-full max-w-7xl min-h-0 flex-1 flex-col gap-3 px-5 pt-4 md:flex">
+        {/* Самый верх кабинета: урок идёт прямо сейчас → вход в 1 клик. */}
+        {liveLesson ? <LiveLessonCard lesson={liveLesson} /> : null}
+
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs text-slate-400">Личный кабинет</p>
