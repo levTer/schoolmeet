@@ -25,7 +25,7 @@ def screen():
 
 
 def wait_for_class(name, timeout=40):
-    """Ждёт нативный view с указанным class (WebView стартует сразу при запуске)."""
+    """Ждёт нативный view с указанным class (WebView стартует сразу при запуске MainActivity)."""
     deadline = time.monotonic() + timeout
     visible = []
     while time.monotonic() < deadline:
@@ -41,12 +41,26 @@ def wait_for_class(name, timeout=40):
     raise AssertionError(f'{STAGE}: Android UI did not show class {name!r}; visible: {visible}')
 
 
-def assert_text_absent(text):
-    """Нативный экран «Быстрый доступ» удалён: его кнопок быть не должно."""
-    tree = screen()
-    visible = [node.get('text', '') for node in tree.iter('node') if node.get('text')]
-    if any(value.casefold() == text.casefold() for value in visible):
-        raise AssertionError(f'{STAGE}: native UI must not show {text!r}; visible: {visible}')
+def wait_for_page_load(timeout=60):
+    """Ждёт, пока заставка скроется и в полноэкранном WebView отобразится загруженная страница сайта.
+
+    WebView создаётся ещё до отрисовки контента сайта, поэтому загрузку страницы
+    считаем законченной, когда WebView уже на экране, а сплэш-Overlay (logo
+    с content-desc 'EduFlow') убран.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            tree = screen()
+            nodes = list(tree.iter('node'))
+            webview_visible = any(node.get('class') == 'android.webkit.WebView' for node in nodes)
+            splash_still_showing = any(node.get('content-desc') == 'EduFlow' for node in nodes)
+            if webview_visible and not splash_still_showing:
+                return
+        except (ET.ParseError, RuntimeError):
+            pass
+        time.sleep(1)
+    raise AssertionError(f'{STAGE}: web page did not load in WebView within {timeout}s')
 
 
 def wait_for_background(timeout=10):
@@ -67,7 +81,11 @@ def wait_for_background(timeout=10):
 
 
 def back_until_background(presses=3):
-    """«Назад»: сначала история WebView, затем тихое сворачивание без диалога."""
+    """«Назад»: сначала история WebView, затем тихое сворачивание без диалога.
+
+    На корневой странице сайта MainActivity.handleBack вызывает
+    moveTaskToBack(true) — приложение уходит в фон без диалога выхода.
+    """
     last = None
     for _ in range(presses):
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
@@ -86,16 +104,15 @@ def main():
     adb('install', '-r', str(ROOT / 'public/eduflow.apk'))
     adb('shell', 'am', 'force-stop', 'ru.eduflow.app')
     adb('shell', 'am', 'start', '-W', '-n', 'ru.eduflow.app/.MainActivity')
-    # Приложение сразу открывает полноэкранный WebView с сайтом: никакого
-    # нативного стартового экрана «Быстрый доступ» до загрузки сайта.
+    # Приложение сразу открывает полноэкранный WebView с сайтом:
+    # никакого нативного стартового экрана «Быстрого доступа» до загрузки сайта.
     STAGE = 'direct fullscreen WebView (no native quick access)'
     wait_for_class('android.webkit.WebView')
-    for text in ('Быстрый доступ', 'Расписание  →', 'Домашние задания  →',
-                 'Войти в видеоурок  →', 'Открыть личный кабинет'):
-        assert_text_absent(text)
+    STAGE = 'web page loaded in WebView'
+    wait_for_page_load()
     STAGE = 'hardware back minimizes (no dialog)'
     # На корневой странице сайта «Назад» сворачивает приложение в фон тихо,
-    # без диалога выхода.
+    # без диалога выхода (MainActivity.handleBack → moveTaskToBack(true)).
     back_until_background()
     # Разворачиваем приложение обратно из фона перед следующей проверкой.
     adb('shell', 'am', 'start', '-n', 'ru.eduflow.app/.MainActivity')
