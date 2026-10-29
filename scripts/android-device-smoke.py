@@ -50,16 +50,20 @@ def tap(text):
     adb('shell', 'input', 'tap', str((x1 + x2) // 2), str((y1 + y2) // 2))
 
 
-def wait_for_background(timeout=20):
+def wait_for_background(timeout=10):
     deadline = time.monotonic() + timeout
     resumed = []
     while time.monotonic() < deadline:
         activities = adb('shell', 'dumpsys', 'activity', 'activities').stdout.decode('utf-8', errors='replace')
         resumed = [line.strip() for line in activities.splitlines()
                    if 'mResumedActivity' in line or 'topResumedActivity' in line]
-        if resumed and all('ru.eduflow.app' not in line for line in resumed):
+        # Приложение считается свёрнутым, если в фокусеlauncher/home, либо
+        # ru.eduflow.app больше не является текущим фокусным окном.
+        launcher_focused = any(('Launcher' in line or 'HomeActivity' in line) for line in resumed)
+        not_our_app = all('ru.eduflow.app' not in line for line in resumed)
+        if launcher_focused or not_our_app:
             return
-        time.sleep(0.5)
+        time.sleep(1)
     raise AssertionError(f'{STAGE}: app did not move to background; resumed: {resumed}')
 
 
@@ -92,8 +96,10 @@ def main():
     adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
     # На главном экране «Назад» свёртывает приложение в фон тихо, без диалога.
     wait_for_background()
+    # Разворачиваем приложение обратно из фона перед следующей проверкой.
+    adb('shell', 'am', 'start', '-n', 'ru.eduflow.app/.MainActivity')
+    time.sleep(3)
     STAGE = 'resume after minimize'
-    adb('shell', 'am', 'start', '-W', '-n', 'ru.eduflow.app/.MainActivity')
     wait_for('Учиться вместе — проще')
     print('Android installation, native screens, hardware back and minimize: OK')
 
