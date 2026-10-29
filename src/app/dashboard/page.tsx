@@ -168,7 +168,7 @@ export default async function DashboardPage({
       <div className="no-scrollbar flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto px-3 pb-1 pt-2.5 md:hidden">
         <header
           id="profile"
-          className="flex scroll-mt-16 items-center justify-between gap-2"
+          className="flex scroll-mt-16 items-center justify-between gap-2 py-1 mb-2"
         >
           <div className="min-w-0">
             <h1 className="truncate text-base font-medium text-white">
@@ -252,22 +252,7 @@ export default async function DashboardPage({
           )}
         </section>
 
-        {/* Быстрые переходы: 3–4 плитки в один ряд */}
-        <nav
-          aria-label="Быстрые действия"
-          className={`grid gap-2 ${mobileShortcuts.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}
-        >
-          {mobileShortcuts.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className="tile flex flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium text-slate-300 transition active:opacity-70"
-            >
-              <Icon className="h-4 w-4 text-brand-300" />
-              <span className="truncate">{label}</span>
-            </Link>
-          ))}
-        </nav>
+        {/* Быстрые переходы: скрыты на мобильных — дублируют Bottom Navigation Bar */}
       </div>
 
       {/* ───────────────────────── Десктопный экран ───────────────────────── */}
@@ -358,6 +343,23 @@ export default async function DashboardPage({
                     <span className="block truncate text-sm font-medium text-white">{title}</span>
                     <span className="block truncate text-[11px] text-slate-500">{text}</span>
                   </span>
+                </Link>
+              ))}
+            </nav>
+
+            {/* Быстрые переходы: только на ПК, на мобильных дублируют BottomNav */}
+            <nav
+              aria-label="Быстрые действия"
+              className={`hidden md:grid gap-2 mt-3 ${mobileShortcuts.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}
+            >
+              {mobileShortcuts.map(({ href, label, icon: Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className="tile flex flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium text-slate-300 transition active:opacity-70"
+                >
+                  <Icon className="h-4 w-4 text-brand-300" />
+                  <span className="truncate">{label}</span>
                 </Link>
               ))}
             </nav>

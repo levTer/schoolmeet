@@ -13,6 +13,7 @@ import struct
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -199,6 +200,60 @@ def manifest_sections(data):
 
 
 class AndroidApkTests(unittest.TestCase):
+    def test_native_themes_have_no_action_bar(self):
+        namespace = 'http://schemas.android.com/apk/res/android'
+        manifest = ET.parse(ROOT / 'android/app/src/main/AndroidManifest.xml').getroot()
+        application = manifest.find('application')
+        theme_reference = application.get(f'{{{namespace}}}theme')
+        self.assertRegex(theme_reference, r'^@style/\w+$')
+        theme_name = theme_reference.removeprefix('@style/')
+        resources = ROOT / 'android/app/src/main/res'
+        variants = list(resources.glob('values*/styles.xml'))
+        self.assertIn(resources / 'values/styles.xml', variants)
+        for path in variants:
+            with self.subTest(variant=path.parent.name):
+                theme = next((style for style in ET.parse(path).getroot().findall('style')
+                              if style.get('name') == theme_name), None)
+                self.assertIsNotNone(theme, f'Missing application theme in {path}')
+                self.assertTrue(theme.get('parent', '').endswith('.NoActionBar'))
+                # Style item names are literal prefixed names, unlike manifest attributes.
+                items = {item.get('name', '').removeprefix('android:'): (item.text or '').strip()
+                         for item in theme.findall('item')}
+                self.assertEqual(items.get('windowActionBar'), 'false')
+                self.assertEqual(items.get('windowNoTitle'), 'true')
+        # The web header is the only app header; no native toolbar is installed.
+        source = ROOT / 'android/app/src/main/java/ru/eduflow/app'
+        activity = (source / 'MainActivity.java').read_text()
+        web = (source / 'WebWorkspace.java').read_text()
+        self.assertIn('requestWindowFeature(Window.FEATURE_NO_TITLE)', activity)
+        for code in (activity, web):
+            self.assertNotRegex(code, r'\b(?:setActionBar|setSupportActionBar)\s*\(')
+        self.assertNotIn('bar.addView', web)
+
+    def test_back_returns_through_history_then_minimizes_without_a_dialog(self):
+        activity = (ROOT / 'android/app/src/main/java/ru/eduflow/app/MainActivity.java').read_text()
+        # Both legacy Back and Android 13+ predictive Back use the same handler.
+        self.assertIn('@Override public void onBackPressed() { handleBack(); }', activity)
+        self.assertIn('Api33.installBackCallback(this)', activity)
+        self.assertIn('registerOnBackInvokedCallback(', activity)
+        self.assertIn('activity.handleBack()', activity)
+        match = re.search(r'^    void handleBack\(\) \{\n(.*?)^    \}', activity, re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(match, 'Missing MainActivity.handleBack()')
+        body = match.group(1)
+        steps = ('hideFullscreen(); return;', 'workspace.canGoBack()', 'workspace.goBack();',
+                 'if (!history.isEmpty())', 'show(history.pop());', 'moveTaskToBack(true);')
+        position = 0
+        for step in steps:
+            found = body.find(step, position)
+            self.assertGreaterEqual(found, 0, f'Missing or out-of-order back navigation step: {step}')
+            position = found + len(step)
+        self.assertRegex(body, r'moveTaskToBack\(true\);\s*$')
+        self.assertEqual(body.count('moveTaskToBack(true);'), 1)
+        self.assertNotIn('finish()', body)
+        self.assertNotIn('AlertDialog', activity)
+        self.assertNotIn('DialogInterface', activity)
+        self.assertNotIn('Свернуть EduFlow?', activity)
+
     def test_zip_payload_and_alignment(self):
         self.assertTrue(APK.is_file(), 'Missing public/eduflow.apk')
         raw = APK.read_bytes()

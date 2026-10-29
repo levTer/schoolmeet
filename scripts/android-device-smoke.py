@@ -88,12 +88,9 @@ def main():
     STAGE = 'back from WebView workspace'
     adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
     wait_for('Учиться вместе — проще')
-    STAGE = 'native minimize dialog'
+    STAGE = 'native minimize (no dialog)'
     adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
-    wait_for('Свернуть EduFlow?')
-    tap('Свернуть')
-    # Wait for moveTaskToBack to finish before launching again (API 34 is async).
-    STAGE = 'move task to background'
+    # На главном экране «Назад» свёртывает приложение в фон тихо, без диалога.
     wait_for_background()
     STAGE = 'resume after minimize'
     adb('shell', 'am', 'start', '-W', '-n', 'ru.eduflow.app/.MainActivity')

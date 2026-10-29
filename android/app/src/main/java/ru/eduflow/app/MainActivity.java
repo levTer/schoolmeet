@@ -2,9 +2,7 @@ package ru.eduflow.app;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -529,14 +527,8 @@ public final class MainActivity extends Activity {
             show(history.pop());
             return;
         }
-        new AlertDialog.Builder(this)
-            .setTitle("Свернуть EduFlow?")
-            .setMessage("Приложение останется доступно в списке недавних.")
-            .setNegativeButton("Остаться", null)
-            .setPositiveButton("Свернуть", new DialogInterface.OnClickListener() {
-                @Override public void onClick(DialogInterface dialog, int which) { moveTaskToBack(true); }
-            })
-            .show();
+        // На главном экране просто сворачиваем приложение без диалога выхода.
+        moveTaskToBack(true);
     }
 
     private void closeWorkspace() {
