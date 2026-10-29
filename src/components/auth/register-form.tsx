@@ -331,17 +331,17 @@ export function RegisterForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="space-y-4 max-md:space-y-2">
+    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-2.5 md:gap-3.5">
       {formError && (
         <FormAlert variant="error" onDismiss={() => setFormError(null)}>
           {formError}
         </FormAlert>
       )}
 
-      <div className="space-y-2.5 max-md:space-y-2">
+      <div className="flex flex-col gap-2">
         <TextField
           label="Код школы"
-          className="h-10 px-3 py-1.5 md:h-11"
+          className="h-10 text-sm px-3 py-1.5 md:h-11"
           name="schoolCode"
           autoComplete="off"
           placeholder="Код, выданный администратором"
@@ -380,7 +380,7 @@ export function RegisterForm({
 
       <TextField
         label="Имя и фамилия"
-        className="h-10 py-1.5 pr-3 md:h-11"
+        className="h-10 text-sm py-1.5 pr-3 md:h-11"
         name="name"
         autoComplete="name"
         placeholder="Анна Иванова"
@@ -395,7 +395,7 @@ export function RegisterForm({
 
       <TextField
         label="Email"
-        className="h-10 py-1.5 pr-3 md:h-11"
+        className="h-10 text-sm py-1.5 pr-3 md:h-11"
         type="email"
         name="email"
         autoComplete="email"
@@ -410,7 +410,7 @@ export function RegisterForm({
       />
 
       {/* Роль: публично — всегда Ученик; по teacher-ссылке — выбор Ученик/Учитель; по admin-ссылке — Администратор */}
-      <div className="space-y-2.5 max-md:space-y-2">
+      <div className="space-y-1.5">
         <span className="block text-xs font-medium uppercase tracking-wider text-slate-400">
           Я регистрируюсь как
         </span>
@@ -459,7 +459,7 @@ export function RegisterForm({
           </div>
         )}
 
-        <p className="text-xs leading-relaxed text-slate-500">
+        <p className="text-[11px] leading-snug text-slate-500 md:text-xs md:leading-relaxed">
           {inviteRole === "ADMIN"
             ? "Роль Администратора выдана по секретной ссылке приглашения."
             : inviteRole === "TEACHER"
@@ -522,15 +522,15 @@ export function RegisterForm({
           ) : null}
         </div>
       ) : effectiveRole === "STUDENT" ? (
-        <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-xs text-slate-500">
+        <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-slate-500">
           Сначала подтвердите код школы — затем появится список классов.
         </p>
       ) : null}
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <PasswordField
           label="Пароль"
-          className="h-10 py-1.5 pr-3 md:h-11"
+          className="h-10 text-sm py-1.5 pr-3 md:h-11"
           name="new-password"
           autoComplete="new-password"
           placeholder="Минимум 8 символов"
@@ -559,7 +559,7 @@ export function RegisterForm({
 
       <PasswordField
         label="Подтверждение пароля"
-        className="h-10 py-1.5 pr-3 md:h-11"
+        className="h-10 text-sm py-1.5 pr-3 md:h-11"
         name="confirm-password"
         autoComplete="new-password"
         placeholder="Повторите пароль"
@@ -577,16 +577,16 @@ export function RegisterForm({
         loading={isSubmitting}
         loadingText="Создаём аккаунт…"
         icon={ArrowRight}
-        className="h-10 py-1.5 md:h-11"
+        className="h-10 py-1.5 text-sm md:h-11"
       >
-        Создать аккаунт
+        Зарегистрироваться
       </GradientButton>
 
-      <p className="text-center text-xs leading-relaxed text-slate-500">
+      <p className="text-center text-[11px] leading-snug text-slate-500 md:text-xs md:leading-relaxed">
         Пароль хешируется алгоритмом bcrypt и не хранится в открытом виде.
       </p>
 
-      <p className="text-center text-sm text-slate-400">
+      <p className="pb-1 text-center text-sm text-slate-400">
         Уже есть аккаунт?{" "}
         <Link
           href="/login"

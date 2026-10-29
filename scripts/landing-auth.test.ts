@@ -54,11 +54,21 @@ describe("гостевой экран и строгий редирект", () =>
     assert.equal(response.headers.get("location"), "http://localhost:3000/login?callbackUrl=%2Fschedule");
   });
 
-  it("главная содержит только заголовок и форму, а safe-area уже настроена", () => {
+  it("главная содержит только заголовок и форму, без «Быстрого доступа» и гостевых кнопок", () => {
     const home = readFileSync("src/app/page.tsx", "utf8");
+    const loginForm = readFileSync("src/components/auth/login-form.tsx", "utf8");
+    assert.match(home, /EduFlow/);
     assert.match(home, /Учиться вместе — проще/);
     assert.match(home, /<LoginForm compact/);
-    assert.doesNotMatch(home, /Быстрый доступ|Здравствуйте|Открыть личный кабинет|<Hero|<SiteHeader|<SiteFooter|<Features|<Link/);
+    assert.doesNotMatch(
+      home,
+      /Быстрый доступ|Расписание\s*→|Домашние задания\s*→|Войти в видеоурок\s*→|Открыть личный кабинет|quickLinks|mobileShortcuts|Здравствуйте|<Hero|<SiteHeader|<SiteFooter|<Features|<Link/,
+    );
+    assert.match(loginForm, /href="\/auth\/register"/);
+    assert.doesNotMatch(
+      loginForm,
+      /Быстрый доступ|Расписание\s*→|Домашние задания\s*→|Войти в видеоурок\s*→|Открыть личный кабинет|quickLinks|mobileShortcuts/,
+    );
     assert.match(readFileSync("src/app/layout.tsx", "utf8"), /viewportFit: "cover"/);
     assert.ok(readFileSync("src/components/layout/Navbar.tsx", "utf8").includes("pt-[env(safe-area-inset-top)]"));
   });

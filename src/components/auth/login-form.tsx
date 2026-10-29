@@ -81,7 +81,7 @@ export function LoginForm({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="space-y-5">
+    <form onSubmit={handleSubmit} noValidate className={compact ? "space-y-4" : "space-y-5"}>
       {justRegistered && (
         <FormAlert variant="success">
           Аккаунт создан! Войдите, чтобы попасть в личный кабинет.
@@ -101,6 +101,7 @@ export function LoginForm({ compact = false }: { compact?: boolean }) {
         autoComplete="email"
         placeholder="ivan@school.ru"
         icon={Mail}
+        className={compact ? "h-10 text-sm py-1.5 pr-3 md:h-11" : undefined}
         value={email}
         error={fieldErrors.email}
         onChange={(event) => {
@@ -115,6 +116,7 @@ export function LoginForm({ compact = false }: { compact?: boolean }) {
         autoComplete="current-password"
         placeholder="••••••••"
         icon={KeyRound}
+        className={compact ? "h-10 text-sm py-1.5 pr-3 md:h-11" : undefined}
         value={password}
         error={fieldErrors.password}
         onChange={(event) => {
@@ -123,7 +125,13 @@ export function LoginForm({ compact = false }: { compact?: boolean }) {
         }}
       />
 
-      <GradientButton type="submit" loading={isSubmitting} loadingText="Входим…" icon={ArrowRight}>
+      <GradientButton
+        type="submit"
+        loading={isSubmitting}
+        loadingText="Входим…"
+        icon={ArrowRight}
+        className={compact ? "h-10 py-1.5 text-sm md:h-11" : undefined}
+      >
         Войти
       </GradientButton>
 
@@ -159,16 +167,16 @@ export function LoginForm({ compact = false }: { compact?: boolean }) {
 }
 
 /** Скелет формы на время подгрузки клиентских параметров (`Suspense`). */
-export function LoginFormSkeleton() {
+export function LoginFormSkeleton({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="space-y-5">
+    <div className={compact ? "space-y-4" : "space-y-5"}>
       {[0, 1].map((key) => (
         <div key={key} className="space-y-2">
           <div className="h-3 w-20 animate-pulse rounded-full bg-white/10" />
-          <div className="h-11 animate-pulse rounded-xl bg-white/5" />
+          <div className={`${compact ? "h-10 md:h-11" : "h-11"} animate-pulse rounded-xl bg-white/5`} />
         </div>
       ))}
-      <div className="h-11 animate-pulse rounded-xl bg-white/10" />
+      <div className={`${compact ? "h-10 md:h-11" : "h-11"} animate-pulse rounded-xl bg-white/10`} />
     </div>
   );
 }
