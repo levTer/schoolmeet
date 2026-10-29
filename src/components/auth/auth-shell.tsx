@@ -18,6 +18,8 @@ interface AuthShellProps {
   children: React.ReactNode;
   /** Ссылка под карточкой: «Ещё нет аккаунта? Зарегистрироваться». */
   footer?: React.ReactNode;
+  /** Внутренняя мобильная прокрутка длинных форм при фиксированной высоте страницы. */
+  mobileScrollableCard?: boolean;
 }
 
 /**
@@ -32,9 +34,14 @@ export function AuthShell({
   highlights,
   children,
   footer,
+  mobileScrollableCard = false,
 }: AuthShellProps) {
   return (
-    <main className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 py-10 sm:px-8 lg:py-16">
+    <main
+      className={`relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 py-10 sm:px-8 lg:py-16 ${
+        mobileScrollableCard ? "max-md:py-0" : ""
+      }`}
+    >
       {/* Декоративный фон: сетка + размытые градиентные пятна */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute inset-0 bg-grid mask-radial opacity-30" />
@@ -82,7 +89,7 @@ export function AuthShell({
 
         {/* Колонка с формой */}
         <section className="w-full">
-          <div className="mb-6 flex items-center justify-between lg:hidden">
+          <div className={`mb-6 flex items-center justify-between lg:hidden ${mobileScrollableCard ? "max-md:hidden" : ""}`}>
             <Logo />
             <Link
               href="/"
@@ -92,7 +99,24 @@ export function AuthShell({
             </Link>
           </div>
 
-          <div className="ring-gradient glass-card animate-fade-up p-6 shadow-glow sm:p-9">
+          <div
+            className={`ring-gradient glass-card animate-fade-up p-6 shadow-glow sm:p-9 ${
+              mobileScrollableCard
+                ? "max-md:flex max-md:max-h-[88dvh] max-md:w-full max-md:max-w-md max-md:flex-col max-md:overflow-y-auto max-md:no-scrollbar"
+                : ""
+            }`}
+          >
+            {mobileScrollableCard && (
+              <div className="mb-4 flex items-center justify-between md:hidden">
+                <Logo />
+                <Link
+                  href="/"
+                  className="text-xs text-slate-400 underline-offset-4 transition hover:text-white hover:underline"
+                >
+                  На главную
+                </Link>
+              </div>
+            )}
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">
               {eyebrow}
             </p>
