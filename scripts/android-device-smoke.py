@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Small device/emulator smoke test; no real account or server access required."""
 from pathlib import Path
-import re
 import subprocess
 import sys
 import time
@@ -25,29 +24,29 @@ def screen():
     return ET.fromstring(adb('exec-out', 'cat', '/sdcard/eduflow-window.xml').stdout)
 
 
-def wait_for(text, timeout=40, attribute='text'):
+def wait_for_class(name, timeout=40):
+    """Ждёт нативный view с указанным class (WebView стартует сразу при запуске)."""
     deadline = time.monotonic() + timeout
     visible = []
     while time.monotonic() < deadline:
         try:
             tree = screen()
-            visible = [node.get('text', '') for node in tree.iter('node') if node.get('text')]
+            visible = sorted({node.get('class', '') for node in tree.iter('node') if node.get('class')})
             for node in tree.iter('node'):
-                if node.get(attribute, '').casefold() == text.casefold():
+                if node.get('class', '') == name:
                     return node
         except (ET.ParseError, RuntimeError):
             pass
         time.sleep(1)
-    raise AssertionError(f'{STAGE}: Android UI did not show {text!r}; visible: {visible}')
+    raise AssertionError(f'{STAGE}: Android UI did not show class {name!r}; visible: {visible}')
 
 
-def tap(text):
-    bounds = wait_for(text).get('bounds', '')
-    match = re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', bounds)
-    if not match:
-        raise AssertionError(f'Invalid bounds for {text!r}: {bounds}')
-    x1, y1, x2, y2 = map(int, match.groups())
-    adb('shell', 'input', 'tap', str((x1 + x2) // 2), str((y1 + y2) // 2))
+def assert_text_absent(text):
+    """Нативный экран «Быстрый доступ» удалён: его кнопок быть не должно."""
+    tree = screen()
+    visible = [node.get('text', '') for node in tree.iter('node') if node.get('text')]
+    if any(value.casefold() == text.casefold() for value in visible):
+        raise AssertionError(f'{STAGE}: native UI must not show {text!r}; visible: {visible}')
 
 
 def wait_for_background(timeout=10):
@@ -57,7 +56,7 @@ def wait_for_background(timeout=10):
         activities = adb('shell', 'dumpsys', 'activity', 'activities').stdout.decode('utf-8', errors='replace')
         resumed = [line.strip() for line in activities.splitlines()
                    if 'mResumedActivity' in line or 'topResumedActivity' in line]
-        # Приложение считается свёрнутым, если в фокусеlauncher/home, либо
+        # Приложение считается свёрнутым, если в фокусе launcher/home, либо
         # ru.eduflow.app больше не является текущим фокусным окном.
         launcher_focused = any(('Launcher' in line or 'HomeActivity' in line) for line in resumed)
         not_our_app = all('ru.eduflow.app' not in line for line in resumed)
@@ -67,6 +66,19 @@ def wait_for_background(timeout=10):
     raise AssertionError(f'{STAGE}: app did not move to background; resumed: {resumed}')
 
 
+def back_until_background(presses=3):
+    """«Назад»: сначала история WebView, затем тихое сворачивание без диалога."""
+    last = None
+    for _ in range(presses):
+        adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+        try:
+            wait_for_background(timeout=6)
+            return
+        except AssertionError as error:
+            last = error
+    raise last
+
+
 def main():
     global STAGE
     STAGE = 'install and first launch'
@@ -74,34 +86,23 @@ def main():
     adb('install', '-r', str(ROOT / 'public/eduflow.apk'))
     adb('shell', 'am', 'force-stop', 'ru.eduflow.app')
     adb('shell', 'am', 'start', '-W', '-n', 'ru.eduflow.app/.MainActivity')
-    wait_for('Учиться вместе — проще')
-    STAGE = 'native schedule'
-    tap('Расписание  →')
-    wait_for('Расписание')
-    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
-    wait_for('Учиться вместе — проще')
-    STAGE = 'native homework'
-    tap('Домашние задания  →')
-    wait_for('Домашние задания')
-    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
-    wait_for('Учиться вместе — проще')
-    # Wait for the workspace toolbar, not the identically named home logo.
-    STAGE = 'open WebView workspace'
-    tap('Открыть личный кабинет')
-    wait_for('Назад', attribute='content-desc')
-    STAGE = 'back from WebView workspace'
-    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
-    wait_for('Учиться вместе — проще')
-    STAGE = 'native minimize (no dialog)'
-    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
-    # На главном экране «Назад» свёртывает приложение в фон тихо, без диалога.
-    wait_for_background()
+    # Приложение сразу открывает полноэкранный WebView с сайтом: никакого
+    # нативного стартового экрана «Быстрый доступ» до загрузки сайта.
+    STAGE = 'direct fullscreen WebView (no native quick access)'
+    wait_for_class('android.webkit.WebView')
+    for text in ('Быстрый доступ', 'Расписание  →', 'Домашние задания  →',
+                 'Войти в видеоурок  →', 'Открыть личный кабинет'):
+        assert_text_absent(text)
+    STAGE = 'hardware back minimizes (no dialog)'
+    # На корневой странице сайта «Назад» сворачивает приложение в фон тихо,
+    # без диалога выхода.
+    back_until_background()
     # Разворачиваем приложение обратно из фона перед следующей проверкой.
     adb('shell', 'am', 'start', '-n', 'ru.eduflow.app/.MainActivity')
     time.sleep(3)
     STAGE = 'resume after minimize'
-    wait_for('Учиться вместе — проще')
-    print('Android installation, native screens, hardware back and minimize: OK')
+    wait_for_class('android.webkit.WebView')
+    print('Android installation, direct WebView start, hardware back and minimize: OK')
 
 
 if __name__ == '__main__':

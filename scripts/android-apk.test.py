@@ -226,11 +226,13 @@ class AndroidApkTests(unittest.TestCase):
         activity = (source / 'MainActivity.java').read_text()
         web = (source / 'WebWorkspace.java').read_text()
         self.assertIn('requestWindowFeature(Window.FEATURE_NO_TITLE)', activity)
+        # ActionBar принудительно скрыт и программно (страховка поверх NoActionBar-темы).
+        self.assertIn('if (getActionBar() != null) getActionBar().hide();', activity)
         for code in (activity, web):
             self.assertNotRegex(code, r'\b(?:setActionBar|setSupportActionBar)\s*\(')
         self.assertNotIn('bar.addView', web)
 
-    def test_back_returns_through_history_then_minimizes_without_a_dialog(self):
+    def test_back_traverses_web_history_then_minimizes_without_a_dialog(self):
         activity = (ROOT / 'android/app/src/main/java/ru/eduflow/app/MainActivity.java').read_text()
         # Both legacy Back and Android 13+ predictive Back use the same handler.
         self.assertIn('@Override public void onBackPressed() { handleBack(); }', activity)
@@ -241,7 +243,7 @@ class AndroidApkTests(unittest.TestCase):
         self.assertIsNotNone(match, 'Missing MainActivity.handleBack()')
         body = match.group(1)
         steps = ('hideFullscreen(); return;', 'workspace.canGoBack()', 'workspace.goBack();',
-                 'if (!history.isEmpty())', 'show(history.pop());', 'moveTaskToBack(true);')
+                 'moveTaskToBack(true);')
         position = 0
         for step in steps:
             found = body.find(step, position)
@@ -253,6 +255,18 @@ class AndroidApkTests(unittest.TestCase):
         self.assertNotIn('AlertDialog', activity)
         self.assertNotIn('DialogInterface', activity)
         self.assertNotIn('Свернуть EduFlow?', activity)
+
+    def test_direct_fullscreen_webview_without_native_quick_access(self):
+        """APK стартует сразу в полноэкранном WebView: нативного «Быстрого доступа» нет."""
+        activity = (ROOT / 'android/app/src/main/java/ru/eduflow/app/MainActivity.java').read_text()
+        # Нативный стартовый экран, кнопки и списки полностью удалены из Java.
+        for gone in ('Быстрый доступ', 'Расписание  →', 'Домашние задания  →',
+                     'Войти в видеоурок  →', 'Открыть личный кабинет', 'Учиться вместе — проще',
+                     'renderHome', 'renderList', 'addListCard', 'Screen.SCHEDULE', 'Screen.HOMEWORK'):
+            self.assertNotIn(gone, activity, f'Native quick-access UI must be gone: {gone}')
+        # При запуске сразу открывается сайт во весь экран — без промежуточных экранов.
+        self.assertIn('openWorkspace();', activity)
+        self.assertIn('workspace.open(EduFlowApi.ORIGIN + "/")', activity)
 
     def test_zip_payload_and_alignment(self):
         self.assertTrue(APK.is_file(), 'Missing public/eduflow.apk')
@@ -341,7 +355,7 @@ class AndroidApkTests(unittest.TestCase):
                       'WindowCompat.setDecorFitsSystemWindows(getWindow(), false)',
                       '@JavascriptInterface', 'addJavascriptInterface(new AndroidBridge(this), "AndroidApp")',
                       'applyStatusBarColor', 'void attachJavascriptBridge(WebView web)',
-                      'setOnExitAnimationListener', 'showSplashOverlay()', 'Screen.SCHEDULE', 'Screen.HOMEWORK'):
+                      'setOnExitAnimationListener', 'showSplashOverlay()'):
             self.assertIn(token, activity)
         # Серая нативная шапка «‹ EduFlow» удалена: веб рисует собственную шапку.
         self.assertNotIn('bar.addView', web)
