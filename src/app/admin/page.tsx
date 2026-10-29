@@ -25,9 +25,9 @@ import { StatCard } from "@/components/admin/stat-card";
 import { FormAlert } from "@/components/ui/form-alert";
 import { auditActionLabel, auditActionTone, formatAuditDetails } from "@/lib/audit";
 import { getAdminOverview, getAdminSecondaryMetrics, type AdminOverview } from "@/lib/admin-stats";
-import { authOptions, canAccessAdminArea } from "@/lib/auth";
+import { authOptions } from "@/lib/auth";
+import { getLiveAdminViewer } from "@/lib/session-viewer";
 import { withDeadline } from "@/lib/dashboard-fallback";
-import { getSchoolViewer } from "@/lib/school-viewer";
 import { getSchoolInviteSummary, listClassesForSchool } from "@/lib/schools";
 import { cn } from "@/lib/utils";
 
@@ -105,20 +105,20 @@ export default async function AdminPage() {
     console.error("[ADMIN_SESSION_WARN]", error);
   }
   if (!session?.user?.id) redirect("/login?callbackUrl=/admin");
-  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
+
+  const admin = await getLiveAdminViewer();
+  if (!admin) redirect("/dashboard?denied=admin");
 
   const [schoolResult, metricsResult] = await Promise.all([
     (async () => {
       try {
         const settings = await withDeadline(
           (async () => {
-            const viewer = await getSchoolViewer(session.user.id);
-            if (!viewer?.schoolId) return null;
-            const school = await getSchoolInviteSummary(viewer.schoolId);
+            const school = await getSchoolInviteSummary(admin.schoolId);
             if (!school) return null;
             return {
               school,
-              classes: await listClassesForSchool(viewer.schoolId),
+              classes: await listClassesForSchool(admin.schoolId),
             };
           })(),
           "admin school settings",
@@ -132,7 +132,7 @@ export default async function AdminPage() {
     (async () => {
       try {
         const metrics = await withDeadline(
-          Promise.all([getAdminOverview(), getAdminSecondaryMetrics()]),
+          Promise.all([getAdminOverview(admin.schoolId), getAdminSecondaryMetrics(admin.schoolId)]),
           "admin overview metrics",
         );
         return metrics

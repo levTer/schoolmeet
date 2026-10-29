@@ -5,7 +5,7 @@ import type { Session } from "next-auth";
 
 import { AdminNav } from "@/components/admin/admin-nav";
 import { AppShell } from "@/components/layout/app-shell";
-import { authOptions, canAccessAdminArea } from "@/lib/auth";
+import { authOptions } from "@/lib/auth";
 import { withDeadline } from "@/lib/dashboard-fallback";
 import { getLiveAdminViewer } from "@/lib/session-viewer";
 
@@ -41,12 +41,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const user = session && 'user' in session ? session.user : null;
   if (!user) {
     redirect("/login?callbackUrl=/admin");
-  }
-  if (!canAccessAdminArea(user.role)) {
-    redirect("/dashboard?denied=admin");
-  }
-  if (user.banned) {
-    redirect("/banned");
   }
 
   /**

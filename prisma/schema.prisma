@@ -83,6 +83,7 @@ model School {
   homeworks     Homework[]
   meetings      Meeting[]
   announcements Announcement[]
+  auditLogs     AuditLog[]
 
   @@map("schools")
 }
@@ -411,6 +412,9 @@ model Announcement {
 /// управление объявлениями. Пишется из API-роутов (`src/lib/audit.ts`).
 model AuditLog {
   id      String @id @default(cuid())
+  /// Immutable tenant ownership. Legacy null rows stay hidden until backfilled.
+  schoolId String?
+  school   School? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
   /// Автор действия. null — системное событие; при удалении автора лог остаётся.
   userId  String?
   /// Машинный код действия, например "user.ban" (см. AUDIT_ACTIONS).
@@ -427,5 +431,6 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
+  @@index([schoolId, createdAt])
   @@map("audit_logs")
 }

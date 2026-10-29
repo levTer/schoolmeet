@@ -5,7 +5,8 @@ import { ScrollText } from "lucide-react";
 
 import { FormAlert } from "@/components/ui/form-alert";
 import { auditActionLabel, auditActionTone, formatAuditDetails, listAuditLogs, type AuditLogEntry } from "@/lib/audit";
-import { authOptions, canAccessAdminArea } from "@/lib/auth";
+import { authOptions } from "@/lib/auth";
+import { getLiveAdminViewer } from "@/lib/session-viewer";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -32,11 +33,13 @@ export default async function AdminAuditPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login?callbackUrl=/admin/audit");
   // Раздел /admin (и его вложенные страницы) открыт строго роли ADMIN.
-  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
+
+  const admin = await getLiveAdminViewer();
+  if (!admin) redirect("/dashboard?denied=admin");
 
   let logs: { items: AuditLogEntry[]; total: number } | null = null;
   try {
-    logs = await listAuditLogs({ take: 60 });
+    logs = await listAuditLogs(admin.schoolId, { take: 60 });
   } catch (error) {
     console.error("[admin/audit] Не удалось загрузить журнал:", error);
   }

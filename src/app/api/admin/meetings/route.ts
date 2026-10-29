@@ -1,9 +1,9 @@
 import type { NextResponse } from "next/server";
 
-import { handleRouteError, jsonError, jsonOk } from "@/lib/api";
+import { handleRouteError, jsonOk } from "@/lib/api";
 import { listActiveMeetings } from "@/lib/admin-meetings";
 import { finishStaleAttendance } from "@/lib/attendance";
-import { requireCapability, requireViewer } from "@/lib/session-viewer";
+import { requireCapability, requireAdminViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -18,11 +18,10 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
+    const viewer = await requireAdminViewer();
     requireCapability(viewer, "meetings.view");
-    if (!viewer.schoolId) return jsonError(409, "SCHOOL_REQUIRED", "Аккаунт не привязан к школе");
 
-    await finishStaleAttendance();
+    await finishStaleAttendance(viewer.schoolId);
 
     const summary = await listActiveMeetings(viewer.schoolId);
     return jsonOk(summary);

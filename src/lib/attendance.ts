@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { schoolScope } from "@/lib/admin-tenant";
 import type { GradeCode } from "@/lib/schedule-rules";
 import type { Role } from "@/types";
 
@@ -85,17 +86,18 @@ export async function closeAttendance(recordId: string, leftAt: Date = new Date(
 }
 
 /** Закрывает все открытые записи участника (например, при блокировке аккаунта). */
-export async function closeAttendanceForUser(userId: string, leftAt: Date = new Date()): Promise<number> {
+export async function closeAttendanceForUser(userId: string, schoolId: string, leftAt: Date = new Date()): Promise<number> {
+  const tenant = schoolScope(schoolId);
   const open = await prisma.attendanceRecord.findMany({
-    where: { userId, leftAt: null },
+    where: { userId, leftAt: null, user: { is: tenant }, meeting: { is: tenant } },
     select: { id: true, joinedAt: true },
   });
 
   await Promise.all(
     open.map((record) =>
       prisma.attendanceRecord
-        .update({
-          where: { id: record.id },
+        .updateMany({
+          where: { id: record.id, user: { is: tenant }, meeting: { is: tenant } },
           data: { leftAt, durationMinutes: durationMinutes(record.joinedAt, leftAt) },
         })
         .catch(() => undefined),
@@ -106,17 +108,18 @@ export async function closeAttendanceForUser(userId: string, leftAt: Date = new 
 }
 
 /** Закрывает все открытые записи урока (принудительное завершение). */
-export async function closeMeetingAttendance(meetingId: string, leftAt: Date = new Date()): Promise<number> {
+export async function closeMeetingAttendance(meetingId: string, schoolId: string, leftAt: Date = new Date()): Promise<number> {
+  const tenant = schoolScope(schoolId);
   const open = await prisma.attendanceRecord.findMany({
-    where: { meetingId, leftAt: null },
+    where: { meetingId, leftAt: null, meeting: { is: tenant } },
     select: { id: true, joinedAt: true },
   });
 
   await Promise.all(
     open.map((record) =>
       prisma.attendanceRecord
-        .update({
-          where: { id: record.id },
+        .updateMany({
+          where: { id: record.id, meeting: { is: tenant } },
           data: { leftAt, durationMinutes: durationMinutes(record.joinedAt, leftAt) },
         })
         .catch(() => undefined),
@@ -130,10 +133,11 @@ export async function closeMeetingAttendance(meetingId: string, leftAt: Date = n
  * Закрывает «зависшие» записи (сервер упал, сокет не успел сообщить о выходе).
  * Вызывается лениво из админских выборок; лучшая оценка — `leftAt = joinedAt`.
  */
-export async function finishStaleAttendance(now: Date = new Date()): Promise<number> {
+export async function finishStaleAttendance(schoolId: string, now: Date = new Date()): Promise<number> {
   try {
+    const tenant = schoolScope(schoolId);
     const result = await prisma.attendanceRecord.updateMany({
-      where: { leftAt: null, joinedAt: { lt: new Date(now.getTime() - STALE_AFTER_MS) } },
+      where: { leftAt: null, joinedAt: { lt: new Date(now.getTime() - STALE_AFTER_MS) }, meeting: { is: tenant }, user: { is: tenant } },
       data: { leftAt: now, durationMinutes: 0 },
     });
     return result.count;
@@ -174,10 +178,11 @@ export async function listAttendance(options: ListAttendanceOptions): Promise<{
   const offset = Math.max(options.offset ?? 0, 0);
 
   const where = {
-    meeting: { is: { schoolId: options.schoolId } },
+    meeting: { is: schoolScope(options.schoolId) },
+    user: { is: schoolScope(options.schoolId) },
     ...(options.meetingId ? { meetingId: options.meetingId } : {}),
     ...(options.userId ? { userId: options.userId } : {}),
-    ...(options.grade ? { user: { grade: options.grade } } : {}),
+    ...(options.grade ? { user: { is: { ...schoolScope(options.schoolId), grade: options.grade } } } : {}),
   };
 
   const [rows, total] = await Promise.all([

@@ -8,7 +8,7 @@ import {
 } from "@/lib/announcements";
 import { handleRouteError, jsonError, jsonOk } from "@/lib/api";
 import { getRequestIp, writeAuditLog } from "@/lib/audit";
-import { requireCapability, requireSchoolViewer } from "@/lib/session-viewer";
+import { requireCapability, requireAdminViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,7 @@ interface RouteContext {
  */
 export async function PATCH(request: Request, { params }: RouteContext): Promise<NextResponse> {
   try {
-    const viewer = await requireSchoolViewer();
+    const viewer = await requireAdminViewer();
     requireCapability(viewer, "announcements.manage");
 
     const existing = await getAnnouncement(params.id, viewer.schoolId);
@@ -54,6 +54,7 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
 
     void writeAuditLog({
       userId: viewer.id,
+      schoolId: viewer.schoolId,
       action: "announcement.update",
       ip: getRequestIp(request),
       details: {
@@ -72,7 +73,7 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
 /** DELETE /api/admin/announcements/[id] — удалить объявление своей школы. */
 export async function DELETE(request: Request, { params }: RouteContext): Promise<NextResponse> {
   try {
-    const viewer = await requireSchoolViewer();
+    const viewer = await requireAdminViewer();
     requireCapability(viewer, "announcements.manage");
 
     const existing = await getAnnouncement(params.id, viewer.schoolId);
@@ -83,6 +84,7 @@ export async function DELETE(request: Request, { params }: RouteContext): Promis
 
     void writeAuditLog({
       userId: viewer.id,
+      schoolId: viewer.schoolId,
       action: "announcement.delete",
       ip: getRequestIp(request),
       details: { announcementId: existing.id, title: existing.title },

@@ -49,7 +49,7 @@ export interface CloseRoomOptions {
 
 export interface RealtimeControl {
   /** Комнаты, в которых прямо сейчас есть участники. */
-  listLiveRooms(): LiveRoom[];
+  listLiveRooms(schoolId: string): LiveRoom[];
   /** Сколько человек в namespaced Socket.IO-комнате. */
   countParticipants(roomId: string): number;
   /**
@@ -94,12 +94,13 @@ export function getRealtimeControl(): RealtimeControl | null {
 }
 
 /** Сводка «онлайн» по комнатам без обращения к БД — для метрик обзора. */
-export function liveRoomsSummary(): { rooms: number; participants: number } {
+export function liveRoomsSummary(schoolId: string): { rooms: number; participants: number } {
+  if (!schoolId?.trim()) return { rooms: 0, participants: 0 };
   const control = getRealtimeControl();
   if (!control) return { rooms: 0, participants: 0 };
 
   try {
-    const rooms = control.listLiveRooms();
+    const rooms = control.listLiveRooms(schoolId);
     return {
       rooms: rooms.length,
       participants: rooms.reduce((total, room) => total + room.participants.length, 0),

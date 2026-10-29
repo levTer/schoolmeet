@@ -17,7 +17,7 @@
     "test:ui": "tsx --test scripts/ui-patterns.test.ts",
     "test:pwa": "tsx --test scripts/pwa-install.test.tsx",
     "test:chat": "tsx --test scripts/chat-rules.test.ts",
-    "test:security": "tsx --test scripts/security-rules.test.ts",
+    "test:security": "tsx --test --experimental-test-module-mocks scripts/security-rules.test.ts scripts/admin-tenancy.test.mts",
     "test:calls": "tsx --test scripts/call-lifecycle.test.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",

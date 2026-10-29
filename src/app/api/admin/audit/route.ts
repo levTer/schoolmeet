@@ -2,7 +2,7 @@ import type { NextResponse } from "next/server";
 
 import { handleRouteError, jsonOk, parseIntParam } from "@/lib/api";
 import { listAuditLogs } from "@/lib/audit";
-import { requireCapability, requireViewer } from "@/lib/session-viewer";
+import { requireCapability, requireAdminViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +12,11 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
+    const viewer = await requireAdminViewer();
     requireCapability(viewer, "audit.view");
 
     const { searchParams } = new URL(request.url);
-    const result = await listAuditLogs({
+    const result = await listAuditLogs(viewer.schoolId, {
       take: parseIntParam(searchParams.get("take"), 40, 1, 200),
       skip: parseIntParam(searchParams.get("skip"), 0, 0),
       action: searchParams.get("action") ?? undefined,

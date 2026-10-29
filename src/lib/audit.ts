@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { schoolScope } from "@/lib/admin-tenant";
 import type { Role } from "@/types";
 
 /**
@@ -88,6 +89,8 @@ export function serializeAuditDetails(details: Record<string, unknown> | null | 
 }
 
 export interface AuditInput {
+  /** Verified tenant of the actor; never accept this from a request body. */
+  schoolId: string;
   /** Автор действия (id пользователя). */
   userId?: string | null;
   action: AuditAction | string;
@@ -101,8 +104,10 @@ export interface AuditInput {
  */
 export async function writeAuditLog(input: AuditInput): Promise<void> {
   try {
+    const tenant = schoolScope(input.schoolId);
     await prisma.auditLog.create({
       data: {
+        ...tenant,
         userId: input.userId ?? null,
         action: input.action,
         details: serializeAuditDetails(input.details),
@@ -130,13 +135,13 @@ export interface ListAuditOptions {
 }
 
 /** Последние действия персонала (для страницы журнала и блока в обзоре). */
-export async function listAuditLogs(options: ListAuditOptions = {}): Promise<{
+export async function listAuditLogs(schoolId: string, options: ListAuditOptions = {}): Promise<{
   items: AuditLogEntry[];
   total: number;
 }> {
   const take = Math.min(Math.max(options.take ?? 20, 1), 100);
   const skip = Math.max(options.skip ?? 0, 0);
-  const where = options.action ? { action: options.action } : {};
+  const where = { ...schoolScope(schoolId), ...(options.action ? { action: options.action } : {}) };
 
   const [rows, total] = await Promise.all([
     prisma.auditLog.findMany({

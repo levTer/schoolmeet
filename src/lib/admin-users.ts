@@ -2,7 +2,8 @@ import type { ClassGrade, Prisma, Role as PrismaRole } from "@prisma/client";
 
 import { conflict, notFound } from "@/lib/api";
 import { hashPassword } from "@/lib/password";
-import { prisma } from "@/lib/prisma";
+import { prisma, INTERACTIVE_TRANSACTION_OPTIONS } from "@/lib/prisma";
+import { schoolScope } from "@/lib/admin-tenant";
 import { GRADE_LABELS, isGradeCode, type GradeCode } from "@/lib/schedule-rules";
 import {
   EMAIL_REGEX,
@@ -20,7 +21,8 @@ import type { Role } from "@/types";
  * смена роли/класса, сброс пароля и блокировка.
  *
  * Права проверяются ДО вызова этих функций (`admin-permissions.ts` +
- * `requireCapability` в API-роутах): модуль отвечает только за данные.
+ * `requireCapability` + `requireAdminViewer` в API-роутах). Каждый доступ к
+ * ресурсу дополнительно ограничивает школу явным предикатом Prisma.
  */
 
 export const USERS_PAGE_SIZE = 25;
@@ -74,12 +76,14 @@ export function parseGrade(value: unknown): GradeCode | undefined {
 }
 
 /** Список пользователей с поиском по имени/email и фильтрами по роли и классу. */
-export async function listUsersForAdmin(options: ListUsersOptions = {}): Promise<ListUsersResult> {
+export async function listUsersForAdmin(schoolId: string, options: ListUsersOptions = {}): Promise<ListUsersResult> {
+  const tenant = schoolScope(schoolId);
   const pageSize = Math.min(Math.max(options.pageSize ?? USERS_PAGE_SIZE, 1), USERS_PAGE_SIZE_MAX);
   const search = normalizeSearchTerm(options.search);
   const requestedPage = Math.max(options.page ?? 1, 1);
 
   const where: Prisma.UserWhereInput = {
+    ...tenant,
     ...(options.role ? { role: options.role as PrismaRole } : {}),
     ...(options.grade ? { grade: options.grade as ClassGrade } : {}),
     ...(options.bannedOnly ? { isBanned: true } : {}),
@@ -112,7 +116,7 @@ export async function listUsersForAdmin(options: ListUsersOptions = {}): Promise
       createdAt: true,
       updatedAt: true,
       attendance: {
-        where: { leftAt: null, joinedAt: { gte: new Date(Date.now() - ONLINE_STALE_AFTER_MS) } },
+        where: { leftAt: null, joinedAt: { gte: new Date(Date.now() - ONLINE_STALE_AFTER_MS) }, meeting: { is: tenant } },
         select: { id: true },
         take: 1,
       },
@@ -138,9 +142,9 @@ export async function listUsersForAdmin(options: ListUsersOptions = {}): Promise
   };
 }
 
-export async function getUserForAdmin(id: string): Promise<AdminUserRow | null> {
-  const row = await prisma.user.findUnique({
-    where: { id },
+export async function getUserForAdmin(id: string, schoolId: string): Promise<AdminUserRow | null> {
+  const row = await prisma.user.findFirst({
+    where: { id, ...schoolScope(schoolId) },
     select: {
       id: true,
       name: true,
@@ -332,6 +336,8 @@ export async function createUserAsAdmin(
   input: AdminUserCreateInput,
   schoolId: string,
 ): Promise<AdminUserRow> {
+  const tenant = schoolScope(schoolId);
+  // Email is globally unique for authentication; this check exposes no user fields.
   const existing = await prisma.user.findUnique({ where: { email: input.email }, select: { id: true } });
   if (existing) {
     throw conflict("Пользователь с таким email уже существует", { email: "Email занят" });
@@ -344,7 +350,7 @@ export async function createUserAsAdmin(
       password: await hashPassword(input.password),
       role: input.role as PrismaRole,
       grade: input.role === "STUDENT" ? ((input.grade ?? null) as ClassGrade | null) : null,
-      schoolId,
+      ...tenant,
     },
     select: {
       id: true,
@@ -385,96 +391,101 @@ export interface UpdateUserResult {
  * Пароль никогда не возвращается и не попадает в журнал: в `changes` пишем
  * только факт сброса.
  */
-export async function updateUserAsAdmin(targetId: string, patch: AdminUserUpdateInput): Promise<UpdateUserResult> {
-  const target = await prisma.user.findUnique({
-    where: { id: targetId },
-    select: { id: true, role: true, grade: true, name: true, isBanned: true },
-  });
-  if (!target) throw notFound("Пользователь не найден");
+export async function updateUserAsAdmin(targetId: string, schoolId: string, patch: AdminUserUpdateInput): Promise<UpdateUserResult> {
+  const tenant = schoolScope(schoolId);
+  return prisma.$transaction(async (tx) => {
+    const target = await tx.user.findFirst({
+      where: { id: targetId, ...tenant },
+      select: { id: true, role: true, grade: true, name: true, isBanned: true },
+    });
+    if (!target) throw notFound("Пользователь не найден");
 
-  const nextRole: Role = patch.role ?? (target.role as Role);
-  // Класс есть только у учеников: при смене роли сбрасываем его.
-  const nextGrade: GradeCode | null =
-    nextRole === "STUDENT"
-      ? patch.grade !== undefined
-        ? patch.grade
-        : ((target.grade as GradeCode | null) ?? null)
-      : null;
+    const nextRole: Role = patch.role ?? (target.role as Role);
+    // Класс есть только у учеников: при смене роли сбрасываем его.
+    const nextGrade: GradeCode | null =
+      nextRole === "STUDENT"
+        ? patch.grade !== undefined
+          ? patch.grade
+          : ((target.grade as GradeCode | null) ?? null)
+        : null;
 
-  const gradeChanged = nextGrade !== (target.grade ?? null);
+    const gradeChanged = nextGrade !== (target.grade ?? null);
 
-  /**
-   * Смена пароля, роли, класса или блокировка отзывают ВСЕ сессии пользователя
-   * (H-06): `sessionVersion` растёт, и jwt-callback аннулирует каждый токен,
-   * выпущенный с прежней версией. Без этого украденная сессия жила бы до
-   * истечения срока JWT, несмотря на смену пароля администратором, а переведённый
-   * в другой класс ученик сохранял бы доступ к урокам прежнего класса до
-   * переподключения (сокет помнит класс с момента handshake).
-   */
-  const revokesSessions =
-    patch.password !== undefined ||
-    (patch.role !== undefined && patch.role !== target.role) ||
-    gradeChanged ||
-    (patch.isBanned !== undefined && patch.isBanned !== target.isBanned);
+    /**
+     * Смена пароля, роли, класса или блокировка отзывают ВСЕ сессии пользователя
+     * (H-06): `sessionVersion` растёт, и jwt-callback аннулирует каждый токен,
+     * выпущенный с прежней версией. Без этого украденная сессия жила бы до
+     * истечения срока JWT, несмотря на смену пароля администратором, а переведённый
+     * в другой класс ученик сохранял бы доступ к урокам прежнего класса до
+     * переподключения (сокет помнит класс с момента handshake).
+     */
+    const revokesSessions =
+      patch.password !== undefined ||
+      (patch.role !== undefined && patch.role !== target.role) ||
+      gradeChanged ||
+      (patch.isBanned !== undefined && patch.isBanned !== target.isBanned);
 
-  const data: Prisma.UserUpdateInput = {
-    ...(patch.name !== undefined ? { name: patch.name } : {}),
-    ...(patch.role !== undefined ? { role: patch.role as PrismaRole } : {}),
-    ...(patch.grade !== undefined || nextGrade !== (target.grade ?? null)
-      ? { grade: nextGrade as ClassGrade | null }
-      : {}),
-    ...(patch.password !== undefined ? { password: await hashPassword(patch.password) } : {}),
-    ...(patch.isBanned !== undefined ? { isBanned: patch.isBanned } : {}),
-    ...(revokesSessions ? { sessionVersion: { increment: 1 } } : {}),
-  };
-
-  const updated = await prisma.user.update({
-    where: { id: targetId },
-    data,
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      grade: true,
-      isBanned: true,
-      sessionVersion: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
-
-  const changes: Record<string, unknown> = {};
-  if (patch.role !== undefined && patch.role !== target.role) {
-    changes.role = { from: target.role, to: patch.role };
-  }
-  if (gradeChanged) {
-    changes.grade = {
-      from: target.grade ? GRADE_LABELS[target.grade as GradeCode] : "не назначен",
-      to: nextGrade ? GRADE_LABELS[nextGrade] : "не назначен",
+    const data: Prisma.UserUpdateManyMutationInput = {
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.role !== undefined ? { role: patch.role as PrismaRole } : {}),
+      ...(patch.grade !== undefined || nextGrade !== (target.grade ?? null)
+        ? { grade: nextGrade as ClassGrade | null }
+        : {}),
+      ...(patch.password !== undefined ? { password: await hashPassword(patch.password) } : {}),
+      ...(patch.isBanned !== undefined ? { isBanned: patch.isBanned } : {}),
+      ...(revokesSessions ? { sessionVersion: { increment: 1 } } : {}),
     };
-  }
-  if (patch.name !== undefined && patch.name !== target.name) changes.name = patch.name;
-  if (patch.password !== undefined) changes.passwordReset = true;
-  if (patch.isBanned !== undefined && patch.isBanned !== target.isBanned) {
-    changes.banned = patch.isBanned;
-  }
-  if (revokesSessions) changes.sessionsRevoked = true;
 
-  return {
-    user: {
-      id: updated.id,
-      name: updated.name,
-      email: updated.email,
-      role: updated.role as Role,
-      grade: (updated.grade as GradeCode | null) ?? null,
-      isBanned: updated.isBanned,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-      isOnline: false,
-    },
-    changes,
-    /** Сессии отозваны — вызывающий маршрут рвёт живые сокеты. */
-    sessionsRevoked: revokesSessions,
-  };
+    // Compound tenant predicate makes the write safe even if the target moved tenants.
+    const result = await tx.user.updateMany({ where: { id: targetId, ...tenant }, data });
+    if (result.count !== 1) throw notFound("Пользователь не найден");
+    const updated = await tx.user.findFirstOrThrow({
+      where: { id: targetId, ...tenant },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        grade: true,
+        isBanned: true,
+        sessionVersion: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    const changes: Record<string, unknown> = {};
+    if (patch.role !== undefined && patch.role !== target.role) {
+      changes.role = { from: target.role, to: patch.role };
+    }
+    if (gradeChanged) {
+      changes.grade = {
+        from: target.grade ? GRADE_LABELS[target.grade as GradeCode] : "не назначен",
+        to: nextGrade ? GRADE_LABELS[nextGrade] : "не назначен",
+      };
+    }
+    if (patch.name !== undefined && patch.name !== target.name) changes.name = patch.name;
+    if (patch.password !== undefined) changes.passwordReset = true;
+    if (patch.isBanned !== undefined && patch.isBanned !== target.isBanned) {
+      changes.banned = patch.isBanned;
+    }
+    if (revokesSessions) changes.sessionsRevoked = true;
+
+    return {
+      user: {
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        role: updated.role as Role,
+        grade: (updated.grade as GradeCode | null) ?? null,
+        isBanned: updated.isBanned,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+        isOnline: false,
+      },
+      changes,
+      /** Сессии отозваны — вызывающий маршрут рвёт живые сокеты. */
+      sessionsRevoked: revokesSessions,
+    };
+  }, INTERACTIVE_TRANSACTION_OPTIONS);
 }

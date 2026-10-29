@@ -296,7 +296,7 @@ class AndroidApkTests(unittest.TestCase):
         with zipfile.ZipFile(APK) as archive:
             nodes = manifest_nodes(archive.read('AndroidManifest.xml'))
         self.assertEqual(nodes[0][1]['package'], 'ru.eduflow.app')
-        self.assertEqual(nodes[0][1]['versionCode'], 2)
+        self.assertEqual(nodes[0][1]['versionCode'], 3)
         sdk = next(attrs for name, attrs, _ in nodes if name == 'uses-sdk')
         self.assertEqual(sdk['minSdkVersion'], 24)
         self.assertEqual(sdk['targetSdkVersion'], 34)
@@ -370,22 +370,14 @@ class AndroidApkTests(unittest.TestCase):
         self.assertIn('connection.setInstanceFollowRedirects(false)', activity)
 
     def test_apk_matches_checked_in_native_sources(self):
-        """APK должен быть собран из текущих android/**-исходников.
-
-        Пересборка требует release-keystore (v1/v2/v3), которого нет в git:
-        её выполняет workflow `.github/workflows/android-build.yml` и коммитит
-        готовый public/eduflow.apk. Пока сборка не прошла, тест честно
-        пропускается с пояснением — остальные проверки APK (подписи, манифест,
-        ресурсы, DEX-классы) продолжают выполняться.
-        """
+        """A stale binary is a failure, never a skipped security/UI regression check."""
         expected = json.loads(subprocess.check_output(['python3', str(ROOT / 'scripts/android-build-info.py')]))
         with zipfile.ZipFile(APK) as archive:
             embedded = json.loads(archive.read('assets/native-build.json'))
-        if embedded != expected:
-            self.skipTest(
-                'public/eduflow.apk собран из предыдущих Android-исходников: '
-                'пересоберите его workflow-ом Build Android APK (нужен ключ подписи)',
-            )
+            dex = archive.read('classes.dex')
+        self.assertEqual(embedded, expected, 'Rebuild and sign public/eduflow.apk from the checked-in native sources')
+        for token in (b'AndroidApp', b'setStatusBarColor', b'Landroid/webkit/JavascriptInterface;'):
+            self.assertIn(token, dex, 'Compiled APK is missing the native theme bridge')
 
     def test_v1_cryptographic_signature_and_all_payload_digests(self):
         with zipfile.ZipFile(APK) as archive:

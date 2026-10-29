@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { schoolScope } from "@/lib/admin-tenant";
 import { listAuditLogs, type AuditLogEntry } from "@/lib/audit";
 import { liveRoomsSummary } from "@/lib/realtime-control";
 import { GRADES, GRADE_LABELS, type GradeCode } from "@/lib/schedule-rules";
@@ -60,7 +61,7 @@ interface Cache {
   expiresAt: number;
 }
 
-let cache: Cache | null = null;
+const cache = new Map<string, Cache>();
 
 /** Начало текущих суток (локальное время школы у пользователя). */
 function startOfDay(date: Date): Date {
@@ -78,9 +79,11 @@ function weekdayIndex(date: Date): number {
  * Собирает полный обзор для страницы `/admin`.
  * `now` вынесен параметром — так метрики легко тестировать.
  */
-export async function getAdminOverview(now: Date = new Date(), options: { noCache?: boolean } = {}): Promise<AdminOverview> {
-  if (!options.noCache && cache && cache.expiresAt > now.getTime()) {
-    return cache.value;
+export async function getAdminOverview(schoolId: string, now: Date = new Date(), options: { noCache?: boolean } = {}): Promise<AdminOverview> {
+  const tenant = schoolScope(schoolId);
+  const cached = cache.get(schoolId);
+  if (!options.noCache && cached && cached.expiresAt > now.getTime()) {
+    return cached.value;
   }
 
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -94,22 +97,22 @@ export async function getAdminOverview(now: Date = new Date(), options: { noCach
     reviews,
     recentAudit,
   ] = await Promise.all([
-    prisma.user.groupBy({ by: ["role"], _count: { _all: true } }),
-    prisma.user.count({ where: { isBanned: true } }),
-    prisma.homeworkSubmission.count({ where: { submittedAt: { gte: weekAgo } } }),
+    prisma.user.groupBy({ by: ["role"], where: tenant, _count: { _all: true } }),
+    prisma.user.count({ where: { isBanned: true, ...tenant } }),
+    prisma.homeworkSubmission.count({ where: { submittedAt: { gte: weekAgo }, homework: { is: tenant } } }),
     prisma.attendanceRecord.findMany({
-      where: { joinedAt: { gte: activitySince } },
+      where: { joinedAt: { gte: activitySince }, meeting: { is: tenant }, user: { is: tenant } },
       select: { joinedAt: true },
       orderBy: { joinedAt: "desc" },
       take: MAX_ROWS,
     }),
     prisma.homeworkReview.findMany({
-      where: { grade: { not: null } },
+      where: { grade: { not: null }, submission: { homework: { is: tenant } } },
       select: { grade: true, submission: { select: { homework: { select: { grade: true } } } } },
       orderBy: { approvedAt: "desc" },
       take: MAX_ROWS,
     }),
-    listAuditLogs({ take: 6 }),
+    listAuditLogs(schoolId, { take: 6 }),
   ]);
 
   const countByRole = new Map(roleCounts.map((row) => [row.role, row._count._all]));
@@ -153,7 +156,7 @@ export async function getAdminOverview(now: Date = new Date(), options: { noCach
     };
   });
 
-  const live = liveRoomsSummary();
+  const live = liveRoomsSummary(schoolId);
 
   const metrics: MetricCard[] = [
     { key: "students", label: "Всего учеников", value: students, hint: "Аккаунты с ролью STUDENT" },
@@ -184,27 +187,29 @@ export async function getAdminOverview(now: Date = new Date(), options: { noCach
     generatedAt: now.toISOString(),
   };
 
-  cache = { value: overview, expiresAt: now.getTime() + CACHE_TTL_MS };
+  cache.set(schoolId, { value: overview, expiresAt: now.getTime() + CACHE_TTL_MS });
   return overview;
 }
 
 /** Сбрасывает кэш обзора (после действий администратора). */
-export function invalidateAdminOverview(): void {
-  cache = null;
+export function invalidateAdminOverview(schoolId?: string): void {
+  if (schoolId) cache.delete(schoolId);
+  else cache.clear();
 }
 
 /** Дополнительные метрики для блока «внутри»: очередь проверки и активные баны. */
-export async function getAdminSecondaryMetrics(): Promise<{
+export async function getAdminSecondaryMetrics(schoolId: string): Promise<{
   pendingReview: number;
   banned: number;
   todayJoins: number;
 }> {
   const dayStart = startOfDay(new Date());
+  const tenant = schoolScope(schoolId);
 
   const [pendingReview, banned, todayJoins] = await Promise.all([
-    prisma.homeworkSubmission.count({ where: { status: "SUBMITTED" } }),
-    prisma.user.count({ where: { isBanned: true } }),
-    prisma.attendanceRecord.count({ where: { joinedAt: { gte: dayStart } } }),
+    prisma.homeworkSubmission.count({ where: { status: "SUBMITTED", homework: { is: tenant } } }),
+    prisma.user.count({ where: { isBanned: true, ...tenant } }),
+    prisma.attendanceRecord.count({ where: { joinedAt: { gte: dayStart }, meeting: { is: tenant }, user: { is: tenant } } }),
   ]);
 
   return { pendingReview, banned, todayJoins };

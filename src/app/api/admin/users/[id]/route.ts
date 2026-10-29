@@ -6,8 +6,9 @@ import { invalidateAdminOverview } from "@/lib/admin-stats";
 import { getRequestIp, writeAuditLog } from "@/lib/audit";
 import { closeAttendanceForUser } from "@/lib/attendance";
 import { prisma } from "@/lib/prisma";
+import { schoolScope } from "@/lib/admin-tenant";
 import { getRealtimeControl } from "@/lib/realtime-control";
-import { requireCapability, requireViewer } from "@/lib/session-viewer";
+import { requireCapability, requireAdminViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,8 @@ interface RouteContext {
 }
 
 /** Сколько активных администраторов осталось бы после смены роли/блокировки. */
-async function countActiveAdmins(excludingId: string): Promise<number> {
-  return prisma.user.count({ where: { role: "ADMIN", isBanned: false, id: { not: excludingId } } });
+async function countActiveAdmins(excludingId: string, schoolId: string): Promise<number> {
+  return prisma.user.count({ where: { role: "ADMIN", isBanned: false, id: { not: excludingId }, ...schoolScope(schoolId) } });
 }
 
 /**
@@ -30,9 +31,9 @@ async function countActiveAdmins(excludingId: string): Promise<number> {
  */
 export async function PATCH(request: Request, { params }: RouteContext): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
+    const viewer = await requireAdminViewer();
 
-    const target = await getUserForAdmin(params.id);
+    const target = await getUserForAdmin(params.id, viewer.schoolId);
     if (!target) {
       return jsonError(404, "NOT_FOUND", "Пользователь не найден");
     }
@@ -66,7 +67,7 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
       target.role === "ADMIN" &&
       ((patch.role !== undefined && patch.role !== "ADMIN") || patch.isBanned === true);
 
-    if (wouldLoseAdmin && (await countActiveAdmins(target.id)) === 0) {
+    if (wouldLoseAdmin && (await countActiveAdmins(target.id, viewer.schoolId)) === 0) {
       return jsonError(
         409,
         "LAST_ADMIN",
@@ -74,8 +75,8 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
       );
     }
 
-    const { user, changes, sessionsRevoked } = await updateUserAsAdmin(target.id, patch);
-    invalidateAdminOverview();
+    const { user, changes, sessionsRevoked } = await updateUserAsAdmin(target.id, viewer.schoolId, patch);
+    invalidateAdminOverview(viewer.schoolId);
 
     const ip = getRequestIp(request);
     const base = { target: user.email, targetId: user.id };
@@ -84,24 +85,26 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
     if (patch.role !== undefined && patch.role !== target.role) {
       void writeAuditLog({
         userId: viewer.id,
+        schoolId: viewer.schoolId,
         action: "user.role.change",
         ip,
         details: { ...base, from: target.role, to: patch.role },
       });
     }
     if (changes.grade !== undefined) {
-      void writeAuditLog({ userId: viewer.id, action: "user.grade.change", ip, details: { ...base, ...changes } });
+      void writeAuditLog({ userId: viewer.id, schoolId: viewer.schoolId, action: "user.grade.change", ip, details: { ...base, ...changes } });
     }
     if (patch.name !== undefined && changes.name !== undefined) {
       void writeAuditLog({
         userId: viewer.id,
+        schoolId: viewer.schoolId,
         action: "user.update",
         ip,
         details: { ...base, name: user.name },
       });
     }
     if (patch.password !== undefined) {
-      void writeAuditLog({ userId: viewer.id, action: "user.password.reset", ip, details: base });
+      void writeAuditLog({ userId: viewer.id, schoolId: viewer.schoolId, action: "user.password.reset", ip, details: base });
     }
 
     /* --- Отзыв сессий: сокеты рвём сразу, JWT аннулирует jwt-callback ---- */
@@ -126,6 +129,7 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
 
       void writeAuditLog({
         userId: viewer.id,
+        schoolId: viewer.schoolId,
         action: "user.session.revoke",
         ip,
         details: { ...base, sessions, controlAvailable },
@@ -135,11 +139,12 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
     /* --- Блокировка: мгновенный разрыв сокет-сессий ---------------------- */
     if (patch.isBanned !== undefined && patch.isBanned !== target.isBanned) {
       if (patch.isBanned) {
-        await closeAttendanceForUser(user.id);
+        await closeAttendanceForUser(user.id, viewer.schoolId);
       }
 
       void writeAuditLog({
         userId: viewer.id,
+        schoolId: viewer.schoolId,
         action: patch.isBanned ? "user.ban" : "user.unban",
         ip,
         details: { ...base, sessions },
@@ -161,10 +166,10 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
  */
 export async function GET(_request: Request, { params }: RouteContext): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
+    const viewer = await requireAdminViewer();
     requireCapability(viewer, "users.view");
 
-    const user = await getUserForAdmin(params.id);
+    const user = await getUserForAdmin(params.id, viewer.schoolId);
     if (!user) return jsonError(404, "NOT_FOUND", "Пользователь не найден");
 
     const control = getRealtimeControl();

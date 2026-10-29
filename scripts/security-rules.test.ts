@@ -358,7 +358,7 @@ describe("H-01: JWT доверяет только БД", () => {
     assert.match(viewer, /async function getLiveAdminViewer/, "нет живой проверки администратора");
     assert.match(
       viewer,
-      /return viewer\.role === "ADMIN" \? viewer : null/,
+      /where: \{ id: userId, role: "ADMIN", isBanned: false, school: \{ isNot: null \} \}/,
       "роль администратора не сверяется с БД",
     );
   });
@@ -509,7 +509,7 @@ describe("H-03: объявления изолированы по школе", ()
     assert.match(publicRoute, /requireSchoolViewer\(\)/, "публичный список объявлений не требует школу");
 
     const adminRoute = readSource("src/app/api/admin/announcements/route.ts");
-    assert.match(adminRoute, /requireSchoolViewer\(\)/);
+    assert.match(adminRoute, /requireAdminViewer\(\)/);
     assert.match(adminRoute, /schoolId: viewer\.schoolId/);
     assert.ok(!/schoolId:\s*(raw|body|payload)/.test(adminRoute), "школа берётся из тела запроса");
 

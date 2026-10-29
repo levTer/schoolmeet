@@ -2,7 +2,7 @@ import type { NextResponse } from "next/server";
 
 import { handleRouteError, jsonOk } from "@/lib/api";
 import { getAdminOverview, getAdminSecondaryMetrics } from "@/lib/admin-stats";
-import { requireCapability, requireViewer } from "@/lib/session-viewer";
+import { requireCapability, requireAdminViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +14,10 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
+    const viewer = await requireAdminViewer();
     requireCapability(viewer, "stats.view");
 
-    const [overview, secondary] = await Promise.all([getAdminOverview(), getAdminSecondaryMetrics()]);
+    const [overview, secondary] = await Promise.all([getAdminOverview(viewer.schoolId), getAdminSecondaryMetrics(viewer.schoolId)]);
 
     return jsonOk({ overview, secondary });
   } catch (error) {

@@ -6,8 +6,8 @@ import { AnnouncementsManager } from "@/components/admin/announcements-manager";
 import { FormAlert } from "@/components/ui/form-alert";
 import { canAdmin } from "@/lib/admin-permissions";
 import { listAnnouncements, type AnnouncementDto } from "@/lib/announcements";
-import { authOptions, canAccessAdminArea } from "@/lib/auth";
-import { getSchoolViewer } from "@/lib/school-viewer";
+import { authOptions } from "@/lib/auth";
+import { getLiveAdminViewer } from "@/lib/session-viewer";
 
 export const metadata: Metadata = {
   title: "Объявления",
@@ -26,23 +26,13 @@ export const dynamic = "force-dynamic";
 export default async function AdminAnnouncementsPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login?callbackUrl=/admin/announcements");
-  if (!canAccessAdminArea(session.user.role)) redirect("/dashboard?denied=admin");
 
-  // Школа — только из «живой» сессии: роль и tenant перечитываются из БД,
-  // поэтому страница не выдаст объявления чужой школы по устаревшему JWT.
-  const viewer = await getSchoolViewer(session.user.id);
-
-  if (!viewer?.schoolId) {
-    return (
-      <FormAlert variant="error">
-        Аккаунт не привязан к школе: управление объявлениями недоступно.
-      </FormAlert>
-    );
-  }
+  const admin = await getLiveAdminViewer();
+  if (!admin) redirect("/dashboard?denied=admin");
 
   let announcements: AnnouncementDto[] | null = null;
   try {
-    announcements = await listAnnouncements({ schoolId: viewer.schoolId, take: 100 });
+    announcements = await listAnnouncements({ schoolId: admin.schoolId, take: 100 });
   } catch (error) {
     console.error("[admin/announcements] Не удалось загрузить объявления:", error);
   }
@@ -58,7 +48,7 @@ export default async function AdminAnnouncementsPage() {
   return (
     <AnnouncementsManager
       initial={announcements}
-      canManage={canAdmin({ id: viewer.id, role: viewer.role }, "announcements.manage")}
+      canManage={canAdmin({ id: admin.id, role: admin.role }, "announcements.manage")}
     />
   );
 }

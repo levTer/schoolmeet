@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { handleRouteError, jsonError, jsonOk } from "@/lib/api";
 import { getSchoolSummary, listClassesForSchool } from "@/lib/schools";
 import { gradeFromClassName, normalizeClassName } from "@/lib/school-rules";
-import { requireRole, requireViewer } from "@/lib/session-viewer";
+import { requireAdminViewer } from "@/lib/session-viewer";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -12,9 +12,7 @@ export const dynamic = "force-dynamic";
 /** Classes and school code for the current school's administrator. */
 export async function GET(): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
-    requireRole(viewer, ["ADMIN"]);
-    if (!viewer.schoolId) return jsonError(409, "SCHOOL_REQUIRED", "Аккаунт не привязан к школе");
+    const viewer = await requireAdminViewer();
 
     const [school, classes] = await Promise.all([
       getSchoolSummary(viewer.schoolId),
@@ -30,9 +28,7 @@ export async function GET(): Promise<NextResponse> {
 /** Create a class within the administrator's school; schoolId is never accepted from the client. */
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    const viewer = await requireViewer();
-    requireRole(viewer, ["ADMIN"]);
-    if (!viewer.schoolId) return jsonError(409, "SCHOOL_REQUIRED", "Аккаунт не привязан к школе");
+    const viewer = await requireAdminViewer();
 
     let payload: unknown;
     try {
