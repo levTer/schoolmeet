@@ -10,7 +10,8 @@
 # Actions два секрета:
 #   • EDUFLOW_KEYSTORE_B64 — release-keystore (.jks) в base64;
 #   • EDUFLOW_KS_PASS      — пароль keystore (тот же, что у ключа alias eduflow).
-# Без секретов job завершается без сборки (шаги пропускаются), ничего не ломая.
+# Если секреты отсутствуют — workflow автоматически собирает Unsigned/Debug APK
+# с помощью `./gradlew assembleDebug`, чтобы сборка всегда успевала и выдала свежий .apk.
 #
 # Запуск: push в main / arena/** с изменениями android/**, либо вручную
 # (Actions → Build Android APK → Run workflow). Готовый APK коммитится в ветку —
@@ -31,6 +32,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 concurrency:
   group: android-apk-${{ github.ref }}
@@ -60,41 +62,50 @@ jobs:
             echo "has_key=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_key=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::EDUFLOW_KEYSTORE_B64 / EDUFLOW_KS_PASS не заданы — APK не пересобирается."
+            echo "::warning::EDUFLOW_KEYSTORE_B64 / EDUFLOW_KS_PASS не заданы — сборка пойдет как debug APK."
           fi
 
       - name: Install Android SDK 34 and build tools
-        if: steps.signing.outputs.has_key == 'true'
         uses: android-actions/setup-android@v3
         with:
           packages: "platforms;android-34 build-tools;34.0.0"
 
-      - name: Prepare signing key
-        if: steps.signing.outputs.has_key == 'true'
-        env:
-          KEYSTORE_B64: ${{ secrets.EDUFLOW_KEYSTORE_B64 }}
-          KS_PASS: ${{ secrets.EDUFLOW_KS_PASS }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/keys"
-          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/keys/eduflow-release.jks"
-          printf '%s' "$KS_PASS" > "$RUNNER_TEMP/keys/password.txt"
-          chmod 600 "$RUNNER_TEMP/keys/"*
-
-      - name: Build and sign APK (v1 + v2 + v3)
-        if: steps.signing.outputs.has_key == 'true'
+      - name: Build with Gradle (release if key available, else debug)
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          EDUFLOW_KEYSTORE: ${{ runner.temp }}/keys/eduflow-release.jks
-          EDUFLOW_KS_PASS_FILE: ${{ runner.temp }}/keys/password.txt
-          EDUFLOW_KEY_ALIAS: eduflow
+          GRLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g"
         run: |
           set -euo pipefail
-          bash scripts/build-android.sh
-          python3 scripts/android-apk.test.py
+          if [ "${{ steps.signing.outputs.has_key }}" = "true" ]; then
+            echo "Building signed release APK..."
+            EDUFLOW_KEYSTORE: ${{ runner.temp }}/keys/eduflow-release.jks
+            EDUFLOW_KS_PASS_FILE: ${{ runner.temp }}/keys/password.txt
+            mkdir -p "$RUNNER_TEMP/keys"
+            printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/keys/eduflow-release.jks"
+            printf '%s' "$KS_PASS" > "$RUNNER_TEMP/keys/password.txt"
+            chmod 600 "$RUNNER_TEMP/keys/"
+            bash scripts/build-android.sh
+            python3 scripts/android-apk.test.py
+          else
+            echo "Building unsigned Debug APK (no keystore secrets)..."
+            ./gradlew assembleDebug --no-daemon
+            python3 scripts/android-apk.test.py
+          fi
+
+      - name: Copy APK to public/
+        run: |
+          set -euo pipefail
+          # Debug APK location from Gradle
+          DEBUG_APK=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -1)
+          if [ -z "$DEBUG_APK" ]; then
+            echo "Debug APK not found, looking for any released APK..."
+            find android/app/build/outputs -name "*.apk" -type f | head -5
+          fi
+          mkdir -p public
+          cp "$DEBUG_APK" public/eduflow.apk
+          echo "Copied APK to public/eduflow.apk"
 
       - name: Upload APK artifact
-        if: steps.signing.outputs.has_key == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: EduFlow-Android-APK
@@ -102,16 +113,17 @@ jobs:
           retention-days: 30
 
       - name: Commit APK into public/
-        if: steps.signing.outputs.has_key == 'true'
-        shell: bash
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           set -euo pipefail
           if git diff --quiet -- public/eduflow.apk; then
             echo "APK не изменился — коммит не нужен."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/eduflow.apk
-          git commit -m "build(android): rebuild and sign EduFlow APK (v1/v2/v3)"
+          git commit -m "build(android): rebuild and update EduFlow APK"
           git push

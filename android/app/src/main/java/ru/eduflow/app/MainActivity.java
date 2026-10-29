@@ -222,8 +222,9 @@ public final class MainActivity extends Activity {
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
     /**
-     * Прямой старт рабочего места: полноэкранный WebView открывает сайт сразу,
-     * без промежуточных нативных Java-экранов, меню и кнопок «Быстрого доступа».
+     * Direct start of workspace: opens the site immediately in full-screen WebView,
+     * without native Java screens, menus, or quick-access buttons.
+     * Only the splash screen appears at startup.
      */
     private void openWorkspace() {
         content.removeAllViews();
