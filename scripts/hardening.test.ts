@@ -55,6 +55,26 @@ function sourceWithoutComments(source: string): string {
 /* 1. P0: секретов администратора в репозитории нет                            */
 /* -------------------------------------------------------------------------- */
 
+describe("сайт доступен без VPN: сервис не засыпает и есть план на блок сети", () => {
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const workflow = readFileSync(join(repoRoot, ".github/workflows/keepalive.yml"), "utf8");
+  const docs = readFileSync(join(repoRoot, "docs/availability.md"), "utf8");
+
+  it("keepalive пингует /api/health по расписанию и проверяет тело ответа", () => {
+    assert.match(workflow, /cron: "\*\/10 \* \* \* \*"/, "инстанс Render засыпает через 15 минут — нужен пинг чаще");
+    assert.match(workflow, /\/api\/health/, "пинг должен идти на health-check, а не на тяжёлую страницу");
+    assert.match(workflow, /"ok":true/, "200 без проверки тела не отличает здоровый сервис от заглушки");
+    assert.match(workflow, /workflow_dispatch/, "нужен ручной запуск: cron работает только из main");
+  });
+
+  it("документ объясняет обе причины и как их различить", () => {
+    assert.match(docs, /uptimeSeconds/, "нет способа отличить холодный старт от блокировки");
+    assert.match(docs, /Cloudflare/, "не описана причина с сетью Cloudflare");
+    assert.match(docs, /NEXTAUTH_URL/, "при смене домена забыт callback аутентификации");
+    assert.match(docs, /pg_dump/, "нет шага переноса данных на свой сервер");
+  });
+});
+
 describe("P0: в репозитории нет секретов администратора", () => {
   it("school-config не содержит паролей и invite-токенов литералами", () => {
     const config = sourceWithoutComments(readSource("src/lib/school-config.ts"));
