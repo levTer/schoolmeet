@@ -12,6 +12,8 @@ Windows-версия EduFlow — полноценное десктопное п�
 | `desktop/preload.js` | Изолированный мост `window.eduflowDesktop` (`contextIsolation: true`, `nodeIntegration: false`) |
 | `desktop/offline.html` | Локальная страница «Нет подключения» с кнопками «Повторить» и «Открыть в браузере» |
 | `desktop/assets/icon.png` | Иконка окна (дизайн №9) |
+| `desktop/after-pack.js` | Облегчение Chromium перед упаковкой: локали, swiftshader, компилятор шейдеров WebGPU |
+| `desktop/THIRD_PARTY_NOTICES.txt` | Уведомление о лицензиях Electron/Chromium (полные тексты — по ссылкам) |
 | `electron-builder.yml` | Конфиг electron-builder: NSIS-установщик для Windows x64, максимальное сжатие |
 | `scripts/build-windows-installer.ts` | Сборка `public/eduflow-setup.exe` + проверки (MZ/PE, NSIS, размер) |
 | `public/eduflow-setup.exe` | Готовый установщик, который скачивает кнопка «💻 Скачать для Windows (.exe Установщик)» |
@@ -29,6 +31,24 @@ npm run build:windows   # → public/eduflow-setup.exe
 `.github/workflows/build-windows-installer.yml`: джоба прогоняет
 `npm run build:windows`, проверяет размер и MZ-заголовок, выкладывает артефакт
 `EduFlow-Windows-Installer` и коммитит `public/eduflow-setup.exe` в ветку.
+
+## Размер и лимит GitHub
+
+Установщик лежит в git, а GitHub не принимает файлы больше **100 МиБ**
+(104 857 600 байт) — `git push` с таким файлом отклоняется. Текущий размер —
+≈99,5 МиБ (104 346 967 байт): запас меньше процента, поэтому:
+
+- `desktop/after-pack.js` выкидывает `locales/*.pak` (кроме ru/en), `swiftshader`,
+  `dxcompiler.dll`/`dxil.dll` (WebGPU) и `LICENSES.chromium.html` (9 МБ);
+- `ffmpeg.dll`, `d3dcompiler_47.dll`, `icudtl.dat`, `resources.pak` трогать
+  нельзя: без них ломаются видео, WebGL и русские даты;
+- шаг «Commit installer» в workflow падает, если файл превысил лимит, и
+  публикует лог сборки коммитом — по нему видно фактический размер.
+
+Когда Electron обновится и установщик перестанет влезать, правильный следующий
+шаг — выкладывать `.exe` в GitHub Releases (лимит 2 ГБ на файл, история git не
+растёт) и поставить на лендинге ссылку на `/releases/latest/download/eduflow-setup.exe`.
+Так уже распространяется macOS-версия (`docs/mac-distribution.md`).
 
 ## Что получает пользователь
 
