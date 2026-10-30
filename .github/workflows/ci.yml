@@ -15,7 +15,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -58,20 +57,7 @@ jobs:
         run: npm test
 
       - name: Build
-        id: build
-        run: npm run build 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
-
-      - name: TMP report build log
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            let log = '';
-            try { log = fs.readFileSync('/tmp/build.log', 'utf8'); } catch (e) { log = 'no log: ' + e.message; }
-            const lines = log.split('\n').filter(l => /error|Error|failed|ERR_/.test(l)).slice(0, 40).join('\n');
-            const body = 'BUILD LOG TAIL\n```\n' + log.slice(-4000) + '\n```\nMATCHED\n```\n' + lines + '\n```';
-            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+        run: npm run build
 
       - name: Audit production dependencies
         # Пока не блокирует: критический advisory Next.js 14 закрывается
