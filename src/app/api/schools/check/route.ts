@@ -7,7 +7,7 @@ import { configuredStrictClassIsolation, isSingleClassSchool } from "@/lib/schoo
 import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
 import { inviteTokensForNewSchool } from "@/lib/invite-tokens";
 import { canonicalSchoolCode, normalizeSchoolCode } from "@/lib/school-rules";
-import { ensureSchoolClasses, listClassesForSchool } from "@/lib/schools";
+import { listClassesForSchool } from "@/lib/schools";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
