@@ -61,6 +61,7 @@ import {
   type DrawingInstruction,
 } from "@/lib/ai-provider";
 import { cn } from "@/lib/utils";
+import { copyToClipboard } from "@/lib/clipboard";
 import {
   drawCommand,
   extractDrawCommand,
@@ -544,14 +545,10 @@ const [summaryCopying, setSummaryCopying] = useState(false);
   const copySummary = useCallback(async () => {
     if (!summaryText) return;
     setSummaryCopying(true);
-    try {
-      await navigator.clipboard.writeText(summaryText);
-      toast.success("Конспект скопирован в буфер обмена");
-    } catch {
-      toast.error("Не удалось скопировать конспект");
-    } finally {
-      setSummaryCopying(false);
-    }
+    const done = await copyToClipboard(summaryText);
+    if (done) toast.success("Конспект скопирован в буфер обмена");
+    else toast.error("Не удалось скопировать конспект — выделите текст и скопируйте вручную");
+    setSummaryCopying(false);
   }, [summaryText]);
 
   /* --------------------------- Идеи запросов ----------------------------- */

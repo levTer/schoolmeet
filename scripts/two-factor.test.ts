@@ -341,18 +341,29 @@ describe("второй фактор встроен во вход и не обх�
     }
   });
 
-  it("работает в Android-оболочке: та же схема и тот же whitelist", () => {
-    const java = readSource("android/app/src/main/java/ru/eduflow/app/WebWorkspace.java");
-    assert.match(java, /isExternalSchemeAllowed/, "WebView не проверяет схемы явно");
-    assert.match(java, /equalsIgnoreCase\("otpauth"\)/, "otpauth заблокирован — ссылка не откроется");
-    assert.match(java, /"totp"\.equalsIgnoreCase\(uri\.getHost\(\)\)/, "не проверяется действие totp");
+  it("Android без моста не показывает «мёртвую» ссылку: секрет вводится вручную", () => {
+    // Ограничение подписанного APK: Java-исходники нельзя менять без пересборки
+    // и подписи релизным ключом (scripts/android-apk.test.py сверяет отпечаток
+    // исходников внутри APK). Поэтому в сборке без AndroidApp.openExternal
+    // интерфейс не предлагает переход, а просит ввести секрет вручную.
+    const clipboard = readSource("src/lib/clipboard.ts");
+    assert.match(clipboard, /export function canOpenExternalLink/, "нет проверки возможностей оболочки");
+    assert.match(clipboard, /typeof android\?\.openExternal === "function"/, "мост Android не учитывается");
+    assert.match(clipboard, /return !isAndroidShell\(\);/, "в Android нельзя обещать переход по ссылке");
+
+    const panel = readSource("src/components/account/security-panel.tsx");
+    assert.match(panel, /linkSupported \?/, "ссылка рендерится безусловно");
+    assert.match(panel, /введите секрет в приложении вручную/, "нет честной подсказки");
+    assert.match(panel, /copy\(\"secret\", secret\)/, "секрет нельзя скопировать");
   });
 
   it("веб не зависит от моста оболочки: без него всё работает", () => {
     const clipboard = readSource("src/lib/clipboard.ts");
     assert.match(clipboard, /navigator\.clipboard\?\.writeText/, "нет современного пути копирования");
     assert.match(clipboard, /execCommand\("copy"\)/, "нет запасного пути для WebView");
-    assert.match(clipboard, /if \(!bridge\?\.openExternal\) return false;/, "мост считается обязательным");
+    // Мост — необязательное улучшение: без него функция просто возвращает false.
+    assert.match(clipboard, /if \(bridge\?\.openExternal\) \{/, "мост считается обязательным");
+    assert.match(clipboard, /export function openInNativeShell/, "нет точки входа для оболочки");
 
     const panel = readSource("src/components/account/security-panel.tsx");
     assert.match(panel, /copyToClipboard/);

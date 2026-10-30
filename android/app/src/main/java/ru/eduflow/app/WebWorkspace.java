@@ -143,23 +143,10 @@ final class WebWorkspace extends LinearLayout {
 
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
-    /**
-     * Ссылки, которые открываются вне приложения.
-     *
-     * Кроме http(s)/mailto/tel разрешён {@code otpauth://totp/…} — передача
-     * секрета приложению-аутентификатору при включении второго фактора.
-     * Другие действия otpauth (например, hotp) в систему не уходят.
-     */
-    private static boolean isExternalSchemeAllowed(Uri uri) {
-        String scheme = uri.getScheme();
-        if (scheme == null) return false;
-        if (scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("http")
-                || scheme.equalsIgnoreCase("mailto") || scheme.equalsIgnoreCase("tel")) return true;
-        return scheme.equalsIgnoreCase("otpauth") && "totp".equalsIgnoreCase(uri.getHost());
-    }
-
     private void openExternal(Uri uri) {
-        if (!isExternalSchemeAllowed(uri)) return;
+        String scheme = uri.getScheme();
+        if (scheme == null || !(scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("http")
+                || scheme.equalsIgnoreCase("mailto") || scheme.equalsIgnoreCase("tel"))) return;
         try {
             Intent intent = new Intent(Intent.ACTION_VIEW, uri);
             intent.addCategory(Intent.CATEGORY_BROWSABLE);

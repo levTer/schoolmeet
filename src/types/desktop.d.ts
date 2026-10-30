@@ -17,6 +17,13 @@ interface AndroidAppBridge {
   getStatusBarColor?: () => string;
   /** true — активна edge-to-edge разметка (контент под системными панелями). */
   isEdgeToEdge?: () => boolean;
+  /**
+   * Открыть ссылку системным обработчиком (`https`, `mailto`, `tel`, а для
+   * второго фактора — `otpauth://totp/…`). Появился в APK, собранном из
+   * `WebWorkspace.isExternalSchemeAllowed`; в более старых сборках метода нет —
+   * интерфейс обязан работать без него.
+   */
+  openExternal?: (url: string) => boolean;
 }
 
 interface Window {

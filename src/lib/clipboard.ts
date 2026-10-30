@@ -54,31 +54,63 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+/** Открыт ли сайт внутри Android-оболочки (`AndroidApp` из WebView). */
+export function isAndroidShell(): boolean {
+  if (typeof window === "undefined") return false;
+  return typeof window.AndroidApp !== "undefined";
+}
+
 /**
- * Передаёт `otpauth://`-ссылку нативной оболочке.
+ * Передаёт внешнюю ссылку нативной оболочке.
  *
- * В Electron обычный `<a href="otpauth://…">` раньше уходил в навигацию и
- * блокировался политикой окна — кнопка «открыть в приложении» молча ничего не
- * делала. Мост `eduflowDesktop.openExternal` передаёт ссылку main-процессу,
- * который сверяет схему. Возвращает `true`, если ссылку взяла оболочка;
- * `false` — значит, работаем как обычный браузер (переход по ссылке).
+ * В Electron обычный `<a href="otpauth://…">` уходил в навигацию и блокировался
+ * политикой окна — кнопка «открыть в приложении» молча ничего не делала. Мост
+ * `eduflowDesktop.openExternal` передаёт ссылку main-процессу, который сверяет
+ * схему. Возвращает `true`, если ссылку взяла оболочка; `false` — значит,
+ * работаем как обычный браузер (переход по ссылке).
  */
 export function openInNativeShell(url: string): boolean {
   if (typeof window === "undefined") return false;
 
   const bridge = window.eduflowDesktop;
-  if (!bridge?.openExternal) return false;
-
-  try {
-    void bridge.openExternal(url);
-    return true;
-  } catch {
-    return false;
+  if (bridge?.openExternal) {
+    try {
+      void bridge.openExternal(url);
+      return true;
+    } catch {
+      // Мост есть, но вызов сорвался — пробуем следующий путь.
+    }
   }
+
+  const android = window.AndroidApp;
+  if (typeof android?.openExternal === "function") {
+    try {
+      return android.openExternal(url) !== false;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Может ли эта оболочка открыть внешнюю ссылку.
+ *
+ * Нужно, чтобы не показывать «мёртвую» кнопку: в APK без моста
+ * `AndroidApp.openExternal` WebView не умеет открывать неизвестные схемы, и
+ * ссылка `otpauth://` просто ничего не сделает. В браузере переход по ссылке
+ * обрабатывает система, поэтому там кнопка уместна всегда.
+ */
+export function canOpenExternalLink(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.eduflowDesktop?.openExternal) return true;
+  if (typeof window.AndroidApp?.openExternal === "function") return true;
+  return !isAndroidShell();
 }
 
 /** Открыт ли сайт внутри приложения (Electron или Android-оболочка). */
 export function isNativeShell(): boolean {
   if (typeof window === "undefined") return false;
-  return Boolean(window.eduflowDesktop?.isDesktop) || typeof window.AndroidApp !== "undefined";
+  return Boolean(window.eduflowDesktop?.isDesktop) || isAndroidShell();
 }

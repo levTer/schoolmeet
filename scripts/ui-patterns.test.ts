@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 import { inflateSync } from "node:zlib";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -1784,3 +1784,39 @@ describe("завершение активного урока с баннера �
   });
 });
 
+describe("Буфер обмена и внешние ссылки: сайт, Mac/Windows и APK", () => {
+  /** Все .tsx/.ts компоненты — рекурсивно, чтобы новый файл не остался без проверки. */
+  function componentFiles(dir: string): string[] {
+    return readdirSync(dir).flatMap((entry) => {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) return componentFiles(full);
+      return /\.tsx?$/.test(entry) ? [full] : [];
+    });
+  }
+
+  it("ни один компонент не зовёт navigator.clipboard напрямую", () => {
+    // Прямой вызов молча отказывает в Android-WebView и в части сборок
+    // Electron: кнопка «Скопировать» перестаёт работать только в приложении.
+    // Комментарии не считаем: в них прямой вызов как раз и объясняется.
+    const withoutComments = (source: string) =>
+      source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const offenders = componentFiles(join(REPO_ROOT, "src/components"))
+      .filter((file) => !file.endsWith("clipboard.ts"))
+      .filter((file) => /navigator\.clipboard/.test(withoutComments(readFileSync(file, "utf8"))))
+      .map((file) => file.replace(`${REPO_ROOT}/`, ""));
+    assert.deepEqual(offenders, [], "используйте copyToClipboard из src/lib/clipboard.ts");
+  });
+
+  it("copyToClipboard пробует современный API, затем execCommand и честно возвращает false", () => {
+    const clipboard = readSource("src/lib/clipboard.ts");
+    assert.match(clipboard, /navigator\.clipboard\?\.writeText/);
+    assert.match(clipboard, /execCommand\("copy"\)/);
+    assert.match(clipboard, /return false;/, "при отказе обоих путей нужен явный false");
+  });
+
+  it("панель безопасности предлагает ручной перенос, если копирование не удалось", () => {
+    const panel = readSource("src/components/account/security-panel.tsx");
+    assert.match(panel, /Скопировать автоматически не удалось/);
+    assert.match(panel, /Открыть в приложении-аутентификаторе/);
+  });
+});

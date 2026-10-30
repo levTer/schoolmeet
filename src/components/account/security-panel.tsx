@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type MouseEvent } from "react";
 import { Copy, KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
 
 import { FormAlert } from "@/components/ui/form-alert";
-import { copyToClipboard, isNativeShell, openInNativeShell } from "@/lib/clipboard";
+import { canOpenExternalLink, copyToClipboard, isNativeShell, openInNativeShell } from "@/lib/clipboard";
 import { PasswordField, TextField } from "@/components/ui/field";
 import { GradientButton } from "@/components/ui/gradient-button";
 
@@ -38,9 +38,11 @@ export function SecurityPanel() {
   const [copied, setCopied] = useState<"codes" | "secret" | "link" | null>(null);
   // Подсказка о платформе: в приложении ссылку открывает оболочка.
   const [shellNote, setShellNote] = useState<string | null>(null);
-  // Признак оболочки узнаём после монтирования: на сервере `window` нет, и
+  // Признаки оболочки узнаём после монтирования: на сервере `window` нет, и
   // разное содержимое серверного и клиентского рендера дало бы hydration-ошибку.
   const [nativeShell, setNativeShell] = useState(false);
+  // Умеет ли оболочка открыть `otpauth://` (в старых APK такого моста нет).
+  const [linkSupported, setLinkSupported] = useState(true);
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +60,7 @@ export function SecurityPanel() {
 
   useEffect(() => {
     setNativeShell(isNativeShell());
+    setLinkSupported(canOpenExternalLink());
   }, []);
 
   function reset() {
@@ -228,13 +231,19 @@ export function SecurityPanel() {
             <p className="text-[11px] uppercase tracking-wider text-slate-500">Секрет для ручного ввода</p>
             <p className="mt-1 break-all font-mono text-sm text-slate-100">{secret}</p>
             <div className="mt-2 flex flex-wrap items-center gap-3">
-              <a
-                href={otpauth}
-                onClick={(event) => openAuthenticator(event, otpauth)}
-                className="text-xs text-brand-200 underline underline-offset-4"
-              >
-                Открыть в приложении-аутентификаторе
-              </a>
+              {linkSupported ? (
+                <a
+                  href={otpauth}
+                  onClick={(event) => openAuthenticator(event, otpauth)}
+                  className="text-xs text-brand-200 underline underline-offset-4"
+                >
+                  Открыть в приложении-аутентификаторе
+                </a>
+              ) : (
+                <span className="text-xs text-slate-400">
+                  Открыть ссылку на этом телефоне нельзя — введите секрет в приложении вручную.
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => void copy("secret", secret)}
@@ -253,7 +262,7 @@ export function SecurityPanel() {
             <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
               Работает без интернета: код считают телефон и сервер по одному ключу и времени.
               {nativeShell
-                ? " Если приложение-аутентификатор стоит на этом же телефоне, ссылка его не найдёт — введите секрет вручную или скопируйте его."
+                ? " Если приложение-аутентификатор стоит на этом же телефоне, скопируйте секрет кнопкой выше и вставьте его в приложении."
                 : " Если телефон отдельный, откройте эту ссылку на телефоне или введите секрет вручную."}
             </p>
             {shellNote && <p className="mt-2 text-[11px] text-emerald-300">{shellNote}</p>}
