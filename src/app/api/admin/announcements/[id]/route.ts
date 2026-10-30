@@ -13,7 +13,7 @@ import { requireCapability, requireAdminViewer } from "@/lib/session-viewer";
 export const dynamic = "force-dynamic";
 
 interface RouteContext {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 /**
@@ -24,11 +24,12 @@ interface RouteContext {
  * `updateAnnouncement` фильтруют по школе сессии.
  */
 export async function PATCH(request: Request, { params }: RouteContext): Promise<NextResponse> {
+  const { id } = await params;
   try {
     const viewer = await requireAdminViewer();
     requireCapability(viewer, "announcements.manage");
 
-    const existing = await getAnnouncement(params.id, viewer.schoolId);
+    const existing = await getAnnouncement(id, viewer.schoolId);
     if (!existing) return jsonError(404, "NOT_FOUND", "Объявление не найдено");
 
     let payload: unknown;
@@ -45,7 +46,7 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
 
     // Для частичного обновления берём только переданные поля.
     const raw = payload as Record<string, unknown>;
-    const announcement = await updateAnnouncement(params.id, viewer.schoolId, {
+    const announcement = await updateAnnouncement(id, viewer.schoolId, {
       ...(raw.title !== undefined ? { title: validation.data.title } : {}),
       ...(raw.content !== undefined ? { content: validation.data.content } : {}),
       ...(raw.targetGrade !== undefined ? { targetGrade: validation.data.targetGrade } : {}),
@@ -72,14 +73,15 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
 
 /** DELETE /api/admin/announcements/[id] — удалить объявление своей школы. */
 export async function DELETE(request: Request, { params }: RouteContext): Promise<NextResponse> {
+  const { id } = await params;
   try {
     const viewer = await requireAdminViewer();
     requireCapability(viewer, "announcements.manage");
 
-    const existing = await getAnnouncement(params.id, viewer.schoolId);
+    const existing = await getAnnouncement(id, viewer.schoolId);
     if (!existing) return jsonError(404, "NOT_FOUND", "Объявление не найдено");
 
-    const deleted = await deleteAnnouncement(params.id, viewer.schoolId);
+    const deleted = await deleteAnnouncement(id, viewer.schoolId);
     if (!deleted) return jsonError(404, "NOT_FOUND", "Объявление не найдено");
 
     void writeAuditLog({

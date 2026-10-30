@@ -21,9 +21,26 @@ import { randomCodeSuffix } from "@/lib/lesson-code";
 /** Как долго живёт разовый допуск по коду класса (час — хватит на урок). */
 export const CLASS_CODE_GRANT_TTL_MS = 60 * 60 * 1000;
 
-/** Секрет подписи: общий с NextAuth, отдельный фолбэк только для dev. */
+/**
+ * Секрет подписи допуска — общий с NextAuth.
+ *
+ * В production фолбэка нет: без `NEXTAUTH_SECRET` приложение и так не
+ * запустится, но молчаливая подпись общеизвестной строкой сделала бы допуск
+ * подделываемым. Поэтому здесь fail-closed — исключение вместо тихой деградации.
+ * Захардкоженное значение остаётся только для разработки и тестов, где секрет
+ * NextAuth не нужен.
+ */
 export function classCodeGrantSecret(): string {
-  return process.env.NEXTAUTH_SECRET || "schoolmeet-class-code-dev-secret";
+  const secret = (process.env.NEXTAUTH_SECRET ?? "").trim();
+  if (secret) return secret;
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXTAUTH_SECRET не задан: подписать допуск по коду класса нечем (fail-closed)",
+    );
+  }
+
+  return "schoolmeet-class-code-dev-secret";
 }
 
 /** Кириллица → латиница для кода класса («5-Б» → «5B»). */

@@ -16,7 +16,8 @@ export const dynamic = "force-dynamic";
  *  2. фактический `file.size` — после разбора, для честных клиентов и
  *     chunked-запросов без заголовка.
  */
-export async function POST(request: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const { id } = await params;
   try {
     const viewer = await requireViewer();
     requireRole(viewer, ["STUDENT"], "Прикреплять файлы могут только ученики");
@@ -44,7 +45,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const attachment = await attachFileToDraft(params.id, { fileName: file.name, bytes }, viewer);
+    const attachment = await attachFileToDraft(id, { fileName: file.name, bytes }, viewer);
     return jsonOk({ attachment }, 201);
   } catch (error) {
     return handleRouteError(error, "api/homework/files POST");

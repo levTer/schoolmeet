@@ -10,7 +10,7 @@ import { requireAdminViewer } from "@/lib/session-viewer";
 export const dynamic = "force-dynamic";
 
 interface RouteContext {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 /**
@@ -23,11 +23,12 @@ interface RouteContext {
  * Администратор может завершить любой урок, учитель — только свой.
  */
 export async function POST(request: Request, { params }: RouteContext): Promise<NextResponse> {
+  const { id } = await params;
   try {
     const viewer = await requireAdminViewer();
 
     const meeting = await prisma.meeting.findFirst({
-      where: { id: params.id, schoolId: viewer.schoolId },
+      where: { id, schoolId: viewer.schoolId },
       select: { id: true, title: true, meetingCode: true, hostId: true, schoolId: true },
     });
     if (!meeting || !viewer.schoolId || meeting.schoolId !== viewer.schoolId) {

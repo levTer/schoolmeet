@@ -41,7 +41,7 @@ const HIGHLIGHTS: readonly AuthHighlight[] = [
 ];
 
 interface RegisterPageProps {
-  searchParams?: { code?: string; invite?: string };
+  searchParams: Promise<{ code?: string; invite?: string }>;
 }
 
 /**
@@ -56,8 +56,9 @@ interface RegisterPageProps {
 export default async function RegisterPage({ searchParams }: RegisterPageProps) {
   const session = await getServerSession(authOptions);
 
-  const code = typeof searchParams?.code === "string" ? searchParams.code : "";
-  const invite = normalizeInviteToken(searchParams?.invite);
+  const { code: rawCode, invite: rawInvite } = await searchParams;
+  const code = typeof rawCode === "string" ? rawCode : "";
+  const invite = normalizeInviteToken(rawInvite);
 
   let inviteRole: InviteRole | null = null;
   let schoolCode = code.trim();

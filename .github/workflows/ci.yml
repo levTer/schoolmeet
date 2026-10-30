@@ -50,6 +50,11 @@ jobs:
       - name: Prisma client
         run: npx prisma generate
 
+      - name: Lint
+        # `next build` больше не запускает ESLint (в Next.js 16 `next lint`
+        # удалён), поэтому ошибки линта проверяются отдельным шагом.
+        run: npm run lint
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -59,12 +64,11 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Audit production dependencies
-        # Пока не блокирует: критический advisory Next.js 14 закрывается
-        # мажорным обновлением фреймворка (см. docs/security-hardening.md).
-        # После обновления шаг станет обязательным (`continue-on-error` убрать).
-        continue-on-error: true
-        run: npm audit --omit=dev --audit-level=high
+      - name: Audit dependencies
+        # Блокирующий шаг: проверяются и prod-, и dev-дерево. Desktop-сборка
+        # упаковывает Electron, поэтому dev-зависимости здесь не менее важны.
+        # Исключений нет — на момент обновления аудит чистый.
+        run: npm audit --audit-level=high
 
       - name: Secret scan (пароли и invite-токены в исходниках)
         # Сканируем приложение и публичные документы. Тесты используют эти

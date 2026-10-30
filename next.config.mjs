@@ -22,7 +22,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   compress: true,
-  swcMinify: true,
   // Заголовок X-Powered-By раскрывает версию фреймворка.
   poweredByHeader: false,
 

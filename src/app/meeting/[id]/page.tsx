@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 interface MeetingRoomPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 /**
@@ -28,22 +28,23 @@ interface MeetingRoomPageProps {
  * идёт в клиентском компоненте MeetingRoom.
  */
 export default async function MeetingRoomPage({ params }: MeetingRoomPageProps) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    redirect(`/login?callbackUrl=${encodeURIComponent(`/meeting/${params.id}`)}`);
+    redirect(`/login?callbackUrl=${encodeURIComponent(`/meeting/${id}`)}`);
   }
 
-  if (!isValidRoomCode(params.id)) {
+  if (!isValidRoomCode(id)) {
     notFound();
   }
 
   // Роль, школа и класс зрителя — только из БД: JWT мог быть выпущен до смены
   // класса или роли, а доступ к уроку зависит от класса расписания (H-02).
   const viewer = await getSchoolViewer(session.user.id);
-  if (!viewer) redirect("/login?callbackUrl=" + encodeURIComponent(`/meeting/${params.id}`));
+  if (!viewer) redirect("/login?callbackUrl=" + encodeURIComponent(`/meeting/${id}`));
 
-  const meeting = await findMeetingByCode(params.id);
+  const meeting = await findMeetingByCode(id);
   const decision = meeting
     ? checkMeetingAccess(meeting, {
         id: viewer.id,
@@ -55,7 +56,7 @@ export default async function MeetingRoomPage({ params }: MeetingRoomPageProps) 
 
   // Чужой урок (другая школа) не подтверждаем — показываем «не найден».
   if (!meeting || !decision || (!decision.ok && decision.code === "SCHOOL_MISMATCH")) {
-    return <MeetingNotFound code={params.id} />;
+    return <MeetingNotFound code={id} />;
   }
 
   // Урок другого класса (строгая школа): ученик может войти по КОДУ КЛАССА —
@@ -79,7 +80,7 @@ export default async function MeetingRoomPage({ params }: MeetingRoomPageProps) 
   // Урок другого класса в гибкой школе или иной отказ: ученик не допускается,
   // даже если код комнаты известен.
   if (decision.ok === false) {
-    return <MeetingForbidden code={params.id} message={decision.message} />;
+    return <MeetingForbidden code={id} message={decision.message} />;
   }
 
   return (

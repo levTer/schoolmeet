@@ -21,8 +21,9 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(
   request: Request,
-  { params }: { params: { code: string } },
+  { params }: { params: Promise<{ code: string }> },
 ): Promise<NextResponse> {
+  const { code } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return NextResponse.json(
@@ -31,7 +32,7 @@ export async function GET(
     );
   }
 
-  if (!isValidRoomCode(params.code)) {
+  if (!isValidRoomCode(code)) {
     return NextResponse.json(
       { ok: false, error: "Некорректный код урока", code: "BAD_ROOM" },
       { status: 400 },
@@ -54,7 +55,7 @@ export async function GET(
     // не пропустит (fail-closed).
     const classCodeGrant = new URL(request.url).searchParams.get("grant");
 
-    const meeting = await findMeetingByCode(params.code);
+    const meeting = await findMeetingByCode(code);
     const decision = meeting
       ? checkMeetingAccess(
           meeting,

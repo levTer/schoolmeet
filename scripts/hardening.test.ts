@@ -38,6 +38,7 @@ import {
   trustProxyHeaders,
 } from "../src/lib/rate-limit";
 import { generateBootstrapPassword, GUARANTEED_ADMINS } from "../src/lib/school-config";
+import { classCodeGrantSecret } from "../src/lib/class-code";
 import { getPasswordIssues } from "../src/lib/validation";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -372,12 +373,64 @@ describe("CI проверяет веб-приложение", () => {
     assert.match(ci, /branches: \[main\]/);
   });
 
-  it("выполняет типы, тесты и сборку", () => {
+  it("выполняет линт, типы, тесты и сборку", () => {
     assert.match(ci, /npm ci/);
     assert.match(ci, /prisma generate/, "без генерации клиента типы не проверяются");
+    assert.match(ci, /npm run lint/, "нет проверки линта (next build его больше не запускает)");
     assert.match(ci, /tsc --noEmit/, "нет проверки типов");
     assert.match(ci, /npm test/, "тесты не запускаются");
     assert.match(ci, /npm run build/, "сборка не проверяется");
-    assert.match(ci, /npm audit/, "нет аудита зависимостей");
+    assert.match(ci, /npm audit --audit-level=high/, "аудит зависимостей не блокирует сборку");
+  });
+
+  it("не содержит послаблений: упавший шаг валит пайплайн", () => {
+    // `continue-on-error` превращает проверку в декорацию: падение видно, но
+    // мерж не блокируется. Такой шаг здесь недопустим.
+    assert.ok(!/continue-on-error/.test(ci), "в ci.yml есть continue-on-error");
+    for (const workflow of ["android-build.yml", "android-smoke.yml", "build-mac-dmg.yml",
+      "build-windows-installer.yml"]) {
+      const source = readSource(`.github/workflows/${workflow}`);
+      assert.ok(!/continue-on-error/.test(source), `${workflow}: continue-on-error скрывает падение`);
+    }
+  });
+});
+
+describe("допуск по коду класса: секрет не имеет боевого фолбэка", () => {
+  const original = { secret: process.env.NEXTAUTH_SECRET, env: process.env.NODE_ENV };
+
+  function restore() {
+    if (original.secret === undefined) delete process.env.NEXTAUTH_SECRET;
+    else process.env.NEXTAUTH_SECRET = original.secret;
+    process.env.NODE_ENV = original.env;
+  }
+
+  it("в production без NEXTAUTH_SECRET бросает, а не подписывает известной строкой", () => {
+    try {
+      delete process.env.NEXTAUTH_SECRET;
+      process.env.NODE_ENV = "production";
+      assert.throws(() => classCodeGrantSecret(), /NEXTAUTH_SECRET/);
+    } finally {
+      restore();
+    }
+  });
+
+  it("в production использует NEXTAUTH_SECRET", () => {
+    try {
+      process.env.NEXTAUTH_SECRET = "server-secret";
+      process.env.NODE_ENV = "production";
+      assert.equal(classCodeGrantSecret(), "server-secret");
+    } finally {
+      restore();
+    }
+  });
+
+  it("вне production допускает dev-секрет, чтобы тесты работали без окружения", () => {
+    try {
+      delete process.env.NEXTAUTH_SECRET;
+      process.env.NODE_ENV = "development";
+      assert.equal(classCodeGrantSecret(), "schoolmeet-class-code-dev-secret");
+    } finally {
+      restore();
+    }
   });
 });

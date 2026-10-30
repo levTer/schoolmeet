@@ -139,7 +139,7 @@ Gemini Vision — основной провайдер распознавания
 1. Откройте **[vercel.com](https://vercel.com)** → **Sign Up** → войдите через **GitHub** (план **Hobby** — бесплатно навсегда).
 2. **Add New… → Project** → найдите в списке ваш форк `schoolmeet` → **Import**.
    (Если репозитория нет в списке — **Adjust GitHub App Permissions** и разрешите Vercel доступ к нему.)
-3. Vercel сам определит Next.js 14 и подхватит **[vercel.json](vercel.json)**:
+3. Vercel сам определит Next.js 16 и подхватит **[vercel.json](vercel.json)**:
    - `framework: nextjs`, сборка `prisma generate && next build`;
    - регион функции — **Франкфурт (fra1)**: минимальная задержка до РФ и ближний к Neon/Supabase.
 

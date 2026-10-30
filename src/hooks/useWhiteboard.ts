@@ -1307,7 +1307,6 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
       }
     }, 2000);
     return () => window.clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursors.length]);
 
   // Мягкое обновление списка курсоров — не чаще 10 раз в секунду.

@@ -10,8 +10,9 @@ export const dynamic = "force-dynamic";
 /** Delete a class only when it has no students, lessons, or homework. */
 export async function DELETE(
   _request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  const { id } = await params;
   try {
     const viewer = await requireAdminViewer();
     if (!viewer.schoolId) throw notFound("Школа не найдена");
@@ -19,7 +20,7 @@ export async function DELETE(
     await prisma.$transaction(
       async (tx) => {
         const schoolClass = await tx.class.findFirst({
-          where: { id: params.id, schoolId: viewer.schoolId },
+          where: { id, schoolId: viewer.schoolId },
           select: {
             id: true,
             _count: { select: { users: true, lessons: true, homeworks: true } },

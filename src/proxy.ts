@@ -23,8 +23,9 @@ import type { Role } from "@/types";
  *      получает 403 `ACCOUNT_BANNED` (API); исключение — `/api/auth/*`, чтобы
  *      человек мог выйти из аккаунта.
  *
- * Роль читается из подписанного JWT-cookie, поэтому БД не нужна и middleware
- * остаётся лёгким (edge-рантайм). Актуальность роли и блокировки обеспечивают
+ * Роль читается из подписанного JWT-cookie, поэтому БД не нужна и пограничный
+ * слой остаётся лёгким. В Next.js 16 файл называется `proxy.ts` и выполняется
+ * на Node.js-рантайме (edge-рантайм для него удалён). Актуальность роли и блокировки обеспечивают
  * `jwt`-callback NextAuth и проверки в API/страницах.
  */
 
@@ -92,7 +93,7 @@ function rateLimitedResponse(retryAfterSeconds: number, isApi: boolean): NextRes
  */
 let warnedAboutProxyTrust = false;
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isApi = pathname.startsWith("/api");
   const isGuestEntry = pathname === "/" || pathname === "/login";
@@ -101,7 +102,7 @@ export async function middleware(request: NextRequest) {
   if (!warnedAboutProxyTrust && !trustProxyHeaders() && request.headers.get("x-forwarded-for")) {
     warnedAboutProxyTrust = true;
     console.warn(
-      "[middleware] X-Forwarded-For не учитывается: задайте TRUST_PROXY_HEADERS=true, " +
+      "[proxy] X-Forwarded-For не учитывается: задайте TRUST_PROXY_HEADERS=true, " +
         "если приложение стоит за своим прокси. Иначе все клиенты делят одну квоту rate-limit.",
     );
   }

@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { encode } from "next-auth/jwt";
 import { NextRequest } from "next/server";
 
-import { middleware } from "../src/middleware";
+import { proxy } from "../src/proxy";
 
 process.env.NEXTAUTH_SECRET = "landing-redirect-test-secret";
 
@@ -17,7 +17,7 @@ async function request(path: string, role?: string, banned = false) {
     });
     headers.set("cookie", `next-auth.session-token=${jwt}`);
   }
-  return middleware(new NextRequest(`http://localhost:3000${path}`, { headers }));
+  return proxy(new NextRequest(`http://localhost:3000${path}`, { headers }));
 }
 
 describe("гостевой экран и строгий редирект", () => {

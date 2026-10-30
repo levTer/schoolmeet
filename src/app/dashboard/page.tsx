@@ -57,8 +57,9 @@ const ROLE_BADGES: Record<Role, string> = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: { denied?: string };
+  searchParams: Promise<{ denied?: string }>;
 }) {
+  const { denied } = await searchParams;
   /* Сессию читаем в изолированном блоке: callback `jwt` тоже ходит в БД и при
      задержке Neon может бросить исключение. Кабинет из-за этого падать не должен. */
   let session: Session | null = null;
@@ -191,7 +192,7 @@ export default async function DashboardPage({
           </span>
         </header>
 
-        {searchParams.denied ? <AdminDeniedNotice denied={searchParams.denied} /> : null}
+        {denied ? <AdminDeniedNotice denied={denied} /> : null}
 
         {data.degraded ? (
           <p className="flex items-center gap-1.5 rounded-lg border border-amber-400/20 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-100">
@@ -285,7 +286,7 @@ export default async function DashboardPage({
           <AnnouncementBanner announcements={announcements} />
         </div>
 
-        {searchParams.denied ? <AdminDeniedNotice denied={searchParams.denied} /> : null}
+        {denied ? <AdminDeniedNotice denied={denied} /> : null}
 
         {data.degraded ? (
           <div className="flex items-start gap-2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2">

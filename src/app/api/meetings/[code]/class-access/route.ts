@@ -36,7 +36,8 @@ export const dynamic = "force-dynamic";
  * Учителя и администраторы (включая тестовых `admin@schoolmeet.ru` /
  * `fullhouse@schoolmeet.ru`) в этот путь не заходят: они проходят на шаге 3.
  */
-export async function POST(request: Request, { params }: { params: { code: string } }): Promise<NextResponse> {
+export async function POST(request: Request, { params }: { params: Promise<{ code: string }> }): Promise<NextResponse> {
+  const { code } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return NextResponse.json(
@@ -45,7 +46,7 @@ export async function POST(request: Request, { params }: { params: { code: strin
     );
   }
 
-  if (!isValidRoomCode(params.code)) {
+  if (!isValidRoomCode(code)) {
     return NextResponse.json(
       { ok: false, error: "Некорректный код урока", code: "BAD_ROOM" },
       { status: 400 },
@@ -62,7 +63,7 @@ export async function POST(request: Request, { params }: { params: { code: strin
       );
     }
 
-    const meeting = await findMeetingByCode(params.code);
+    const meeting = await findMeetingByCode(code);
     if (!meeting) {
       return NextResponse.json(
         { ok: false, error: "Урок с таким кодом не найден", code: "NOT_FOUND" },
