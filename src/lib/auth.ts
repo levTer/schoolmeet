@@ -249,8 +249,9 @@ export const authOptions: NextAuthOptions = {
           }
 
           // Вход в журнал аудита. Best-effort: запись не должна блокировать вход,
-          // а `writeAuditLog` сам глотает ошибки.
-          if (shouldWriteLoginAudit(user.id)) {
+          // а `writeAuditLog` сам глотает ошибки. Журнал тенант-скоупный, поэтому
+          // пишем только когда школа известна (у legacy-аккаунта её может не быть).
+          if (schoolId && shouldWriteLoginAudit(user.id)) {
             await writeAuditLog({
               userId: user.id,
               schoolId,
