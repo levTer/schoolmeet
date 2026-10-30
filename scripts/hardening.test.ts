@@ -383,6 +383,12 @@ describe("CI проверяет веб-приложение", () => {
     assert.match(ci, /npm audit --audit-level=high/, "аудит зависимостей не блокирует сборку");
   });
 
+  it("поднимает сервер и проверяет ответы (runtime smoke)", () => {
+    assert.match(ci, /npm run start/, "сборка не проверяется в реальном запуске");
+    assert.match(ci, /localhost:3000\/login/, "smoke не открывает страницу входа");
+    assert.match(ci, /content-security-policy/, "smoke не проверяет security-заголовки");
+  });
+
   it("не содержит послаблений: упавший шаг валит пайплайн", () => {
     // `continue-on-error` превращает проверку в декорацию: падение видно, но
     // мерж не блокируется. Такой шаг здесь недопустим.
@@ -392,6 +398,27 @@ describe("CI проверяет веб-приложение", () => {
       const source = readSource(`.github/workflows/${workflow}`);
       assert.ok(!/continue-on-error/.test(source), `${workflow}: continue-on-error скрывает падение`);
     }
+  });
+});
+
+describe("кастомный сервер готовит Node-рантайм до Next.js", () => {
+  const server = readSource("server.ts");
+
+  it("полифилл AsyncLocalStorage импортируется раньше next", () => {
+    // Next.js 16 берёт globalThis.AsyncLocalStorage, который в CLI выставляет
+    // сам Next. Без полифилла кастомный сервер падает на первом рендере
+    // («AsyncLocalStorage accessed in runtime where it is not available»).
+    const polyfill = server.indexOf("./src/server/node-runtime");
+    const nextImport = server.indexOf('from "next"');
+    assert.ok(polyfill > -1, "нет импорта node-runtime");
+    assert.ok(nextImport > -1, "next больше не импортируется");
+    assert.ok(polyfill < nextImport, "node-runtime должен импортироваться до next");
+  });
+
+  it("полифилл не перетирает уже существующий AsyncLocalStorage", () => {
+    const runtime = readSource("src/server/node-runtime.ts");
+    assert.match(runtime, /typeof runtime\.AsyncLocalStorage !== "function"/);
+    assert.match(runtime, /from "node:async_hooks"/);
   });
 });
 

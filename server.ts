@@ -9,6 +9,10 @@
  */
 import { createServer } from "node:http";
 
+// Обязательно до `next`: выставляет globalThis.AsyncLocalStorage, без которого
+// Next.js 16 в кастомном сервере не рендерит ни одной страницы.
+import "./src/server/node-runtime";
+
 import next from "next";
 
 import { attachRealtime } from "./src/server/realtime";

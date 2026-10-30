@@ -64,6 +64,38 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Runtime smoke (сервер поднимается и отвечает)
+        # Сборка может пройти, а рантайм — упасть (например, Next 16 без
+        # globalThis.AsyncLocalStorage в кастомном сервере). Проверяем реальный
+        # запуск: страница входа и лендинг отвечают 200, БД для этого не нужна.
+        run: |
+          set -euo pipefail
+          npm run start > /tmp/server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill ${SERVER_PID} 2>/dev/null || true' EXIT
+
+          ready=0
+          for _ in $(seq 1 40); do
+            if curl -fsS -o /dev/null http://localhost:3000/login; then ready=1; break; fi
+            if ! kill -0 ${SERVER_PID} 2>/dev/null; then
+              echo "::error::Сервер завершился при старте"; cat /tmp/server.log; exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Сервер не ответил за 40 секунд"; cat /tmp/server.log; exit 1
+          fi
+
+          curl -fsS -o /dev/null http://localhost:3000/
+          # Заголовки безопасности и отсутствие утечки версии фреймворка.
+          headers=$(curl -sS -D - -o /dev/null http://localhost:3000/login)
+          grep -qi "content-security-policy" <<<"$headers"
+          grep -qi "x-frame-options: DENY" <<<"$headers"
+          if grep -qi "x-powered-by" <<<"$headers"; then
+            echo "::error::Утечка X-Powered-By"; exit 1
+          fi
+
       - name: Audit dependencies
         # Блокирующий шаг: проверяются и prod-, и dev-дерево. Desktop-сборка
         # упаковывает Electron, поэтому dev-зависимости здесь не менее важны.
