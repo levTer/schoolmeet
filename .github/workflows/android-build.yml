@@ -121,6 +121,22 @@ jobs:
           set -euo pipefail
           python3 scripts/android-apk.test.py
 
+      # Размер и хеш собранного APK — в сводку запуска: по ним видно, что
+      # пересборка действительно произошла и какой файл уедет в public/.
+      - name: Сводка собранного APK
+        if: steps.signing.outputs.has_key == 'true'
+        run: |
+          set -euo pipefail
+          size=$(stat -c%s public/eduflow.apk)
+          sha=$(sha256sum public/eduflow.apk | cut -d' ' -f1)
+          {
+            echo "### EduFlow APK"
+            echo
+            echo "- Размер: ${size} байт"
+            echo "- SHA-256: \`${sha}\`"
+            echo "- Сертификат: \`$(cat android/release-certificate.sha256)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload Release APK artifact
         if: steps.signing.outputs.has_key == 'true'
         uses: actions/upload-artifact@v4
