@@ -130,6 +130,18 @@ model User {
   /// JWT хранит версию на момент выпуска, и расхождение с БД аннулирует сессию
   /// (см. `src/lib/auth-token.ts`), — так смена пароля отзывает все токены.
   sessionVersion Int    @default(0)
+
+  /// Секрет TOTP в зашифрованном виде (AES-256-GCM, ключ из NEXTAUTH_SECRET).
+  /// Хранится и во время настройки: включённой 2FA считается только при
+  /// заполненном `twoFactorEnabledAt`.
+  twoFactorSecret      String?
+  /// Момент включения второго фактора. null — 2FA выключена.
+  twoFactorEnabledAt   DateTime?
+  /// SHA-256 хеши резервных кодов: каждый работает ровно один раз.
+  twoFactorBackupCodes String[] @default([])
+  /// Последний принятый шаг TOTP — защита от повторного использования кода
+  /// в пределах окна ±30 секунд.
+  twoFactorLastStep    Int?
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 

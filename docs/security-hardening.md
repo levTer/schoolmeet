@@ -181,26 +181,20 @@ presigned PUT (браузер грузит напрямую) + presigned GET в 
 `/api/homework/[id]/files/[fileId]`. Пока `FILES_PERSISTENT` не задан, Vercel
 честно отвечает ошибкой вместо тихой потери файла.
 
-### 2.5. Миграции БД
+### 2.5. Миграции БД — сделано
 
-Сейчас схема накатывается `prisma db push` — истории и отката нет. Порядок
-перехода (нужен доступ к БД разработчика):
+`prisma/migrations` содержит baseline-миграцию всей схемы и data-миграцию
+backfill аудита; `db:deploy` = `prisma migrate deploy`, CI поднимает Postgres,
+применяет историю и падает, если `schema.prisma` разошёлся с миграциями
+(`prisma migrate diff --exit-code`).
+
+База, созданная до появления истории (через `db push`), требует однократного
+baseline-шага — дальше только миграции:
 
 ```bash
-# 1. Снять baseline с текущей схемы
-npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma \
-  --script > prisma/migrations/0001_baseline/migration.sql
-
-# 2. Пометить baseline применённым на существующих базах
-npx prisma migrate resolve --applied 0001_baseline
-
-# 3. Дальше — только migrate deploy в деплое
-npx prisma migrate deploy
+npx prisma migrate resolve --applied 20261030120000_init
+npm run db:deploy   # применит оставшиеся миграции
 ```
-
-`db:push` оставить только для локальной песочницы: в репозитории теперь есть
-полная история миграций (`prisma/migrations`), а CI применяет её к чистому
-Postgres и падает, если `schema.prisma` разошёлся с миграциями.
 
 ### 2.6. Артефакты в git (96 МБ `.exe`)
 

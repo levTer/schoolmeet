@@ -272,6 +272,16 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                       </Link>
                     ))}
 
+                    <Link
+                      style={NO_DRAG_STYLE}
+                      href="/account/security"
+                      role="menuitem"
+                      className="flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-slate-300 transition hover:bg-white/[0.05] hover:text-white"
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Безопасность
+                    </Link>
+
                     <button
                       style={NO_DRAG_STYLE}
                       type="button"
@@ -347,6 +357,16 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                       <LayoutDashboard className="h-4 w-4" />
                       Профиль
                     </Link>
+                    <Link
+                      style={NO_DRAG_STYLE}
+                      href="/account/security"
+                      role="menuitem"
+                      className="flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-slate-300 transition hover:bg-white/[0.05] hover:text-white"
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Безопасность
+                    </Link>
+
                     <button
                       style={NO_DRAG_STYLE}
                       type="button"

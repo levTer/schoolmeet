@@ -13,6 +13,7 @@ import {
   type SessionToken,
 } from "@/lib/auth-token";
 import { writeAuditLog } from "@/lib/audit";
+import { isTwoFactorEnabled, verifySecondFactor } from "@/lib/two-factor";
 import { loginLockStatus, registerLoginFailure, resetLoginFailures } from "@/lib/login-guard";
 import { prisma } from "@/lib/prisma";
 import { GUARANTEED_ADMINS, demoAdminSeedDisabled } from "@/lib/school-config";
@@ -164,6 +165,9 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "email", placeholder: "ivan@school.ru" },
         password: { label: "Пароль", type: "password" },
+        // Второй фактор (TOTP или резервный код). Обязателен, если у аккаунта
+        // включена 2FA; для остальных аккаунтов поле просто игнорируется.
+        twoFactorCode: { label: "Код подтверждения", type: "text" },
       },
 
       /**
@@ -232,7 +236,26 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
-          // Успешный вход сбрасывает счётчик провалов.
+          /*
+           * Второй фактор: пароль уже верен, но при включённой 2FA сессии ещё
+           * нет. Неверный/отсутствующий код считается неудачной попыткой входа
+           * (тот же счётчик и та же блокировка, что и для пароля), иначе
+           * шестизначный код можно было бы перебирать без ограничений.
+           */
+          if (isTwoFactorEnabled(user)) {
+            const rawCode = typeof credentials.twoFactorCode === "string" ? credentials.twoFactorCode : "";
+            const secondFactor = await verifySecondFactor(user, rawCode);
+            if (!secondFactor.ok) {
+              const status = registerLoginFailure(cleanEmail);
+              console.warn(
+                `[AUTH_FAIL] TWO_FACTOR_${secondFactor.reason} failures=${status.failures}${status.locked ? ` locked_for=${status.retryAfterSeconds}s` : ""}`,
+              );
+              return null;
+            }
+            console.warn(`[AUTH_2FA] method=${secondFactor.method}`);
+          }
+
+          // Успешный вход (оба фактора) сбрасывает счётчик провалов.
           resetLoginFailures(cleanEmail);
           console.warn(`[AUTH_SUCCESS] role=${user.role}`);
 
