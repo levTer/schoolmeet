@@ -15,7 +15,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -74,7 +73,6 @@ jobs:
         run: npx prisma migrate deploy
 
       - name: Schema matches migrations
-        id: schemadiff
         # Любое изменение `schema.prisma` без миграции валит CI: иначе прод
         # и репозиторий незаметно расходятся.
         run: |
@@ -82,17 +80,7 @@ jobs:
             --from-migrations prisma/migrations \
             --to-schema-datamodel prisma/schema.prisma \
             --shadow-database-url "postgresql://postgres:postgres@localhost:5432/postgres" \
-            --exit-code 2>&1 | tee /tmp/diff.log; exit ${PIPESTATUS[0]}
-
-      - name: TMP report diff
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            let log = '';
-            try { log = fs.readFileSync('/tmp/diff.log', 'utf8'); } catch (e) { log = 'no log: ' + e.message; }
-            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body: 'DIFF-LOG\n```\n' + log.slice(-3000) + '\n```' });
+            --exit-code
 
       - name: Lint
         # `next build` больше не запускает ESLint (в Next.js 16 `next lint`
