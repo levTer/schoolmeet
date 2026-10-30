@@ -67,12 +67,20 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const log = fs.readFileSync('test.log', 'utf8');
-            const tail = log.split('\n').slice(-120).join('\n');
+            const lines = fs.readFileSync('test.log', 'utf8').split('\n');
+            const scripts = lines.filter((l) => l.includes('> eduflow@'));
+            const failedIndex = lines.findIndex((l) => /^not ok \d+ - /.test(l) && !/^not ok \d+ - /.test(lines[lines.indexOf(l) - 1] ?? ''));
+            const notOk = lines.map((l, i) => [l, i]).filter(([l]) => /not ok/.test(l) || /AssertionError/.test(l)).slice(0, 12);
+            const context = failedIndex >= 0 ? lines.slice(Math.max(0, failedIndex - 5), failedIndex + 40).join('\n') : lines.slice(-60).join('\n');
+            const body = [
+              '### test failures',
+              '**scripts run:**', '```', ...scripts.slice(-6), '```',
+              '**not ok / assertions:**', '```', ...notOk.map(([l]) => l), '```',
+              '**context:**', '```', context.slice(0, 40000), '```',
+            ].join('\n');
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: '### test failures\n```\n' + tail.slice(0, 60000) + '\n```',
+              issue_number: context.issue.number, body: body.slice(0, 60000),
             });
 
       - name: Fail on test errors
