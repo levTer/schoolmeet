@@ -1,7 +1,7 @@
 import { getToken } from "next-auth/jwt";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { checkPathRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
+import { checkPathRateLimit, rateLimitHeaders, trustProxyHeaders } from "@/lib/rate-limit";
 import type { Role } from "@/types";
 
 /**
@@ -85,12 +85,27 @@ function rateLimitedResponse(retryAfterSeconds: number, isApi: boolean): NextRes
   );
 }
 
+/**
+ * Предупреждение о ненастроенном доверии прокси. Логируем один раз на isolate:
+ * иначе один неверный деплой за своим nginx молча получит общую квоту на всех
+ * пользователей школы, и разбираться придётся по 429 в проде.
+ */
+let warnedAboutProxyTrust = false;
+
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isApi = pathname.startsWith("/api");
   const isGuestEntry = pathname === "/" || pathname === "/login";
 
   /* 1. Rate-limit: общий лимит + строгие правила для /api/auth и /api/admin. */
+  if (!warnedAboutProxyTrust && !trustProxyHeaders() && request.headers.get("x-forwarded-for")) {
+    warnedAboutProxyTrust = true;
+    console.warn(
+      "[middleware] X-Forwarded-For не учитывается: задайте TRUST_PROXY_HEADERS=true, " +
+        "если приложение стоит за своим прокси. Иначе все клиенты делят одну квоту rate-limit.",
+    );
+  }
+
   const { checks, blocked } = checkPathRateLimit(pathname, request.headers);
 
   const limitHeaders = checks.reduce<Record<string, string>>((acc, check) => {

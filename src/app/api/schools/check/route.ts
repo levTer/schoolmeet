@@ -2,13 +2,10 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
+import { checkRequestRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import { configuredStrictClassIsolation, isSingleClassSchool } from "@/lib/school-config";
 import { normalizeInviteToken, resolveInviteRole, type InviteRole } from "@/lib/invite-rules";
-import {
-  hasInviteTokenChanges,
-  inviteTokensForNewSchool,
-  provisioningInviteData,
-} from "@/lib/invite-tokens";
+import { inviteTokensForNewSchool } from "@/lib/invite-tokens";
 import { canonicalSchoolCode, normalizeSchoolCode } from "@/lib/school-rules";
 import { ensureSchoolClasses, listClassesForSchool } from "@/lib/schools";
 
@@ -105,33 +102,37 @@ async function findOrCreateSchool(rawCode: string) {
     }
   }
 
-  // Для разрешённого кода всегда досеиваем стандартный набор 5-А … 11-Б и
-  // выпускаем токены, которых в строке нет (колонки nullable).
-  //
-  // C-01: предустановленный admin-токен к фиксированному значению больше НЕ
-  // возвращается — этот endpoint публичный (без сессии), и раньше любой
-  // запрос с кодом школы откатывал ротированный секрет к известному из
-  // репозитория значению. Досыпаются только отсутствующие токены.
-  if (school && allowed) {
-    const schoolId = school.id;
-    const inviteData = provisioningInviteData({ ...school, code: allowed.code });
-    if (hasInviteTokenChanges(inviteData)) {
-      school = await prisma.school.update({
-        where: { id: schoolId },
-        data: inviteData,
-        select: SCHOOL_SELECT,
-      });
-    }
-    // Набор классов школы: «5-А … 11-Б» либо единственный «Общий».
-    // Для одноклассной школы старые параллели перепривязываются и удаляются,
-    // поэтому регистрация видит ровно один класс.
-    await ensureSchoolClasses(prisma, { schoolId, code: allowed.code });
-  }
+  /*
+    C-01/C-02 (ужесточение): публичная проверка кода школы больше НЕ ПИШЕТ в
+    существующую школу. Раньше здесь досыпались invite-токены и
+    синхронизировался набор классов — то есть неавторизованный запрос менял
+    состояние тенанта. Теперь:
+      - токены и классы готовит startup-provisioning (`provisionConfiguredSchools`)
+        и `findSchoolByCode` при регистрации;
+      - endpoint только читает и возвращает публичные поля школы.
+    Создание допускается лишь для ТРЁХ настроенных школ (ALLOWED_SCHOOLS) и
+    только если их действительно нет: это делает первый запуск на пустой базе
+    самообслуживаемым, но не позволяет создавать произвольные тенанты.
+  */
 
   return school;
 }
 
 async function checkSchool(request: Request): Promise<NextResponse> {
+  /**
+   * Endpoint публичный и раньше умел писать в БД — поэтому получает
+   * собственный лимит в дополнение к общему лимиту middleware (20/мин на IP,
+   * отдельная корзина «schools-check»): иначе перебором кодов школ можно
+   * нагружать БД и провоцировать создание тенантов.
+   */
+  const limit = checkRequestRateLimit("auth", request.headers, "schools-check");
+  if (!limit.result.ok) {
+    return NextResponse.json(
+      { valid: false, ok: false, error: "Слишком много запросов", code: "RATE_LIMITED" },
+      { status: 429, headers: rateLimitHeaders(limit.result) },
+    );
+  }
+
   const { code: rawCode, invite: rawInvite } = await readCodeAndInvite(request);
   const code = rawCode.trim();
   if (!normalizeSchoolCode(code)) {

@@ -266,6 +266,25 @@ Email на регистрации и на входе приводится к о�
 
 ## Безопасность
 
+> Полный список мер и того, что осталось сделать (мажорное обновление Next.js,
+> nonce-CSP, Redis, объектное хранилище, миграции), — в
+> [`docs/security-hardening.md`](docs/security-hardening.md).
+
+- **В репозитории нет секретов**: ни паролей администраторов, ни invite-токенов.
+  Пароли bootstrap-админов — только из `SCHOOLMEET_BOOTSTRAP_ADMIN_PASSWORDS`
+  (без переменной выдаётся одноразовый случайный пароль, печатается в лог один
+  раз при создании), invite-токены — только из `SCHOOLMEET_ADMIN_INVITE_TOKENS`.
+  Рестарт не снимает бан, не возвращает роль и не перетирает пароль.
+- **Защита от подбора пароля**: 5 неудачных входов за 15 минут блокируют
+  аккаунт (блокировка удваивается при новых сериях). Пароли и email не пишутся
+  в логи; успешные входы — в `AuditLog` (`auth.login`, не чаще раза в час).
+- **Security-заголовки** (`next.config.mjs`): CSP (`frame-ancestors 'none'`,
+  `object-src 'none'`, `connect-src 'self' wss:`), HSTS на 2 года,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` (камера и
+  микрофон — только своему origin), `X-Content-Type-Options: nosniff`.
+- **Rate-limit нельзя обойти заголовком**: `X-Forwarded-For` принимается только
+  за доверенным прокси (`TRUST_PROXY_HEADERS=true` или известная платформа), иначе
+  в Node-контексте используется адрес сокета.
 - Пароли хранятся в виде bcrypt-хешей, поле `password` никогда не отдаётся клиенту (см. `SafeUser`).
 - Звонки и realtime доступны только с действующей сессией NextAuth: Socket.IO проверяет JWT-cookie
   при рукопожатии, а подключения с чужим `Origin` отклоняются.

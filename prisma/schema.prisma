@@ -288,6 +288,9 @@ model HomeworkSubmission {
   updatedAt DateTime @updatedAt
 
   @@unique([homeworkId, studentId])
+  /// Дашборд и «мои задания» фильтруют строго по ученику:
+  /// `where: { studentId, status }` — без этого индекса это seq scan.
+  @@index([studentId, status])
   @@index([status])
   @@map("homework_submissions")
 }

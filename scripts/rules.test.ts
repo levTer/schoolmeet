@@ -41,6 +41,7 @@ import {
   GUARANTEED_ADMINS,
   GUARANTEED_ADMIN,
   configuredAdminInviteToken,
+  generateBootstrapPassword,
 } from "../src/lib/school-config";
 import {
   inviteAllowsRole,
@@ -233,13 +234,13 @@ describe("нормализация email и пароли (вход/регист�
     assert.equal(await verifyPassword("", hash), false);
   });
 
-  it("гарантированные демо-админы покрывают все три школы", () => {
+  it("bootstrap-админы трёх школ не содержат паролей в репозитории", () => {
     assert.deepEqual(
-      GUARANTEED_ADMINS.map(({ email, password, schoolCode, role }) => ({ email, password, schoolCode, role })),
+      GUARANTEED_ADMINS.map(({ email, schoolCode, role }) => ({ email, schoolCode, role })),
       [
-        { email: "admin@schoolmeet.ru", password: "Admin123!", schoolCode: "Sinlycem26", role: "ADMIN" },
-        { email: "fullhouse@schoolmeet.ru", password: "Fullhouse123!", schoolCode: "Fulhouseteem26", role: "ADMIN" },
-        { email: "anna@schoolmeet.ru", password: "Anna123!", schoolCode: "Anna.Terentieva77", role: "ADMIN" },
+        { email: "admin@schoolmeet.ru", schoolCode: "Sinlycem26", role: "ADMIN" },
+        { email: "fullhouse@schoolmeet.ru", schoolCode: "Fulhouseteem26", role: "ADMIN" },
+        { email: "anna@schoolmeet.ru", schoolCode: "Anna.Terentieva77", role: "ADMIN" },
       ],
     );
 
@@ -247,12 +248,24 @@ describe("нормализация email и пароли (вход/регист�
       assert.equal(normalizeEmail(admin.email), admin.email);
       assert.equal(admin.role, "ADMIN");
       assert.ok(CONFIGURED_SCHOOLS.some((school) => school.code === admin.schoolCode));
-      assert.equal(getPasswordIssues(admin.password).length, 0);
+      // Пароль задаётся ТОЛЬКО окружением: без переменной его в объекте нет.
+      assert.equal("password" in admin, false, "пароль bootstrap-админа зашит в исходник");
     }
 
     // Основной экспорт сохраняется для потребителей, которым нужен первый админ.
     assert.deepEqual(GUARANTEED_ADMIN, GUARANTEED_ADMINS[0]);
     assert.equal(GUARANTEED_ADMIN.schoolCode, DEFAULT_SCHOOL.code);
+  });
+
+  it("одноразовый пароль bootstrap-админа проходит политику и не повторяется", () => {
+    const passwords = new Set<string>();
+    for (let index = 0; index < 20; index += 1) {
+      const password = generateBootstrapPassword();
+      assert.equal(getPasswordIssues(password).length, 0, `пароль не проходит политику: ${password}`);
+      assert.ok(password.length >= 16, "слишком короткий одноразовый пароль");
+      passwords.add(password);
+    }
+    assert.equal(passwords.size, 20, "генератор выдал повторяющиеся пароли");
   });
 });
 
@@ -286,16 +299,22 @@ describe("секретные ссылки-приглашения", () => {
     assert.equal(inviteAllowsRole("ADMIN", "ADMIN"), true);
   });
 
-  it("задаёт предустановленные admin-токены трёх школ", () => {
-    assert.deepEqual({ ...CONFIGURED_ADMIN_INVITE_TOKENS }, {
-      Sinlycem26: "admin-sinlycem-2026",
-      Fulhouseteem26: "admin-fulhouse-2026",
-      "Anna.Terentieva77": "admin-annat-2026",
-    });
-    assert.equal(configuredAdminInviteToken("Sinlycem26"), "admin-sinlycem-2026");
-    assert.equal(configuredAdminInviteToken("sinlycem26"), "admin-sinlycem-2026");
-    assert.equal(configuredAdminInviteToken("Anna.Terentieva77"), "admin-annat-2026");
+  it("не хранит предустановленных admin-токенов: только переменная окружения", () => {
+    // Карта литералов из репозитория удалена полностью (C-01).
+    assert.deepEqual({ ...CONFIGURED_ADMIN_INVITE_TOKENS }, {});
+    assert.equal(configuredAdminInviteToken("Sinlycem26"), undefined);
     assert.equal(configuredAdminInviteToken("UnknownSchool"), undefined);
+
+    // Значение приходит из окружения (читается при каждом вызове).
+    process.env.SCHOOLMEET_ADMIN_INVITE_TOKENS = JSON.stringify({ Sinlycem26: "rotated-token-from-env" });
+    try {
+      assert.equal(configuredAdminInviteToken("Sinlycem26"), "rotated-token-from-env");
+      assert.equal(configuredAdminInviteToken("sinlycem26"), "rotated-token-from-env");
+      assert.equal(configuredAdminInviteToken("Anna.Terentieva77"), undefined);
+    } finally {
+      delete process.env.SCHOOLMEET_ADMIN_INVITE_TOKENS;
+    }
+    assert.equal(configuredAdminInviteToken("Sinlycem26"), undefined);
   });
 });
 
@@ -313,15 +332,13 @@ describe("выпуск токенов-приглашений (nullable-коло�
     assert.notEqual(token, generateInviteToken());
   });
 
-  it("создаёт оба токена для новой школы: пресет админа у настроенных, случайные у остальных", () => {
-    const configured = inviteTokensForNewSchool("Sinlycem26");
-    assert.equal(configured.adminInviteToken, CONFIGURED_ADMIN_INVITE_TOKENS.Sinlycem26);
-    assert.match(configured.teacherInviteToken, UUID);
-
-    const custom = inviteTokensForNewSchool("UnknownSchool");
-    assert.match(custom.adminInviteToken, UUID);
-    assert.match(custom.teacherInviteToken, UUID);
-    assert.notEqual(custom.adminInviteToken, custom.teacherInviteToken);
+  it("создаёт оба токена для новой школы: всегда случайные (пресетов больше нет)", () => {
+    for (const code of ["Sinlycem26", "UnknownSchool"]) {
+      const tokens = inviteTokensForNewSchool(code);
+      assert.match(tokens.adminInviteToken, UUID, "admin-токен должен быть случайным");
+      assert.match(tokens.teacherInviteToken, UUID);
+      assert.notEqual(tokens.adminInviteToken, tokens.teacherInviteToken);
+    }
   });
 
   it("досоздаёт только отсутствующие токены, пустая строка считается отсутствующей", () => {
@@ -334,24 +351,26 @@ describe("выпуск токенов-приглашений (nullable-коло�
 
     const both = missingInviteTokens({ code: "Sinlycem26", teacherInviteToken: "", adminInviteToken: undefined });
     assert.deepEqual(Object.keys(both).sort(), ["adminInviteToken", "teacherInviteToken"]);
-    assert.equal(both.adminInviteToken, CONFIGURED_ADMIN_INVITE_TOKENS.Sinlycem26);
+    assert.match(both.adminInviteToken ?? "", UUID, "досозданный admin-токен должен быть случайным");
   });
 
-  it("возвращает admin-токен настроенной школы к пресету и не трогает заполненные", () => {
+  it("без переменной окружения admin-токен НЕ откатывается к пресету", () => {
+    // Пресета в репозитории нет → «возврат к предустановленному» ничего не меняет.
     const drifted = configuredSchoolInviteData({
       code: "Sinlycem26",
       teacherInviteToken: "teacher-uuid",
-      adminInviteToken: "случайный-токен-из-старой-базы",
+      adminInviteToken: "rotated-token",
     });
-    assert.deepEqual(drifted, { adminInviteToken: CONFIGURED_ADMIN_INVITE_TOKENS.Sinlycem26 });
+    assert.deepEqual(drifted, {});
 
     const intact = configuredSchoolInviteData({
       code: "Sinlycem26",
       teacherInviteToken: "teacher-uuid",
-      adminInviteToken: CONFIGURED_ADMIN_INVITE_TOKENS.Sinlycem26,
+      adminInviteToken: null,
     });
-    assert.deepEqual(intact, {});
-    assert.equal(hasInviteTokenChanges(intact), false);
+    // Досоздаётся только случайный токен, а не известное из репозитория значение.
+    assert.deepEqual(Object.keys(intact), ["adminInviteToken"]);
+    assert.match(intact.adminInviteToken ?? "", UUID);
   });
 
   it("школа без токенов не выдаёт никакую роль приглашения", () => {

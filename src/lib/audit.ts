@@ -18,6 +18,7 @@ import type { Role } from "@/types";
 
 /** Машинные коды действий. Человекочитаемая подпись — для таблицы журнала. */
 export const AUDIT_ACTIONS = {
+  "auth.login": "Вход в аккаунт",
   "user.create": "Создание пользователя",
   "user.update": "Правка профиля пользователя",
   "user.role.change": "Смена роли",

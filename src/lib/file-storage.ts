@@ -17,8 +17,33 @@ function getUploadDir(): string {
   return path.resolve(process.env.UPLOAD_DIR || DEFAULT_UPLOAD_DIR);
 }
 
+/**
+ * Отказ на эфемерном диске.
+ *
+ * На serverless (Vercel) файловая система доступна только на время запроса:
+ * файл «успешно» сохраняется и исчезает. Раньше это было молчаливой потерей
+ * домашних работ, теперь — явная ошибка с инструкцией в логе сервера.
+ *
+ * `FILES_PERSISTENT=true` подтверждает, что диск переживает рестарт (свой VPS
+ * с volume или смонтированный сетевой диск). Для Vercel/Render нужен S3/R2 —
+ * см. `docs/security-hardening.md`.
+ */
+export function assertPersistentStorage(): void {
+  if ((process.env.FILES_PERSISTENT ?? "").trim().toLowerCase() === "true") return;
+  if (!process.env.VERCEL) return;
+
+  console.error(
+    "[file-storage] Файлы ДЗ не сохранятся: на Vercel диск эфемерный. " +
+      "Подключите объектное хранилище (S3/R2) или задайте FILES_PERSISTENT=true " +
+      "для деплоя с постоянным диском.",
+  );
+  throw new Error("STORAGE_EPHEMERAL");
+}
+
 /** Сохраняет файл и возвращает ключ хранения (имя файла на диске). */
 export async function saveUpload(bytes: Uint8Array, extension: string): Promise<string> {
+  assertPersistentStorage();
+
   const safeExtension = extension.replace(/[^a-z0-9]/gi, "").toLowerCase();
   const storageKey = safeExtension ? `${randomUUID()}.${safeExtension}` : randomUUID();
 

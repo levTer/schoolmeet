@@ -1,19 +1,25 @@
+import { randomBytes } from "node:crypto";
+
 import { canonicalSchoolCode } from "@/lib/school-rules";
 
 /**
- * Настроенные школы, их секреты приглашений и гарантированные демо-админы.
+ * Настроенные школы, их секреты приглашений и bootstrap-админы.
  *
- * ⚠️ Значения ниже — ДЕМО-значения для публичного репозитория. Любой, у кого
- * есть доступ к исходникам, знает их, поэтому в продуктиве их надо переопределить
- * переменными окружения (см. `SCHOOLMEET_ADMIN_INVITE_TOKENS` и
- * `SCHOOLMEET_DEMO_ADMIN_PASSWORDS` в `.env.example`).
+ * ⚠️ Ни один секрет НЕ хранится в репозитории. Репозиторий публичный, поэтому:
+ *  - пароли bootstrap-админов приходят только из `SCHOOLMEET_BOOTSTRAP_ADMIN_PASSWORDS`
+ *    (legacy-алиас: `SCHOOLMEET_DEMO_ADMIN_PASSWORDS`); если переменной нет,
+ *    аккаунт создаётся с криптослучайным одноразовым паролем, который печатается
+ *    в лог ровно один раз — при создании (C-01/C-02);
+ *  - admin-invite-токены приходят только из `SCHOOLMEET_ADMIN_INVITE_TOKENS`;
+ *    если переменной нет, школы получают случайные UUID-токены, а ссылка
+ *    администратора видна лишь в админ-панели.
  *
  * Модуль целиком серверный: он НЕ импортируется клиентскими компонентами,
  * поэтому токены приглашений и пароли не попадают в браузерный бандл
  * (проверяется тестом `scripts/security-rules.test.ts`).
  */
 
-/** Карта «код школы → токен» из переменной окружения (приоритет над литералами). */
+/** Карта «ключ → значение» из переменной окружения (приоритет над литералами). */
 function readSecretMap(rawValue: string | undefined): Record<string, string> {
   if (!rawValue) return {};
   try {
@@ -35,26 +41,21 @@ function envAdminInviteTokens(): Record<string, string> {
   return readSecretMap(process.env.SCHOOLMEET_ADMIN_INVITE_TOKENS);
 }
 
-/** Пароли гарантированных администраторов из окружения: `{"admin@…": "…"}`. */
-function envAdminPasswords(): Record<string, string> {
-  return readSecretMap(process.env.SCHOOLMEET_DEMO_ADMIN_PASSWORDS);
-}
-
-/** Выключена ли инициализация гарантированных демо-админов (`"true"` — выключена). */
-export function demoAdminSeedDisabled(): boolean {
-  return (process.env.SCHOOLMEET_DISABLE_DEMO_ADMIN_SEED ?? "").trim().toLowerCase() === "true";
-}
-
 /**
- * Разрешён ли принудительный возврат демо-паролей при старте.
- *
- * По умолчанию ВЫКЛЮЧЕН: иначе смена пароля администратором отменялась бы
- * следующим запуском сервера (находка C-02). Включается оператором на один
- * запуск (`SCHOOLMEET_RESET_DEMO_ADMIN_PASSWORDS=true`), когда демо-доступ надо
- * восстановить.
+ * Пароли bootstrap-админов из окружения: `{"admin@…": "…"}`.
+ * Поддерживается legacy-имя переменной, чтобы существующие деплои не сломались.
  */
-export function demoAdminPasswordResetEnabled(): boolean {
-  return (process.env.SCHOOLMEET_RESET_DEMO_ADMIN_PASSWORDS ?? "").trim().toLowerCase() === "true";
+function envAdminPasswords(): Record<string, string> {
+  return {
+    ...readSecretMap(process.env.SCHOOLMEET_DEMO_ADMIN_PASSWORDS),
+    ...readSecretMap(process.env.SCHOOLMEET_BOOTSTRAP_ADMIN_PASSWORDS),
+  };
+}
+
+/** Выключена ли инициализация bootstrap-админов (`"true"` — выключена). */
+export function demoAdminSeedDisabled(): boolean {
+  const flag = process.env.SCHOOLMEET_DISABLE_DEMO_ADMIN_SEED ?? process.env.SCHOOLMEET_DISABLE_BOOTSTRAP_ADMIN ?? "";
+  return flag.trim().toLowerCase() === "true";
 }
 
 /**
@@ -92,87 +93,87 @@ export function configuredStrictClassIsolation(code: string): boolean {
 }
 
 /**
- * Предустановленные admin-токены приглашений для наших школ.
- *
- * Задаются в сиде (`prisma/seed.ts`) и авто-инициализации школ
- * (`provisionConfiguredSchools`): админ-ссылка каждой школы детерминирована
- * (`/auth/register?code=…&invite=admin-…`). Токены учителей генерируются
- * случайно приложением (`@/lib/invite-tokens`) и выдаются только через
- * админ-панель — в БД обе колонки nullable, default на уровне PostgreSQL у них
- * отсутствует (иначе `prisma db push` не проходил бы на непустой таблице).
- */
-export const CONFIGURED_ADMIN_INVITE_TOKENS: Readonly<Record<string, string>> = {
-  Sinlycem26: "admin-sinlycem-2026",
-  Fulhouseteem26: "admin-fulhouse-2026",
-  "Anna.Terentieva77": "admin-annat-2026",
-};
-
-/**
  * Предустановленный admin-токен школы (по коду, без учёта регистра) или undefined.
  *
- * Сначала ищем значение в окружении (`SCHOOLMEET_ADMIN_INVITE_TOKENS`) — так
- * продуктив получает свой секрет, не публикуя его в репозитории. Литералы ниже
- * остаются демо-значениями «из коробки» (и используются тестами).
+ * Значение берётся ТОЛЬКО из окружения (`SCHOOLMEET_ADMIN_INVITE_TOKENS`).
+ * Литералов в репозитории больше нет: всё, что лежит в публичном коде, не может
+ * быть секретом (находки C-01/C-02). Если переменная не задана, вызывающая
+ * сторона выпускает случайный UUID (`adminInviteTokenFor` в `@/lib/invite-tokens`).
  */
 export function configuredAdminInviteToken(code: string): string | undefined {
   const needle = code.trim().toLowerCase();
-  const fromEnv = envAdminInviteTokens()[needle];
-  if (fromEnv) return fromEnv;
-
-  for (const [key, token] of Object.entries(CONFIGURED_ADMIN_INVITE_TOKENS)) {
-    if (key.toLowerCase() === needle) return token;
-  }
-  return undefined;
+  return envAdminInviteTokens()[needle];
 }
 
 /**
- * Гарантированные демо-администраторы всех настроенных школ.
+ * Bootstrap-администраторы настроенных школ.
  *
- * Роль ADMIN нельзя получить через публичную форму регистрации (см. PUBLIC_ROLES),
- * поэтому аккаунты создаются приложением вместе со школами —
- * `provisionConfiguredSchools` в `@/lib/schools` (при старте `server.ts` и в
- * сиде). Это страховка для свежего деплоя или пустой базы без сида: вход в
- * `/admin` доступен в каждой из трёх школ сразу.
+ * Роль ADMIN нельзя получить через публичную форму регистрации, поэтому при
+ * первом запуске на пустой базе приложение создаёт администратора каждой школы.
+ * Правила (`ensureGuaranteedAdmin` в `@/lib/schools`):
+ *  - аккаунт только СОЗДАЁТСЯ; существующий аккаунт никогда не изменяется
+ *    (бан, понижение роли и смена пароля не отменяются рестартом);
+ *  - если в школе уже есть хотя бы один ADMIN, bootstrap-аккаунт не создаётся;
+ *  - пароль: из `SCHOOLMEET_BOOTSTRAP_ADMIN_PASSWORDS`, иначе криптослучайный
+ *    одноразовый, который печатается в лог один раз при создании.
  *
- * Пароль xешируется bcrypt при СОЗДАНИИ аккаунта; у уже существующего
- * аккаунта пароль НЕ перетирается (иначе смена пароля администратором
- * отменялась бы следующим стартом — находка C-02). Принудительный возврат
- * демо-паролей — только по `SCHOOLMEET_RESET_DEMO_ADMIN_PASSWORDS=true`.
- *
- * Сами пароли можно переопределить через `SCHOOLMEET_DEMO_ADMIN_PASSWORDS`
- * (JSON `{"admin@schoolmeet.ru": "…"}`); в логах пароли не печатаются.
+ * В логах не бывает «вечных» паролей: одноразовый пароль печатается только в
+ * момент создания аккаунта и должен быть сменён после первого входа.
  */
-const DEMO_ADMIN_DEFINITIONS = [
+const BOOTSTRAP_ADMIN_DEFINITIONS = [
   {
     email: "admin@schoolmeet.ru",
-    password: "Admin123!",
     name: "Администратор Лицея Сингулярити",
     role: "ADMIN",
     schoolCode: "Sinlycem26",
   },
   {
     email: "fullhouse@schoolmeet.ru",
-    password: "Fullhouse123!",
     name: "Администратор Fullhouse",
     role: "ADMIN",
     schoolCode: "Fulhouseteem26",
   },
   {
     email: "anna@schoolmeet.ru",
-    password: "Anna123!",
     name: "Анна Терентьева",
     role: "ADMIN",
     schoolCode: "Anna.Terentieva77",
   },
 ] as const;
 
-export const GUARANTEED_ADMINS = DEMO_ADMIN_DEFINITIONS.map((admin) => ({
-  ...admin,
-  password: envAdminPasswords()[admin.email.toLowerCase()] ?? admin.password,
-}));
+export interface BootstrapAdmin {
+  email: string;
+  name: string;
+  role: "ADMIN";
+  schoolCode: string;
+  /** Пароль из окружения; отсутствует — будет выпущен одноразовый случайный. */
+  password?: string;
+}
+
+export const GUARANTEED_ADMINS: readonly BootstrapAdmin[] = BOOTSTRAP_ADMIN_DEFINITIONS.map((admin) => {
+  const password = envAdminPasswords()[admin.email.toLowerCase()];
+  return password ? { ...admin, password } : { ...admin };
+});
 
 /** Обратная совместимость для кода и документации, которым нужен основной админ. */
-export const GUARANTEED_ADMIN = GUARANTEED_ADMINS[0];
+export const GUARANTEED_ADMIN: BootstrapAdmin = GUARANTEED_ADMINS[0];
+
+/**
+ * Одноразовый пароль bootstrap-администратора.
+ *
+ * 24 символа из безопасного алфавита (без похожих `0/O`, `1/l/I`) плюс
+ * гарантированные буква, цифра и спецсимвол — такой пароль проходит
+ * `getPasswordIssues` из `@/lib/validation`.
+ */
+export function generateBootstrapPassword(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const bytes = randomBytes(20);
+  let core = "";
+  for (let index = 0; index < bytes.length; index += 1) {
+    core += alphabet[bytes[index] % alphabet.length];
+  }
+  return `Aa1!${core}`;
+}
 
 /** The old single-tenant demo code is migrated into the primary school. */
 export const LEGACY_DEFAULT_SCHOOL_CODE = "SCHOOL1";
