@@ -81,7 +81,7 @@ jobs:
           npx prisma migrate diff \
             --from-migrations prisma/migrations \
             --to-schema-datamodel prisma/schema.prisma \
-            --shadow-database-url "postgresql://postgres:postgres@localhost:5432/postgres?schema=shadow" \
+            --shadow-database-url "postgresql://postgres:postgres@localhost:5432/postgres" \
             --exit-code 2>&1 | tee /tmp/diff.log; exit ${PIPESTATUS[0]}
 
       - name: TMP report diff
