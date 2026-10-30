@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -51,7 +52,32 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Tests
-        run: npm test
+        id: tests
+        run: |
+          set +e
+          npm test > test.log 2>&1
+          status=$?
+          tail -80 test.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Report test failures
+        if: steps.tests.outputs.status != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.readFileSync('test.log', 'utf8');
+            const tail = log.split('\n').slice(-120).join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '### test failures\n```\n' + tail.slice(0, 60000) + '\n```',
+            });
+
+      - name: Fail on test errors
+        if: steps.tests.outputs.status != '0'
+        run: exit 1
 
       - name: Build
         run: npm run build
