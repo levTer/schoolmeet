@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type MouseEvent } from "react";
 import { Copy, KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
 
 import { FormAlert } from "@/components/ui/form-alert";
+import { copyToClipboard, isNativeShell, openInNativeShell } from "@/lib/clipboard";
 import { PasswordField, TextField } from "@/components/ui/field";
 import { GradientButton } from "@/components/ui/gradient-button";
 
@@ -33,7 +34,13 @@ export function SecurityPanel() {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
+  // Какой именно блок скопирован: коды, секрет или ссылка.
+  const [copied, setCopied] = useState<"codes" | "secret" | "link" | null>(null);
+  // Подсказка о платформе: в приложении ссылку открывает оболочка.
+  const [shellNote, setShellNote] = useState<string | null>(null);
+  // Признак оболочки узнаём после монтирования: на сервере `window` нет, и
+  // разное содержимое серверного и клиентского рендера дало бы hydration-ошибку.
+  const [nativeShell, setNativeShell] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -49,6 +56,10 @@ export function SecurityPanel() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setNativeShell(isNativeShell());
+  }, []);
+
   function reset() {
     setStage("idle");
     setPassword("");
@@ -57,7 +68,8 @@ export function SecurityPanel() {
     setOtpauth("");
     setBackupCodes([]);
     setError(null);
-    setCopied(false);
+    setCopied(null);
+    setShellNote(null);
   }
 
   async function request<T>(method: string, body: unknown): Promise<T> {
@@ -117,13 +129,36 @@ export function SecurityPanel() {
     }
   }
 
-  async function copyCodes() {
-    try {
-      await navigator.clipboard.writeText(backupCodes.join("\n"));
-      setCopied(true);
-    } catch {
-      setError("Браузер не дал скопировать. Перепишите коды вручную.");
+  /**
+   * Копирование с запасным путём.
+   *
+   * `navigator.clipboard` есть не везде: в старых WebView (Android) и в
+   * сборках Electron он может отсутствовать или отказать. Тогда используется
+   * `document.execCommand("copy")`; если не сработал и он — просим перенести
+   * вручную, но текст остаётся на экране.
+   */
+  async function copy(kind: "codes" | "secret" | "link", value: string) {
+    const done = await copyToClipboard(value);
+    if (done) {
+      setCopied(kind);
+      setError(null);
+      return;
     }
+    setCopied(null);
+    setError("Скопировать автоматически не удалось — выделите текст и скопируйте вручную.");
+  }
+
+  /**
+   * «Открыть в приложении-аутентификаторе».
+   *
+   * В Electron ссылку отдаём нативной оболочке (`eduflowDesktop.openExternal`),
+   * иначе навигация по неизвестной схеме блокируется политикой окна. В браузере
+   * и в Android-оболочке работает обычный переход — там схему ловит система.
+   */
+  function openAuthenticator(event: MouseEvent<HTMLAnchorElement>, uri: string) {
+    if (!openInNativeShell(uri)) return;
+    event.preventDefault();
+    setShellNote("Ссылка передана приложению-аутентификатору на этом компьютере.");
   }
 
   if (!status) {
@@ -168,11 +203,11 @@ export function SecurityPanel() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={copyCodes}
+              onClick={() => void copy("codes", backupCodes.join("\n"))}
               className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5"
             >
               <Copy className="h-4 w-4" />
-              {copied ? "Скопировано" : "Скопировать коды"}
+              {copied === "codes" ? "Скопировано" : "Скопировать коды"}
             </button>
             <button
               type="button"
@@ -192,9 +227,36 @@ export function SecurityPanel() {
           <div className="rounded-xl border border-white/10 bg-black/30 p-3">
             <p className="text-[11px] uppercase tracking-wider text-slate-500">Секрет для ручного ввода</p>
             <p className="mt-1 break-all font-mono text-sm text-slate-100">{secret}</p>
-            <a href={otpauth} className="mt-2 inline-block text-xs text-brand-200 underline underline-offset-4">
-              Открыть в приложении-аутентификаторе
-            </a>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <a
+                href={otpauth}
+                onClick={(event) => openAuthenticator(event, otpauth)}
+                className="text-xs text-brand-200 underline underline-offset-4"
+              >
+                Открыть в приложении-аутентификаторе
+              </a>
+              <button
+                type="button"
+                onClick={() => void copy("secret", secret)}
+                className="text-xs text-slate-400 underline underline-offset-4 transition hover:text-white"
+              >
+                {copied === "secret" ? "Секрет скопирован" : "Скопировать секрет"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void copy("link", otpauth)}
+                className="text-xs text-slate-400 underline underline-offset-4 transition hover:text-white"
+              >
+                {copied === "link" ? "Ссылка скопирована" : "Скопировать ссылку"}
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+              Работает без интернета: код считают телефон и сервер по одному ключу и времени.
+              {nativeShell
+                ? " Если приложение-аутентификатор стоит на этом же телефоне, ссылка его не найдёт — введите секрет вручную или скопируйте его."
+                : " Если телефон отдельный, откройте эту ссылку на телефоне или введите секрет вручную."}
+            </p>
+            {shellNote && <p className="mt-2 text-[11px] text-emerald-300">{shellNote}</p>}
           </div>
           <TextField
             label="Код из приложения"

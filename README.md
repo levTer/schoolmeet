@@ -102,6 +102,13 @@ npm run db:studio  # веб-UI для просмотра данных
 проверки подписи и важное предупреждение о несовместимости нового ключа со
 старым APK — в [docs/android-apk.md](docs/android-apk.md).
 
+Ссылки `otpauth://totp/…` (включение второго фактора) приложение передаёт
+системе: WebView не умеет открывать их сам, поэтому `WebWorkspace.java`
+проверяет схему и хост по белому списку. `npm run test:android` сверяет
+`public/eduflow.apk` с исходниками, поэтому после правок в `android/**` APK
+пересобирается workflow `Build Android APK` — устаревший бинарь проверку не
+пройдёт.
+
 ## Структура
 
 ```
@@ -293,6 +300,14 @@ Email на регистрации и на входе приводится к о�
   пароля; неверный код считается неудачной попыткой входа. Потерян телефон и
   коды — 2FA снимает администратор школы, действие попадает в аудит
   (`user.2fa.reset`).
+- **Одинаково на сайте, в Mac/Windows-приложении и в APK**: оболочки открывают
+  внешние ссылки только по белому списку схем (`http(s)`, `mailto`, `tel` и
+  строго `otpauth://totp/…` для передачи секрета второму фактору) — функция
+  `isExternalSchemeAllowed` в `electron-app/main.js`, `desktop/main.js` и
+  `android/.../WebWorkspace.java`. Копирование работает и там, где нет
+  `navigator.clipboard`: `src/lib/clipboard.ts` переходит на
+  `document.execCommand("copy")`, а если не сработал и он — текст остаётся на
+  экране для ручного переноса. В обычном браузере всё работает без оболочки.
 - **Security-заголовки** (`next.config.mjs`): CSP (`frame-ancestors 'none'`,
   `object-src 'none'`, `connect-src 'self' wss:`), HSTS на 2 года,
   `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` (камера и

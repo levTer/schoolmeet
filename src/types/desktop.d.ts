@@ -24,6 +24,13 @@ interface Window {
     isDesktop?: boolean;
     platform?: string;
     setTheme?: (themeColors: NativeThemeColors) => void;
+    /**
+     * Открыть ссылку системным обработчиком. Используется для
+     * `otpauth://totp/…` при включении второго фактора; разрешённые схемы
+     * проверяет main-процесс Electron. В старых сборках метода нет — веб
+     * обязан работать и без него.
+     */
+    openExternal?: (url: string) => Promise<void> | void;
   };
   AndroidApp?: AndroidAppBridge;
 }

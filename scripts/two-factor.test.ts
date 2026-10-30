@@ -332,10 +332,38 @@ describe("второй фактор встроен во вход и не обх�
     assert.match(service, /if \(step === null\) \{\s*throw new Error\("TWO_FACTOR_INVALID_CODE"\)/);
   });
 
+  it("работает в Electron (Mac/Windows): otpauth разрешён, остальное — нет", () => {
+    for (const file of ["desktop/main.js", "electron-app/main.js"]) {
+      const source = readSource(file);
+      assert.match(source, /otpauth:/, `${file}: схема otpauth не разрешена — кнопка молча не работает`);
+      assert.match(source, /totp/, `${file}: не проверяется действие totp`);
+      assert.match(source, /isExternalSchemeAllowed/, `${file}: нет явного whitelist схем`);
+    }
+  });
+
+  it("работает в Android-оболочке: та же схема и тот же whitelist", () => {
+    const java = readSource("android/app/src/main/java/ru/eduflow/app/WebWorkspace.java");
+    assert.match(java, /isExternalSchemeAllowed/, "WebView не проверяет схемы явно");
+    assert.match(java, /equalsIgnoreCase\("otpauth"\)/, "otpauth заблокирован — ссылка не откроется");
+    assert.match(java, /"totp"\.equalsIgnoreCase\(uri\.getHost\(\)\)/, "не проверяется действие totp");
+  });
+
+  it("веб не зависит от моста оболочки: без него всё работает", () => {
+    const clipboard = readSource("src/lib/clipboard.ts");
+    assert.match(clipboard, /navigator\.clipboard\?\.writeText/, "нет современного пути копирования");
+    assert.match(clipboard, /execCommand\("copy"\)/, "нет запасного пути для WebView");
+    assert.match(clipboard, /if \(!bridge\?\.openExternal\) return false;/, "мост считается обязательным");
+
+    const panel = readSource("src/components/account/security-panel.tsx");
+    assert.match(panel, /copyToClipboard/);
+    assert.match(panel, /openInNativeShell/);
+    assert.doesNotMatch(panel, /navigator\.clipboard\.writeText/, "панель копирует только современным API");
+  });
+
   it("резервные коды показываются один раз и копируются кнопкой", () => {
     const panel = readSource("src/components/account/security-panel.tsx");
     assert.match(panel, /Резервн/i);
-    assert.match(panel, /navigator\.clipboard\.writeText/);
+    assert.match(panel, /copy\(\"codes\", backupCodes\.join/, "коды не копируются одной кнопкой");
     assert.match(panel, /показываются один раз/);
   });
 
