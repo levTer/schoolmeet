@@ -11,13 +11,14 @@ export const dynamic = "force-dynamic";
  * ТОЛЬКО TEACHER / ADMIN: ученик получает 403 Forbidden.
  * Тело: `{ submissionId }`. Ответ виден только учителю.
  */
-export async function POST(request: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const { id } = await params;
   try {
     const viewer = await requireViewer();
     requireRole(viewer, ["TEACHER", "ADMIN"], "ИИ-проверка доступна только учителям");
 
     const submissionId = await readSubmissionId(request);
-    const review = await generateAiReviewDraft(params.id, submissionId, viewer);
+    const review = await generateAiReviewDraft(id, submissionId, viewer);
     return jsonOk({ review });
   } catch (error) {
     return handleRouteError(error, "api/homework/ai-review POST");

@@ -40,7 +40,7 @@
 
 | Слой        | Технологии                                              |
 | ----------- | ------------------------------------------------------- |
-| Фронтенд    | Next.js 14 (App Router), TypeScript, Tailwind CSS, ESLint |
+| Фронтенд    | Next.js 16 (App Router, Turbopack), React 19, TypeScript, Tailwind CSS, ESLint 10 |
 | Состояние   | Zustand                                                  |
 | Реальное время | Socket.IO (сервер + клиент), нативный WebRTC (`RTCPeerConnection`), STUN Google + TURN |
 | Доска       | Fabric.js + JSON-чертежи от ИИ                            |
@@ -83,7 +83,9 @@ npm run start      # прод-сервер (server.ts: Next.js + Socket.IO), н�
 npm run lint       # ESLint
 npm run test       # все 12 наборов ниже (сеть и БД не нужны)
 npm run db:seed    # демо-аккаунты (пароль из SEED_PASSWORD)
-npm run db:push    # синхронизация схемы без миграций
+npm run db:deploy  # применить миграции (prisma migrate deploy)
+npm run db:migrate # создать миграцию после изменения schema.prisma
+npm run db:push    # быстрая синхронизация схемы для локальной песочницы
 npm run db:studio  # веб-UI для просмотра данных
 ```
 
@@ -105,7 +107,7 @@ npm run db:studio  # веб-UI для просмотра данных
 ```
 prisma/schema.prisma               Enum Role + модели User / Meeting / Schedule / ChatMessage
 prisma/seed.mjs                    Демо-аккаунты ADMIN / TEACHER / STUDENT (npm run db:seed)
-src/middleware.ts                  Rate-limit -> сессия -> RBAC для /admin -> бан: защита /dashboard,
+src/proxy.ts                       Rate-limit -> сессия -> RBAC для /admin -> бан: защита /dashboard,
                                    /meeting, /schedule, /homework, /admin
 src/lib/auth.ts                    NextAuth: CredentialsProvider, JWT/session callbacks с id и role
 src/lib/password.ts                bcryptjs: hashPassword() / verifyPassword()
@@ -194,7 +196,8 @@ electron-app/                      macOS-приложение EduFlow: Electron-
 
 - Сессия — подписанный JWT (30 дней); `id` и `role` кладутся в токен в `jwt`-callback
   и доступны как `session.user.id` / `session.user.role` на сервере и на клиенте.
-- `src/middleware.ts` проверяет cookie до рендера страницы: без сессии — редирект на
+- `src/proxy.ts` (в Next.js 16 middleware переименован в proxy) проверяет cookie до рендера
+  страницы: без сессии — редирект на
   `/login?callbackUrl=...` (для `/api/admin/*` — `401`), а учителя или ученика на `/admin`
   возвращает в `/dashboard?denied=admin` с toast «Доступ открыт только Администратору школы».
 - Пароли хешируются bcrypt (10 раундов). Роль `ADMIN` через `POST /api/auth/register`
@@ -313,7 +316,7 @@ Email на регистрации и на входе приводится к о�
 - Звонки используют relay-only TCP TURN (443/80) и авто-рестарт ICE при смене сети.
   Для продуктива задайте собственный TURN через `NEXT_PUBLIC_TURN_SERVERS`.
 - Организатор может завершить звонок для всех (`END_CALL_FOR_ALL`); обычный участник — только покинуть.
-- **Rate-limit** (`src/lib/rate-limit.ts`, `middleware.ts`): не более 100 запросов в минуту с одного IP,
+- **Rate-limit** (`src/lib/rate-limit.ts`, `src/proxy.ts`): не более 100 запросов в минуту с одного IP,
   для `/api/auth` — 20 (защита от подбора пароля), для `/api/admin` — 60, для рукопожатий Socket.IO — 40.
   Превышение — `429` с `Retry-After` (страницы получают понятную HTML-заглушку), ответы несут заголовки
   `X-RateLimit-*`. Хранилище — в памяти процесса: при нескольких инстансах нужен Redis.

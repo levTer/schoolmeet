@@ -43,14 +43,13 @@ import {
   GROQ_VISION_BOARD_PROMPT,
   type AIAction,
   type AIProvider,
-  type AIRequest,
   type AIResponse,
   type HomeworkReviewDraft,
   type HomeworkReviewRequest,
 } from "../src/lib/ai-provider";
 import { extractJsonObject, extractLatex, stripThinkTags } from "../src/lib/ai-providers/shared";
 import { parseDrawingInstructions } from "../src/lib/drawing-engine";
-import { getIceServers, getRelayIceServers, getRelayRtcConfiguration, GOOGLE_STUN_URLS } from "../src/lib/webrtc-config";
+import { getIceServers, getRelayIceServers, getRelayRtcConfiguration } from "../src/lib/webrtc-config";
 
 let passed = 0;
 let failed = 0;

@@ -120,22 +120,27 @@ LIMIT 100;
 Ниже — честный список того, что **нельзя** закрыть правкой файлов в этом
 репозитории: нужны внешние сервисы, бюджеты или продуктовые решения.
 
-### 2.1. Мажорное обновление Next.js (1 critical advisory)
+### 2.1. Обновление Next.js — сделано (Next 16.4.3)
 
-`npm audit` показывает `critical` по `next@14.2.35` (DoS через Image Optimizer
-и RSC-десериализацию); ветка 14 не получает патчей. Обновление требует
-переписать сигнатуры роутов (`params`/`searchParams` стали `Promise`) и
-проверить сборку — делать это «слепо», без возможности прогнать `next build`,
-опаснее, чем оставить как есть.
+`next@14.2.35` не получал патчей и тянул 24 advisory, включая critical RCE в
+Image Optimization API и SSRF через WebSocket upgrades. Обновление выполнено
+целиком, без промежуточных «временных» версий:
 
-**План:**
-1. Ветка `chore/next-15`: `npm i next@15 react@19 react-dom@19 @types/react@19`.
-2. Механически: `{ params }: { params: { id: string } }` →
-   `{ params }: { params: Promise<{ id: string }> }` + `const { id } = await params`
-   (34 роута, 8 динамических страниц).
-3. `next build` локально, затем зелёный CI, затем прод.
-4. После обновления убрать `continue-on-error` у шага `npm audit` в CI — аудит
-   станет блокирующим.
+1. `next@16.4.3`, `react@19.3.1`, `react-dom@19.3.1`, `@types/react@19`,
+   `eslint@10`, `eslint-config-next@16.4.3`.
+2. Request API переведены на асинхронные: `params` в 15 route-хендлерах и
+   `searchParams` в 5 страницах разворачиваются через `await` (в Next.js 16
+   синхронный доступ удалён).
+3. `src/middleware.ts` → `src/proxy.ts` с экспортом `proxy` (в Next.js 16
+   middleware переименован; работает на Node.js-рантайме).
+4. `next lint` удалён — ESLint 10 запускается напрямую по flat-конфигу
+   `eslint.config.mjs`, шаг `npm run lint` добавлен в CI (сборка больше не
+   линтует).
+5. `swcMinify` из `next.config.mjs` убран: в Next.js 16 опция не существует.
+6. `npm audit` (prod **и** dev-дерево) — **0 уязвимостей**, шаг в CI стал
+   блокирующим (`continue-on-error` удалён). Попутно закрыты `katex@0.19.1`
+   (prototype pollution), `electron@45` и `sharp@0.35.5` (CVE в libvips),
+   транзитивный `deepmerge-ts@8` (stack exhaustion в Prisma CLI).
 
 ### 2.2. Nonce-based CSP
 
@@ -143,7 +148,7 @@ LIMIT 100;
 гидратации). Следующий шаг — nonce через middleware:
 
 ```ts
-// middleware.ts
+// src/proxy.ts
 const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
 // подставить nonce в Content-Security-Policy и передать заголовком x-nonce
 ```
@@ -193,7 +198,9 @@ npx prisma migrate resolve --applied 0001_baseline
 npx prisma migrate deploy
 ```
 
-`db:push` оставить для локальной разработки.
+`db:push` оставить только для локальной песочницы: в репозитории теперь есть
+полная история миграций (`prisma/migrations`), а CI применяет её к чистому
+Postgres и падает, если `schema.prisma` разошёлся с миграциями.
 
 ### 2.6. Артефакты в git (96 МБ `.exe`)
 

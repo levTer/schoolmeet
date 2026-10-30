@@ -8,7 +8,8 @@ import { requireViewer } from "@/lib/session-viewer";
 export const dynamic = "force-dynamic";
 
 /** PUT /api/homework/[id]/draft — автосохранение черновика ответа. Тело: `{ answer }`. */
-export async function PUT(request: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const { id } = await params;
   try {
     const viewer = await requireViewer();
 
@@ -22,7 +23,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const answer = validateAnswer((payload as { answer?: unknown } | null)?.answer);
     if (!answer.ok) return jsonError(422, "VALIDATION_ERROR", answer.error, { fields: answer.fields });
 
-    const result = await saveDraftAnswer(params.id, answer.data, viewer);
+    const result = await saveDraftAnswer(id, answer.data, viewer);
     return jsonOk(result);
   } catch (error) {
     return handleRouteError(error, "api/homework/draft PUT");

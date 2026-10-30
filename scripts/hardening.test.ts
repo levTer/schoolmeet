@@ -38,6 +38,7 @@ import {
   trustProxyHeaders,
 } from "../src/lib/rate-limit";
 import { generateBootstrapPassword, GUARANTEED_ADMINS } from "../src/lib/school-config";
+import { classCodeGrantSecret } from "../src/lib/class-code";
 import { getPasswordIssues } from "../src/lib/validation";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -372,12 +373,116 @@ describe("CI проверяет веб-приложение", () => {
     assert.match(ci, /branches: \[main\]/);
   });
 
-  it("выполняет типы, тесты и сборку", () => {
+  it("выполняет линт, типы, тесты и сборку", () => {
     assert.match(ci, /npm ci/);
     assert.match(ci, /prisma generate/, "без генерации клиента типы не проверяются");
+    assert.match(ci, /npm run lint/, "нет проверки линта (next build его больше не запускает)");
     assert.match(ci, /tsc --noEmit/, "нет проверки типов");
     assert.match(ci, /npm test/, "тесты не запускаются");
     assert.match(ci, /npm run build/, "сборка не проверяется");
-    assert.match(ci, /npm audit/, "нет аудита зависимостей");
+    assert.match(ci, /npm audit --audit-level=high/, "аудит зависимостей не блокирует сборку");
+  });
+
+  it("применяет миграции и сверяет их со схемой на чистом Postgres", () => {
+    assert.match(ci, /prisma migrate deploy/, "миграции не применяются в CI");
+    assert.match(ci, /prisma migrate diff/, "нет проверки расхождения схемы и миграций");
+    assert.match(ci, /--exit-code/, "расхождение не роняет сборку");
+    assert.match(ci, /image: postgres:16/, "нет базы для проверки миграций");
+  });
+
+  it("поднимает сервер и проверяет ответы (runtime smoke)", () => {
+    assert.match(ci, /npm run start/, "сборка не проверяется в реальном запуске");
+    assert.match(ci, /localhost:3000\/login/, "smoke не открывает страницу входа");
+    assert.match(ci, /content-security-policy/, "smoke не проверяет security-заголовки");
+  });
+
+  it("не содержит послаблений: упавший шаг валит пайплайн", () => {
+    // `continue-on-error` превращает проверку в декорацию: падение видно, но
+    // мерж не блокируется. Такой шаг здесь недопустим.
+    assert.ok(!/continue-on-error/.test(ci), "в ci.yml есть continue-on-error");
+    for (const workflow of ["android-build.yml", "android-smoke.yml", "build-mac-dmg.yml",
+      "build-windows-installer.yml"]) {
+      const source = readSource(`.github/workflows/${workflow}`);
+      assert.ok(!/continue-on-error/.test(source), `${workflow}: continue-on-error скрывает падение`);
+    }
+  });
+});
+
+describe("миграции вместо ручного SQL", () => {
+  const pkg = JSON.parse(readSource("package.json")) as { scripts: Record<string, string> };
+
+  it("db:deploy применяет историю миграций, а не push схемы", () => {
+    assert.equal(pkg.scripts["db:deploy"].trim(), "prisma migrate deploy");
+    assert.equal(pkg.scripts["db:migrate"].trim(), "prisma migrate dev");
+  });
+
+  it("baseline-миграция и backfill аудита лежат в истории", () => {
+    const init = readSource("prisma/migrations/20261030120000_init/migration.sql");
+    assert.match(init, /CREATE TABLE "schools"/);
+    assert.match(init, /CREATE TABLE "audit_logs"/);
+    const backfill = readSource("prisma/migrations/20261030120001_backfill_audit_log_school/migration.sql");
+    assert.match(backfill, /UPDATE "audit_logs"/);
+    assert.doesNotMatch(backfill, /ADD COLUMN/, "структуру меняет только baseline");
+  });
+});
+
+describe("кастомный сервер готовит Node-рантайм до Next.js", () => {
+  const server = readSource("server.ts");
+
+  it("полифилл AsyncLocalStorage импортируется раньше next", () => {
+    // Next.js 16 берёт globalThis.AsyncLocalStorage, который в CLI выставляет
+    // сам Next. Без полифилла кастомный сервер падает на первом рендере
+    // («AsyncLocalStorage accessed in runtime where it is not available»).
+    const polyfill = server.indexOf("./src/server/node-runtime");
+    const nextImport = server.indexOf('from "next"');
+    assert.ok(polyfill > -1, "нет импорта node-runtime");
+    assert.ok(nextImport > -1, "next больше не импортируется");
+    assert.ok(polyfill < nextImport, "node-runtime должен импортироваться до next");
+  });
+
+  it("полифилл не перетирает уже существующий AsyncLocalStorage", () => {
+    const runtime = readSource("src/server/node-runtime.ts");
+    assert.match(runtime, /typeof runtime\.AsyncLocalStorage !== "function"/);
+    assert.match(runtime, /from "node:async_hooks"/);
+  });
+});
+
+describe("допуск по коду класса: секрет не имеет боевого фолбэка", () => {
+  const original = { secret: process.env.NEXTAUTH_SECRET, env: process.env.NODE_ENV };
+
+  function restore() {
+    if (original.secret === undefined) delete process.env.NEXTAUTH_SECRET;
+    else process.env.NEXTAUTH_SECRET = original.secret;
+    process.env.NODE_ENV = original.env;
+  }
+
+  it("в production без NEXTAUTH_SECRET бросает, а не подписывает известной строкой", () => {
+    try {
+      delete process.env.NEXTAUTH_SECRET;
+      process.env.NODE_ENV = "production";
+      assert.throws(() => classCodeGrantSecret(), /NEXTAUTH_SECRET/);
+    } finally {
+      restore();
+    }
+  });
+
+  it("в production использует NEXTAUTH_SECRET", () => {
+    try {
+      process.env.NEXTAUTH_SECRET = "server-secret";
+      process.env.NODE_ENV = "production";
+      assert.equal(classCodeGrantSecret(), "server-secret");
+    } finally {
+      restore();
+    }
+  });
+
+  it("вне production допускает dev-секрет, чтобы тесты работали без окружения", () => {
+    try {
+      delete process.env.NEXTAUTH_SECRET;
+      process.env.NODE_ENV = "development";
+      assert.equal(classCodeGrantSecret(), "schoolmeet-class-code-dev-secret");
+    } finally {
+      restore();
+    }
   });
 });

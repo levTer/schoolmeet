@@ -9,6 +9,10 @@
  */
 import { createServer } from "node:http";
 
+// Обязательно до `next`: выставляет globalThis.AsyncLocalStorage, без которого
+// Next.js 16 в кастомном сервере не рендерит ни одной страницы.
+import "./src/server/node-runtime";
+
 import next from "next";
 
 import { attachRealtime } from "./src/server/realtime";
@@ -22,8 +26,12 @@ const host = process.env.HOST ?? "0.0.0.0";
 async function main(): Promise<void> {
   // Школы и гарантированные демо-админы инициализируются при каждом старте
   // (идемпотентно): свежий деплой без сида сразу получает рабочий вход в `/admin`
-  // во всех трёх школах. `provisionConfiguredSchools` создаёт/обновляет
-  // admin@schoolmeet.ru, fullhouse@schoolmeet.ru и anna@schoolmeet.ru.
+  // во всех трёх школах. `provisionConfiguredSchools` создаёт недостающих
+  // администраторов (admin@schoolmeet.ru, fullhouse@schoolmeet.ru,
+  // anna@schoolmeet.ru): пароль берётся из SCHOOLMEET_BOOTSTRAP_ADMIN_PASSWORDS,
+  // а без переменной выдаётся одноразовый случайный и печатается один раз.
+  // Существующие аккаунты не перетираются; выключается
+  // SCHOOLMEET_DISABLE_BOOTSTRAP_ADMIN=true.
   try {
     await provisionConfiguredSchools();
     console.log("✓ Школы и гарантированные администраторы готовы");

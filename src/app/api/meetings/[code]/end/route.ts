@@ -8,7 +8,7 @@ import { requireSchoolViewer } from "@/lib/session-viewer";
 export const dynamic = "force-dynamic";
 
 interface RouteContext {
-  params: { code?: string; id?: string };
+  params: Promise<{ code?: string; id?: string }>;
 }
 
 /**
@@ -22,9 +22,10 @@ interface RouteContext {
  * Доступ: ведущий урока (`hostId === viewer.id`) или `ADMIN` той же школы.
  */
 export async function POST(request: Request, { params }: RouteContext): Promise<NextResponse> {
+  const { code, id } = await params;
   try {
     const viewer = await requireSchoolViewer();
-    const identifier = params.code ?? params.id ?? "";
+    const identifier = code ?? id ?? "";
 
     const result = await endMeetingByActor(identifier, {
       id: viewer.id,

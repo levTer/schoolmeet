@@ -13,8 +13,14 @@ import path from "node:path";
 
 const DEFAULT_UPLOAD_DIR = path.join(process.cwd(), "storage", "uploads");
 
+/**
+ * Каталог загрузок. Путь задаётся окружением, поэтому статически упаковщику
+ * неизвестен: `turbopackIgnore` говорит ему не трассировать файловую систему
+ * (иначе в серверный бандл попадает весь проект, включая `public/`).
+ * Файлы создаются в рантайме и в бандл не входят по определению.
+ */
 function getUploadDir(): string {
-  return path.resolve(process.env.UPLOAD_DIR || DEFAULT_UPLOAD_DIR);
+  return path.resolve(/* turbopackIgnore: true */ process.env.UPLOAD_DIR || DEFAULT_UPLOAD_DIR);
 }
 
 /**
@@ -54,7 +60,7 @@ export async function saveUpload(bytes: Uint8Array, extension: string): Promise<
 }
 
 export async function readUpload(storageKey: string): Promise<Buffer> {
-  return readFile(resolveStoragePath(storageKey));
+  return readFile(/* turbopackIgnore: true */ resolveStoragePath(storageKey));
 }
 
 /** Удаляет файл; отсутствующий файл не считается ошибкой. */
@@ -72,7 +78,7 @@ function resolveStoragePath(storageKey: string): string {
     throw new Error("Некорректный ключ хранения файла");
   }
   const dir = getUploadDir();
-  const target = path.join(dir, storageKey);
+  const target = path.join(/* turbopackIgnore: true */ dir, storageKey);
   if (path.dirname(target) !== dir) {
     throw new Error("Некорректный путь к файлу");
   }

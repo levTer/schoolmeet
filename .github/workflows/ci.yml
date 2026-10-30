@@ -26,9 +26,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
+    services:
+      # Нужен только для проверки миграций: `prisma migrate deploy` применяет их
+      # к пустой базе, а `migrate diff` подтверждает, что схема не разошлась с
+      # историей миграций.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: schoolmeet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     env:
-      # Заглушки: сборка Next.js не должна требовать реальную БД и секреты.
-      DATABASE_URL: "postgresql://user:password@localhost:5432/schoolmeet?schema=public"
+      # Postgres поднят сервисом ниже: миграции применяются по-настоящему,
+      # а сборка по-прежнему не требует внешней БД.
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/schoolmeet?schema=public"
       NEXTAUTH_SECRET: "ci-only-secret-not-used-in-production"
       NEXTAUTH_URL: "http://localhost:3000"
       NEXT_TELEMETRY_DISABLED: "1"
@@ -50,6 +69,24 @@ jobs:
       - name: Prisma client
         run: npx prisma generate
 
+      - name: Migrations apply cleanly
+        run: npx prisma migrate deploy
+
+      - name: Schema matches migrations
+        # Любое изменение `schema.prisma` без миграции валит CI: иначе прод
+        # и репозиторий незаметно расходятся.
+        run: |
+          npx prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "postgresql://postgres:postgres@localhost:5432/postgres" \
+            --exit-code
+
+      - name: Lint
+        # `next build` больше не запускает ESLint (в Next.js 16 `next lint`
+        # удалён), поэтому ошибки линта проверяются отдельным шагом.
+        run: npm run lint
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -59,12 +96,43 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Audit production dependencies
-        # Пока не блокирует: критический advisory Next.js 14 закрывается
-        # мажорным обновлением фреймворка (см. docs/security-hardening.md).
-        # После обновления шаг станет обязательным (`continue-on-error` убрать).
-        continue-on-error: true
-        run: npm audit --omit=dev --audit-level=high
+      - name: Runtime smoke (сервер поднимается и отвечает)
+        # Сборка может пройти, а рантайм — упасть (например, Next 16 без
+        # globalThis.AsyncLocalStorage в кастомном сервере). Проверяем реальный
+        # запуск: страница входа и лендинг отвечают 200, БД для этого не нужна.
+        run: |
+          set -euo pipefail
+          npm run start > /tmp/server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill ${SERVER_PID} 2>/dev/null || true' EXIT
+
+          ready=0
+          for _ in $(seq 1 40); do
+            if curl -fsS -o /dev/null http://localhost:3000/login; then ready=1; break; fi
+            if ! kill -0 ${SERVER_PID} 2>/dev/null; then
+              echo "::error::Сервер завершился при старте"; cat /tmp/server.log; exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Сервер не ответил за 40 секунд"; cat /tmp/server.log; exit 1
+          fi
+
+          curl -fsS -o /dev/null http://localhost:3000/
+          # Заголовки безопасности и отсутствие утечки версии фреймворка.
+          headers=$(curl -sS -D - -o /dev/null http://localhost:3000/login)
+          grep -qi "content-security-policy" <<<"$headers"
+          grep -qi "x-frame-options: DENY" <<<"$headers"
+          if grep -qi "x-powered-by" <<<"$headers"; then
+            echo "::error::Утечка X-Powered-By"; exit 1
+          fi
+
+      - name: Audit dependencies
+        # Блокирующий шаг: проверяются и prod-, и dev-дерево. Desktop-сборка
+        # упаковывает Electron, поэтому dev-зависимости здесь не менее важны.
+        # Исключений нет — на момент обновления аудит чистый.
+        run: npm audit --audit-level=high
 
       - name: Secret scan (пароли и invite-токены в исходниках)
         # Сканируем приложение и публичные документы. Тесты используют эти

@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
  * POST /api/homework/[id]/grade — утвердить оценку и отправить ученику.
  * Тело: `{ submissionId, grade, comment? }`. Только учитель-владелец или администратор.
  */
-export async function POST(request: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const { id } = await params;
   try {
     const viewer = await requireViewer();
     requireRole(viewer, ["TEACHER", "ADMIN"], "Оценивать работы могут только учителя");
@@ -26,7 +27,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       throw badRequest("Не указана работа ученика", { submissionId: "Выберите работу" });
     }
 
-    const review = await approveReview(params.id, body.submissionId, { grade: body.grade, comment: body.comment }, viewer);
+    const review = await approveReview(id, body.submissionId, { grade: body.grade, comment: body.comment }, viewer);
     return jsonOk({ review });
   } catch (error) {
     return handleRouteError(error, "api/homework/grade POST");

@@ -137,7 +137,8 @@ describe("вход в текущий урок в один клик", () => {
   });
 
   it("страница /meeting открывает комнату по ?room= и ?lessonId= без ввода кода", () => {
-    assert.match(page, /searchParams: \{ room\?: string; lessonId\?: string \}/, "страница не принимает прямую ссылку на урок");
+    assert.match(page, /searchParams: Promise<\{ room\?: string; lessonId\?: string \}>/, "страница не принимает прямую ссылку на урок");
+    assert.match(page, /const \{ room, lessonId \} = await searchParams/, "searchParams не разворачивается (Next.js 16 требует await)");
     assert.match(page, /redirect\(`\/meeting\/\$\{directRoom\}`\)/, "код комнаты не открывает урок сразу");
     assert.match(page, /findMeetingCodeById/, "id урока не разрешается в код комнаты");
     assert.match(page, /redirect\(`\/meeting\/\$\{code\}`\)/, "id урока не открывает комнату");

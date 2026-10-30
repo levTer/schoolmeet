@@ -185,7 +185,8 @@ export interface WhiteboardApi {
   cursors: WhiteboardCursor[];
   selectionPreview: SelectionPreview | null;
   formulaPreview: FormulaPreview | null;
-  canvasRef: RefObject<HTMLCanvasElement>;
+  /** React 19: `useRef<T | null>(null)` даёт `RefObject<T | null>` — current всегда может быть null. */
+  canvasRef: RefObject<HTMLCanvasElement | null>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1307,7 +1308,6 @@ export function useWhiteboard(options: UseWhiteboardOptions): WhiteboardApi {
       }
     }, 2000);
     return () => window.clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursors.length]);
 
   // Мягкое обновление списка курсоров — не чаще 10 раз в секунду.

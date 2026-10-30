@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 interface MeetingPageProps {
   /** `room` — код комнаты, `lessonId` — id урока (cuid). Оба ведут в комнату сразу. */
-  searchParams: { room?: string; lessonId?: string };
+  searchParams: Promise<{ room?: string; lessonId?: string }>;
 }
 
 /**
@@ -34,21 +34,22 @@ interface MeetingPageProps {
  * не создаёт.
  */
 export default async function MeetingPage({ searchParams }: MeetingPageProps) {
+  const { room, lessonId } = await searchParams;
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    const target = typeof searchParams?.room === "string" && searchParams.room.trim()
-      ? `/meeting?room=${encodeURIComponent(searchParams.room.trim())}`
+    const target = typeof room === "string" && room.trim()
+      ? `/meeting?room=${encodeURIComponent(room.trim())}`
       : "/meeting";
     redirect(`/login?callbackUrl=${encodeURIComponent(target)}`);
   }
 
-  const directRoom = typeof searchParams?.room === "string" ? searchParams.room.trim().toLowerCase() : "";
+  const directRoom = typeof room === "string" ? room.trim().toLowerCase() : "";
   if (directRoom && isValidRoomCode(directRoom)) {
     redirect(`/meeting/${directRoom}`);
   }
 
-  const directLessonId = typeof searchParams?.lessonId === "string" ? searchParams.lessonId.trim() : "";
+  const directLessonId = typeof lessonId === "string" ? lessonId.trim() : "";
   if (directLessonId) {
     // Сначала пробуем id комнаты (cuid), затем — код комнаты: так работают
     // обе формы ссылки из карточки кабинета.

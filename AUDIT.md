@@ -146,7 +146,13 @@ HTTP endpoint выдаёт `encryptionKey`, проверив школу, но н
 - Регрессионные тесты: `scripts/security-rules.test.ts` → «H-03: объявления изолированы по школе».
 
 
-#### [DEFERRED] H-04. Уязвимые версии Next.js и другие advisories в lock tree
+#### [FIXED 2026-10-30] H-04. Уязвимые версии Next.js и другие advisories в lock tree
+
+> **Закрыто в PR #80.** Next.js обновлён `14.2.35 → 16.4.3` (React 19, ESLint 10,
+> `middleware.ts → proxy.ts`, асинхронные `params`/`searchParams`), попутно
+> закрыты `katex`, `electron`, `sharp`, `deepmerge-ts`; `npm audit` по prod- и
+> dev-дереву даёт **0 уязвимостей**, шаг аудита в CI стал блокирующим.
+> Текст ниже — исходная запись аудита, сохранена как история.
 
 На дату аудита `npm audit --json` сообщает **18 advisories**: 1 Critical, 11 High, 2 Moderate, 4 Low. Прямая runtime-зависимость `next` зафиксирована на `14.2.35` ([`package.json:30`](package.json#L30), [`package-lock.json:6676–6679`](package-lock.json#L6676)); audit указывает для неё диапазон уязвимых версий до `15.5.23`. Среди совпавших advisory — DoS в обработке React Server Components ([GHSA-h25m-26qc-wcjf](https://github.com/advisories/GHSA-h25m-26qc-wcjf)) и SSRF в приложениях с WebSocket upgrades ([GHSA-c4j6-fc7j-m34r](https://github.com/advisories/GHSA-c4j6-fc7j-m34r)); проект использует App Router и Socket.IO upgrade, но точную достижимость конкретного SSRF-сценария нужно перепроверить на deployment-конфигурации. Audit предлагает обновление до `next@16.4.2`, то есть major upgrade. В lockfile также зафиксированы уязвимые версии `eslint-config-next@14.2.35` ([`package-lock.json:3647–3651`](package-lock.json#L3647)), `prisma@6.19.3` ([`package-lock.json:7559–7565`](package-lock.json#L7559)), `tailwindcss@3.4.19` ([`package-lock.json:8865–8870`](package-lock.json#L8865)) и `katex@0.16.47` ([`package-lock.json:5681–5684`](package-lock.json#L5681)); уровни и применимость различаются.
 
@@ -167,7 +173,9 @@ HTTP endpoint выдаёт `encryptionKey`, проверив школу, но н
 **Рекомендация:** убрать изменение production-схемы из build; добавить проверяемые Prisma migrations, отдельный контролируемый deploy step, backup/restore procedure и staging migration test. В этом аудите `npm run build` не запускался по прямому указанию.
 **Статус [FIXED] (2026-10-17):**
 - `"build"` больше не накатывает схему: `"build": "prisma generate && next build"`. Флаг `--accept-data-loss` из пайплайна удалён полностью.
-- Добавлен отдельный контролируемый шаг `"db:deploy": "prisma db push --skip-generate"`; `DEPLOYMENT.md` теперь описывает его как осознанный этап после бэкапа (а `npm run db:push` остался для локальной разработки).
+- Добавлен отдельный контролируемый шаг `"db:deploy"`; `DEPLOYMENT.md` описывает его как осознанный этап после бэкапа.
+  **Обновление (PR #81):** `db:deploy` теперь `prisma migrate deploy`, в репозитории есть история миграций,
+  а CI применяет их к чистому Postgres и проверяет расхождение со схемой.
 - Регрессионный тест: `scripts/security-rules.test.ts` проверяет, что в `scripts.build` нет ни `db push`, ни `--accept-data-loss`.
 - **Не сделано здесь (нужен отдельный PR):** переход с `db push` на версионируемые миграции (`prisma migrate`) и процедура backup/restore — это изменение процесса деплоя, требующее согласования и прогона на staging.
 

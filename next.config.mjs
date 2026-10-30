@@ -22,7 +22,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   compress: true,
-  swcMinify: true,
   // Заголовок X-Powered-By раскрывает версию фреймворка.
   poweredByHeader: false,
 
@@ -76,10 +75,16 @@ const nextConfig = {
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
         ],
       },
-      {
-        source: "/_next/static/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
-      },
+      // Только production: в dev долгий immutable-кэш ломает HMR, и Next 16
+      // прямо предупреждает об этом при старте.
+      ...(dev
+        ? []
+        : [
+            {
+              source: "/_next/static/:path*",
+              headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+            },
+          ]),
       {
         // Имена установщиков не меняются между релизами — кэшируем ненадолго,
         // но с обязательной ревалидацией.

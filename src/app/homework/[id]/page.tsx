@@ -20,18 +20,19 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 interface HomeworkPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 /** Карточка задания: для ученика — сдача, для учителя — проверка. Доступ проверяется на сервере. */
 export default async function HomeworkDetailPage({ params }: HomeworkPageProps) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
-  if (!session?.user) redirect(`/login?callbackUrl=${encodeURIComponent(`/homework/${params.id}`)}`);
+  if (!session?.user) redirect(`/login?callbackUrl=${encodeURIComponent(`/homework/${id}`)}`);
 
   const viewer = await getSchoolViewer(session.user.id);
   if (!viewer) redirect("/login");
 
-  const detail = await getHomeworkDetailForViewer(params.id, viewer);
+  const detail = await getHomeworkDetailForViewer(id, viewer);
   if (!detail) notFound();
 
   const { homework } = detail;

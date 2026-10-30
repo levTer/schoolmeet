@@ -13,7 +13,7 @@ import { requireCapability, requireAdminViewer } from "@/lib/session-viewer";
 export const dynamic = "force-dynamic";
 
 interface RouteContext {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 /** Сколько активных администраторов осталось бы после смены роли/блокировки. */
@@ -30,10 +30,11 @@ async function countActiveAdmins(excludingId: string, schoolId: string): Promise
  * блокировке живые сокет-сессии пользователя рвутся немедленно.
  */
 export async function PATCH(request: Request, { params }: RouteContext): Promise<NextResponse> {
+  const { id } = await params;
   try {
     const viewer = await requireAdminViewer();
 
-    const target = await getUserForAdmin(params.id, viewer.schoolId);
+    const target = await getUserForAdmin(id, viewer.schoolId);
     if (!target) {
       return jsonError(404, "NOT_FOUND", "Пользователь не найден");
     }
@@ -165,11 +166,12 @@ export async function PATCH(request: Request, { params }: RouteContext): Promise
  * GET /api/admin/users/[id] — карточка пользователя (для модалки редактирования).
  */
 export async function GET(_request: Request, { params }: RouteContext): Promise<NextResponse> {
+  const { id } = await params;
   try {
     const viewer = await requireAdminViewer();
     requireCapability(viewer, "users.view");
 
-    const user = await getUserForAdmin(params.id, viewer.schoolId);
+    const user = await getUserForAdmin(id, viewer.schoolId);
     if (!user) return jsonError(404, "NOT_FOUND", "Пользователь не найден");
 
     const control = getRealtimeControl();
