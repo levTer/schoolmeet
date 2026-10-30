@@ -4,6 +4,16 @@ import type { GradeCode } from "@/lib/schedule-rules";
 import type { Role } from "@/types";
 
 /** Минимальные данные о текущем пользователе, нужные расписанию и ДЗ. */
+const VIEWER_SELECT = {
+  id: true,
+  role: true,
+  grade: true,
+  schoolId: true,
+  classId: true,
+  schoolClass: { select: { name: true } },
+  isBanned: true,
+} as const;
+
 export interface SchoolViewer {
   id: string;
   role: Role;
@@ -21,19 +31,23 @@ export interface SchoolViewer {
  * Если старый аккаунт ещё не привязан к школе, мигрирует его в основную школу.
  */
 export async function getSchoolViewer(userId: string): Promise<SchoolViewer | null> {
-  await ensureUserSchoolMembership(userId);
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      role: true,
-      grade: true,
-      schoolId: true,
-      classId: true,
-      schoolClass: { select: { name: true } },
-      isBanned: true,
-    },
-  });
+  /**
+   * Быстрый путь: один запрос, если аккаунт уже привязан к школе (а ученик —
+   * к классу). `ensureUserSchoolMembership` — тяжёлая операция (проверка школ,
+   * досыпка класса, повторное чтение), поэтому вызываем её ТОЛЬКО для legacy-
+   * аккаунтов. Раньше она вызывалась всегда: +2 запроса к БД на каждый
+   * защищённый API-вызов и на каждый сокет-рукопожатие.
+   */
+  let user = await prisma.user.findUnique({ where: { id: userId }, select: VIEWER_SELECT });
+
+  const needsMembership =
+    user !== null && (!user.schoolId || (user.role === "STUDENT" && !user.classId));
+
+  if (needsMembership) {
+    await ensureUserSchoolMembership(userId);
+    user = await prisma.user.findUnique({ where: { id: userId }, select: VIEWER_SELECT });
+  }
+
   if (!user) return null;
 
   return {

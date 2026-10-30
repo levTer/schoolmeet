@@ -1,0 +1,81 @@
+# CI веб-приложения: типы, тесты, сборка и аудит зависимостей.
+#
+# Зачем: до этого в репозитории были только сборки desktop/Android, а 400+
+# тестов не запускались ни в одном PR — регресс проходил молча.
+#
+# Prisma-клиент генерируется до проверки типов: без него `tsc` не видит типы
+# моделей и проверка теряет смысл.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Types, tests & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      # Заглушки: сборка Next.js не должна требовать реальную БД и секреты.
+      DATABASE_URL: "postgresql://user:password@localhost:5432/schoolmeet?schema=public"
+      NEXTAUTH_SECRET: "ci-only-secret-not-used-in-production"
+      NEXTAUTH_URL: "http://localhost:3000"
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22, а не 20: тесты используют `mock.module("@/lib/prisma")`,
+          # а загрузчик моков в Node 20 не резолвит alias из tsconfig
+          # (`ERR_MODULE_NOT_FOUND: scripts/@/lib/prisma`).
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Audit production dependencies
+        # Пока не блокирует: критический advisory Next.js 14 закрывается
+        # мажорным обновлением фреймворка (см. docs/security-hardening.md).
+        # После обновления шаг станет обязательным (`continue-on-error` убрать).
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Secret scan (пароли и invite-токены в исходниках)
+        # Сканируем приложение и публичные документы. Тесты используют эти
+        # строки как негативные фикстуры, а AUDIT.md — исторический отчёт,
+        # поэтому они исключены: важно, чтобы секрета не было в боевом коде
+        # и в документации для пользователей.
+        run: |
+          if grep -rnE "Admin123!|Fullhouse123!|Anna123!|admin-(sinlycem|fulhouse|annat)-20" \
+             src prisma public server.ts next.config.mjs \
+             README.md DEPLOYMENT.md .env.example; then
+            echo "::error::В боевом коде или документации найдены секреты администратора"
+            exit 1
+          fi
+          echo "Секретов не найдено"

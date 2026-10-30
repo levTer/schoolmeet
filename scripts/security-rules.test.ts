@@ -398,7 +398,12 @@ describe("C-01: публичная инициализация не возвра�
       !check.includes("configuredSchoolInviteData"),
       "публичный /api/schools/check не должен откатывать admin-токен к пресету",
     );
-    assert.match(check, /provisioningInviteData/, "нет безопасного досыпания токенов");
+    // Ещё строже: публичный endpoint больше НЕ ПИШЕТ в существующую школу.
+    assert.ok(
+      !/prisma\.school\.(update|upsert)\(/.test(check),
+      "публичный /api/schools/check не должен изменять школу",
+    );
+    assert.match(check, /checkRequestRateLimit\(/, "публичный endpoint без собственного лимита");
 
     const schools = readSource("src/lib/schools.ts");
     assert.ok(
@@ -420,34 +425,49 @@ describe("C-01: публичная инициализация не возвра�
 /* C-02. Гарантированные демо-админы                                           */
 /* -------------------------------------------------------------------------- */
 
-describe("C-02: пароль администратора не перетирается при старте", () => {
-  it("provisioning обновляет профиль, но не сбрасывает пароль без явного флага", () => {
-    const schools = readSource("src/lib/schools.ts");
+describe("C-02: bootstrap-админ не воскресает и пароль не перетирается", () => {
+  const schools = readSource("src/lib/schools.ts");
+  const body = (() => {
     const fn = schools.slice(schools.indexOf("async function ensureGuaranteedAdmin"));
     const end = fn.indexOf("let defaultSchoolPromise");
-    const body = fn.slice(0, end > 0 ? end : undefined);
+    return fn.slice(0, end > 0 ? end : undefined);
+  })();
 
-    assert.match(body, /if \(!existing\)/, "создание должно быть условным");
-    assert.match(body, /demoAdminPasswordResetEnabled\(\)/, "сброс пароля только по флагу оператора");
-
-    // Хеш пароля пишется ровно дважды: при создании аккаунта и в ветке
-    // явного сброса. Безусловного «перетёрли пароль при каждом старте» нет.
-    const hashWrites = body.match(/password: bcryptjs\.hashSync\(admin\.password/g)?.length ?? 0;
-    assert.equal(hashWrites, 2, "пароль должен писаться только при создании и при явном сбросе");
-
-    const updateBranch = body.slice(body.indexOf("const data = demoAdminPasswordResetEnabled()"));
-    assert.match(updateBranch, /password: bcryptjs\.hashSync/);
+  it("существующий аккаунт не изменяется вообще (бан, роль и пароль не отменяются рестартом)", () => {
+    assert.match(body, /if \(existing\) return;/, "существующий админ должен оставаться нетронутым");
+    assert.ok(
+      !/db\.user\.update\(/.test(body),
+      "provisioning не должен обновлять существующего администратора (снимал бан, возвращал роль)",
+    );
+    // Пароль хешируется ровно в одном месте — при создании.
+    const hashWrites = body.match(/password: bcryptjs\.hashSync\(/g)?.length ?? 0;
+    assert.equal(hashWrites, 1, "пароль должен писаться только при создании аккаунта");
   });
 
-  it("пароли демо-админов можно переопределить переменной окружения", () => {
-    const config = readSource("src/lib/school-config.ts");
-    assert.match(config, /SCHOOLMEET_DEMO_ADMIN_PASSWORDS/);
-    assert.match(config, /SCHOOLMEET_DISABLE_DEMO_ADMIN_SEED/);
-    // Пароли не печатаются в лог.
-    const schools = readSource("src/lib/schools.ts");
+  it("bootstrap-админ создаётся, только если в школе нет активного ADMIN", () => {
+    assert.match(body, /const activeAdmins = await db\.user\.count\(/, "нет проверки существующих админов");
+    assert.match(body, /if \(activeAdmins > 0\) return;/, "bootstrap создаётся поверх работающего админа");
+  });
+
+  it("без переменной окружения выдаётся одноразовый случайный пароль", () => {
+    assert.match(body, /generateBootstrapPassword\(\)/, "нет одноразового пароля");
+    assert.match(body, /admin\.password \?\? generateBootstrapPassword\(\)/, "пароль не берётся из окружения с fallback");
+    // В лог уходит только одноразовый пароль при создании — и никогда «вечный».
+    assert.match(body, /Одноразовый пароль:/);
     assert.ok(
       !/console\.(log|warn|error)\([^)]*admin\.password/.test(schools),
-      "пароль демо-админа попадает в лог",
+      "пароль bootstrap-админа попадает в лог",
+    );
+  });
+
+  it("инициализацию можно выключить, и вход её не обходит", () => {
+    const config = readSource("src/lib/school-config.ts");
+    assert.match(config, /SCHOOLMEET_DISABLE_DEMO_ADMIN_SEED|SCHOOLMEET_DISABLE_BOOTSTRAP_ADMIN/);
+    const auth = readSource("src/lib/auth.ts");
+    assert.match(
+      auth,
+      /CONFIGURED_ADMIN_EMAILS\.has\(cleanEmail\) && !demoAdminSeedDisabled\(\)/,
+      "ленивый bootstrap-вход игнорирует запрет оператора",
     );
   });
 
@@ -456,12 +476,14 @@ describe("C-02: пароль администратора не перетира�
     assert.ok(!/пароль: \$\{SEED_PASSWORD\}/.test(seed), "сид печатает пароль в лог");
   });
 
-  it("публичные документы не содержат пароль гарантированного администратора", () => {
-    const readme = readSource("README.md");
-    const deployment = readSource("DEPLOYMENT.md");
-    for (const doc of [readme, deployment]) {
-      assert.ok(!doc.includes("Admin123!"), "README/DEPLOYMENT всё ещё публикуют демо-пароль");
+  it("публичные документы и исходники не содержат пароль администратора", () => {
+    for (const path of ["README.md", "DEPLOYMENT.md", ".env.example"]) {
+      const doc = readSource(path);
+      assert.ok(!doc.includes("Admin123!"), `${path} всё ещё публикует демо-пароль`);
     }
+    const config = readSource("src/lib/school-config.ts");
+    assert.ok(!config.includes("Admin123!"), "source всё ещё содержит демо-пароль");
+    assert.ok(!config.includes("admin-sinlycem-2026"), "source всё ещё содержит preset admin-токен");
   });
 });
 

@@ -12,8 +12,10 @@ import {
   type DatabaseUserSnapshot,
   type SessionToken,
 } from "@/lib/auth-token";
+import { writeAuditLog } from "@/lib/audit";
+import { loginLockStatus, registerLoginFailure, resetLoginFailures } from "@/lib/login-guard";
 import { prisma } from "@/lib/prisma";
-import { GUARANTEED_ADMINS } from "@/lib/school-config";
+import { GUARANTEED_ADMINS, demoAdminSeedDisabled } from "@/lib/school-config";
 import { ensureUserSchoolMembership, provisionConfiguredSchools } from "@/lib/schools";
 import type { Role } from "@/types";
 
@@ -36,6 +38,22 @@ export const SESSION_SYNC_GRACE_MS = 24 * 60 * 60 * 1000;
  * действия через API и так проверяются по БД, см. `requireViewer`).
  */
 export const SESSION_REFRESH_MS = 60_000;
+
+/**
+ * Троттлинг записи входов в журнал аудита: одна запись на пользователя в час.
+ * Полный список входов нужен службе безопасности, но он не должен превращаться
+ * в запись в БД на каждый refresh сессии.
+ */
+const LOGIN_AUDIT_INTERVAL_MS = 60 * 60_000;
+const lastLoginAuditAt = new Map<string, number>();
+
+function shouldWriteLoginAudit(userId: string, now: number = Date.now()): boolean {
+  const previous = lastLoginAuditAt.get(userId) ?? 0;
+  if (now - previous < LOGIN_AUDIT_INTERVAL_MS) return false;
+  if (lastLoginAuditAt.size > 5_000) lastLoginAuditAt.clear();
+  lastLoginAuditAt.set(userId, now);
+  return true;
+}
 
 /**
  * Роли, которым открыт раздел `/admin` (см. также `src/middleware.ts`).
@@ -162,50 +180,61 @@ export const authOptions: NextAuthOptions = {
        * по ним в логах продакшена видна точная причина отказа.
        */
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          console.log('[AUTH] Missing credentials');
-          return null;
-        }
+        if (!credentials?.email || !credentials?.password) return null;
 
         const cleanEmail = credentials.email.toLowerCase().trim();
         const password = credentials.password;
+        if (!cleanEmail) return null;
 
-        if (!cleanEmail) {
-          console.log('[AUTH] Missing credentials');
-          return null;
-        }
-
+        /**
+         * Пароль и email НЕ логируются никогда: логи хостинга — не место для
+         * персональных данных школьников. В журнал попадают только машинные
+         * коды причин отказа.
+         */
         try {
-          console.log(`[AUTH] Login attempt for: ${cleanEmail}`);
+          // 0. Блокировка после серии неудачных попыток (защита от перебора).
+          const lock = loginLockStatus(cleanEmail);
+          if (lock.locked) {
+            console.warn(`[AUTH_FAIL] ACCOUNT_LOCKED retry_after=${lock.retryAfterSeconds}s`);
+            return null;
+          }
 
           // 1. Поиск пользователя в PostgreSQL
           let user = await findUserByEmail(cleanEmail);
 
-          // 2. Если это дефолтный админ, но его еще нет в БД — инициализируем его В БАЗЕ ДАННЫХ
-          if (!user && CONFIGURED_ADMIN_EMAILS.has(cleanEmail)) {
-            console.log(`[AUTH] Initializing missing admin in DB for: ${cleanEmail}`);
-            await provisionConfiguredSchools(); // Гарантирует создание школ и пользователей в Neon
+          // 2. Bootstrap-админ ещё не создан (пустая база) — инициализируем.
+          //    Если инициализация отключена оператором, НИЧЕГО не создаём:
+          //    вход в чужой тенант невозможен без явного согласия владельца.
+          if (!user && CONFIGURED_ADMIN_EMAILS.has(cleanEmail) && !demoAdminSeedDisabled()) {
+            console.warn('[AUTH] Bootstrap provisioning для настроенного администратора');
+            await provisionConfiguredSchools();
             user = await findUserByEmail(cleanEmail);
           }
 
           if (!user) {
-            console.log(`[AUTH_FAIL] User not found in DB: ${cleanEmail}`);
+            registerLoginFailure(cleanEmail);
+            console.warn('[AUTH_FAIL] USER_NOT_FOUND');
             return null;
           }
 
           if (user.isBanned) {
-            console.log(`[AUTH_FAIL] User is banned: ${cleanEmail}`);
+            console.warn('[AUTH_FAIL] ACCOUNT_BANNED');
             return null;
           }
 
           // 3. Строгая проверка пароля из ХЕША В БАЗЕ ДАННЫХ
           const isPasswordValid = await bcryptjs.compare(password, user.password);
           if (!isPasswordValid) {
-            console.log(`[AUTH_FAIL] Invalid password for: ${cleanEmail}`);
+            const status = registerLoginFailure(cleanEmail);
+            console.warn(
+              `[AUTH_FAIL] INVALID_PASSWORD failures=${status.failures}${status.locked ? ` locked_for=${status.retryAfterSeconds}s` : ""}`,
+            );
             return null;
           }
 
-          console.log(`[AUTH_SUCCESS] User authenticated: ${cleanEmail} (${user.role})`);
+          // Успешный вход сбрасывает счётчик провалов.
+          resetLoginFailures(cleanEmail);
+          console.warn(`[AUTH_SUCCESS] role=${user.role}`);
 
           // Старые аккаунты без школы мигрируем в школу по умолчанию до
           // выпуска JWT (как и раньше); свежие записи уже имеют schoolId.
@@ -217,6 +246,18 @@ export const authOptions: NextAuthOptions = {
               schoolId = membership.schoolId;
               classId = membership.classId;
             }
+          }
+
+          // Вход в журнал аудита. Best-effort: запись не должна блокировать вход,
+          // а `writeAuditLog` сам глотает ошибки. Журнал тенант-скоупный, поэтому
+          // пишем только когда школа известна (у legacy-аккаунта её может не быть).
+          if (schoolId && shouldWriteLoginAudit(user.id)) {
+            await writeAuditLog({
+              userId: user.id,
+              schoolId,
+              action: "auth.login",
+              details: { role: user.role },
+            });
           }
 
           // Пароль-хеш наружу не отдаём; в сессию попадают только данные из БД.
@@ -233,7 +274,8 @@ export const authOptions: NextAuthOptions = {
             sessionVersion: user.sessionVersion ?? 0,
           };
         } catch (error) {
-          console.error(`[AUTH_ERROR] Critical DB or Auth error for ${cleanEmail}:`, error);
+          // Здесь тоже не печатаем email: только тип ошибки.
+          console.error('[AUTH_ERROR] Critical DB or Auth error:', error);
           return null;
         }
       },

@@ -187,14 +187,43 @@ export function rateLimitBucketCount(): number {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Достаёт IP клиента из заголовков прокси.
+ * Доверяем ли мы заголовкам прокси при определении IP клиента.
  *
- * Приложение рассчитано на работу за обратным прокси (nginx, платформа
- * хостинга), поэтому доверяем `x-forwarded-for` (первый адрес в цепочке),
- * `x-real-ip` и `cf-connecting-ip`. Без прокси заголовков нет — тогда
- * возвращаем "unknown", и все локальные запросы делят одну корзину.
+ * `x-forwarded-for` формирует КЛИЕНТ, поэтому «первый адрес в цепочке» можно
+ * подделать одним заголовком — и обойти rate-limit. Доверять ему можно только
+ * тогда, когда перед приложением гарантированно стоит прокси, который сам
+ * перезаписывает XFF:
+ *
+ *  - `TRUST_PROXY_HEADERS=true` — явное подтверждение оператора (свой nginx);
+ *  - известные платформы (`RENDER`, `VERCEL`, `RAILWAY_…`, `FLY_APP_NAME`) —
+ *    там прокси есть всегда;
+ *  - `TRUST_PROXY_HEADERS=false` — не доверяем никогда.
+ *
+ * По умолчанию (без переменных и без платформы) заголовки НЕ доверяются.
  */
-export function getClientIp(headers: Headers | { get(name: string): string | null }): string {
+export function trustProxyHeaders(env: NodeJS.ProcessEnv = process.env): boolean {
+  const explicit = (env.TRUST_PROXY_HEADERS ?? "").trim().toLowerCase();
+  if (explicit === "true") return true;
+  if (explicit === "false") return false;
+  return Boolean(env.RENDER || env.VERCEL || env.RAILWAY_ENVIRONMENT || env.FLY_APP_NAME);
+}
+
+/**
+ * Достаёт IP клиента из заголовков.
+ *
+ * За доверенным прокси берём первый адрес `x-forwarded-for`, затем `x-real-ip`
+ * и `cf-connecting-ip`. Без доверенного прокси эти заголовки игнорируются: тогда
+ * IP приходит из сокета (`getClientIpFromNodeHeaders(..., remoteAddress)`), а в
+ * middleware — `"unknown"`, и все локальные запросы делят одну корзину. Это
+ * безопаснее, чем позволить клиенту выбирать себе квоту.
+ */
+export function getClientIp(
+  headers: Headers | { get(name: string): string | null },
+  options: { trusted?: boolean } = {},
+): string {
+  const trusted = options.trusted ?? trustProxyHeaders();
+  if (!trusted) return "unknown";
+
   const forwardedFor = headers.get("x-forwarded-for");
   if (forwardedFor) {
     const first = forwardedFor.split(",")[0]?.trim();
@@ -221,23 +250,36 @@ export function rateLimitHeaders(result: RateLimitResult): Record<string, string
 }
 
 /**
- * IP из заголовков Node.js (`req.headers`) — нужен Socket.IO-рукопожатию, где
- * заголовки приходят объектом, а не `Headers`.
+ * IP для Node-контекста (Socket.IO): заголовки приходят объектом, а адрес пира
+ * доступен напрямую как `remoteAddress`.
+ *
+ * Без доверенного прокси используется `remoteAddress` — подделать его клиент не
+ * может. Заголовки применяются только когда прокси доверенный.
  */
 export function getClientIpFromNodeHeaders(
   headers: Record<string, string | string[] | undefined>,
+  remoteAddress?: string | null,
+  options: { trusted?: boolean } = {},
 ): string {
-  const pick = (name: string): string => {
-    const value = headers[name];
-    if (Array.isArray(value)) return value[0] ?? "";
-    return typeof value === "string" ? value : "";
-  };
+  const trusted = options.trusted ?? trustProxyHeaders();
 
-  const forwarded = pick("x-forwarded-for").split(",")[0]?.trim();
-  if (forwarded) return forwarded.slice(0, 64);
+  if (trusted) {
+    const pick = (name: string): string => {
+      const value = headers[name];
+      if (Array.isArray(value)) return value[0] ?? "";
+      return typeof value === "string" ? value : "";
+    };
 
-  const direct = pick("x-real-ip") || pick("cf-connecting-ip");
-  return direct.trim().slice(0, 64) || "unknown";
+    const forwarded = pick("x-forwarded-for").split(",")[0]?.trim();
+    if (forwarded) return forwarded.slice(0, 64);
+
+    const direct = pick("x-real-ip") || pick("cf-connecting-ip");
+    if (direct.trim()) return direct.trim().slice(0, 64);
+  }
+
+  // Адрес сокета: `::ffff:10.0.0.1` нормализуем до IPv4-подобного вида.
+  const socketAddress = (remoteAddress ?? "").replace(/^::ffff:/, "").trim();
+  return socketAddress.slice(0, 64) || "unknown";
 }
 
 /** Списывает квоту области для известного IP (Socket.IO, фоновые задачи). */

@@ -13,6 +13,7 @@ import next from "next";
 
 import { attachRealtime } from "./src/server/realtime";
 import { provisionConfiguredSchools } from "./src/lib/schools";
+import { runStartupMaintenance } from "./src/lib/startup-maintenance";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT ?? 3000);
@@ -30,6 +31,14 @@ async function main(): Promise<void> {
     // БД может быть временно недоступна — сервер поднимается, а инициализация
     // продублируется лениво при первом входе (`ensureUserSchoolMembership`).
     console.error("[startup] Не удалось инициализировать школы и администратора:", error);
+  }
+
+  // Хвосты после падения/редеплоя: зависшая посещаемость и «фантомные» активные
+  // уроки. Best-effort: сбой обслуживания не мешает серверу подняться.
+  try {
+    await runStartupMaintenance();
+  } catch (error) {
+    console.error("[startup] Обслуживание БД не выполнено:", error);
   }
 
   const app = next({ dev, hostname: host, port });

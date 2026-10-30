@@ -393,10 +393,21 @@ bubblewrap build        # на выходе: app-release-signed.apk и .aab
 | `NEXT_PUBLIC_ICE_SERVERS` | — | legacy: полный override списка ICE |
 | `UPLOAD_DIR` | — | каталог файлов ДЗ (по умолчанию `./storage/uploads`) |
 | `RATE_LIMIT_MAX_REQUESTS` / `RATE_LIMIT_WINDOW_MS` | — | рейт-лимит (100/мин по умолчанию) |
+| `TRUST_PROXY_HEADERS` | свой VPS за nginx — **`true`** | доверять `X-Forwarded-For`. Без него IP берётся из сокета, а за прокси все клиенты попадут в одну квоту лимита |
+| `SCHOOLMEET_BOOTSTRAP_ADMIN_PASSWORDS` | **да, на проде** | JSON `email -> пароль` для bootstrap-админов. Без переменной выдаётся одноразовый случайный пароль (в лог один раз при создании) |
+| `SCHOOLMEET_ADMIN_INVITE_TOKENS` | **да, на проде** | JSON `код школы -> invite-токен`. Без переменной школы получают случайный UUID |
+| `SCHOOLMEET_DISABLE_BOOTSTRAP_ADMIN` | после создания админов — `true` | не создавать bootstrap-админов вообще |
+| `FILES_PERSISTENT` | только для постоянного диска — `true` | подтверждает, что файлы ДЗ не исчезнут при рестарте (на Vercel обязательны S3/R2) |
 | `SEED_PASSWORD` | — | пароль демо-аккаунтов сида |
 | `PORT` / `HOST` | — | для `npm run start` (3000 / 0.0.0.0) |
 
 Полный список с комментариями — в **[.env.example](.env.example)**.
+
+> ⚠️ **Секретов в репозитории нет.** После первого деплоя обязательно задайте
+> `SCHOOLMEET_BOOTSTRAP_ADMIN_PASSWORDS` и `SCHOOLMEET_ADMIN_INVITE_TOKENS`
+> (см. [`docs/security-hardening.md`](docs/security-hardening.md)), а затем
+> выключите автосоздание админов: `SCHOOLMEET_DISABLE_BOOTSTRAP_ADMIN=true`.
+> Проверка живости для монитора — `GET /api/health` (503 при недоступной БД).
 
 ---
 

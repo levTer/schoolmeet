@@ -45,9 +45,17 @@ const MAX_PROMPT_LENGTH = 2000;
  * рукописных формул (Groq Vision) требуются полноценные снимки области.
  */
 const MAX_IMAGE_LENGTH = 6 * 1024 * 1024;
-/** Bound in-flight model/image work so AI traffic cannot exhaust the web process. */
+/**
+ * Потолки одновременной работы, чтобы трафик ИИ не съел память процесса.
+ *
+ * Текстовый запрос почти ничего не стоит, а Vision держит в памяти до
+ * `MAX_IMAGE_LENGTH` base64 (6 МБ) на запрос — поэтому изображения ограничены
+ * отдельно и жёстче: 2 × 6 МБ вместо 4 × 6 МБ.
+ */
 const MAX_CONCURRENT_AI_REQUESTS = 4;
+const MAX_CONCURRENT_VISION_REQUESTS = 2;
 let activeAiRequests = 0;
+let activeVisionRequests = 0;
 
 /**
  * GET /api/ai — сведения об ИИ-движке для бейджа в UI:
@@ -136,13 +144,18 @@ export async function POST(request: Request): Promise<NextResponse> {
   // Provider network calls use native async fetch, so waiting for a model does
   // not block the Node event loop or other HTTP endpoints. Shed excess work
   // instead of retaining dozens of 6 MB Vision payloads in a 512 MB process.
-  if (activeAiRequests >= MAX_CONCURRENT_AI_REQUESTS) {
+  const isVision = Boolean(imageDataUrl);
+  if (
+    activeAiRequests >= MAX_CONCURRENT_AI_REQUESTS ||
+    (isVision && activeVisionRequests >= MAX_CONCURRENT_VISION_REQUESTS)
+  ) {
     return NextResponse.json(
       { ok: false, error: "ИИ-помощник занят. Повторите запрос через несколько секунд.", code: "AI_BUSY" },
       { status: 503, headers: { "Retry-After": "3" } },
     );
   }
   activeAiRequests += 1;
+  if (isVision) activeVisionRequests += 1;
   try {
     // Цепочка AutoAIProvider гарантирует ответ (последнее звено — локальный Mock).
     const response = await getAIProvider().complete(aiRequest);
@@ -155,5 +168,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   } finally {
     activeAiRequests -= 1;
+    if (isVision) activeVisionRequests -= 1;
   }
 }

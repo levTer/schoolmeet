@@ -77,7 +77,27 @@ export const HOMEWORK_LIMITS = {
   defaultMaxScore: 5,
   maxFilesPerSubmission: 5,
   maxFileBytes: 10 * 1024 * 1024,
+  /**
+   * Потолок всего multipart-запроса: файл + служебные поля и границы.
+   * Проверяется по `Content-Length` ДО `request.formData()`, иначе тело уже
+   * лежит в памяти и «проверка размера после чтения» ничего не экономит.
+   */
+  maxUploadRequestBytes: 11 * 1024 * 1024,
 } as const;
+
+/**
+ * Можно ли принять загрузку с таким `Content-Length`.
+ *
+ * `null` (заголовка нет — chunked-запрос) считаем допустимым: окончательный
+ * размер всё равно проверяется по факту, но такой запрос хотя бы не отсекается
+ * ошибочно.
+ */
+export function isUploadLengthAllowed(contentLength: string | null): boolean {
+  if (!contentLength) return true;
+  const bytes = Number(contentLength);
+  if (!Number.isFinite(bytes) || bytes < 0) return false;
+  return bytes <= HOMEWORK_LIMITS.maxUploadRequestBytes;
+}
 
 export interface AllowedFileType {
   extension: string;

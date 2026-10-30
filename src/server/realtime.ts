@@ -584,7 +584,8 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
     }
 
     // Ограничиваем частоту попыток подключения с одного IP (анти-флуд).
-    const ip = getClientIpFromNodeHeaders(socket.handshake.headers);
+    // Адрес пира берём из сокета: заголовкам XFF верим только за доверенным прокси.
+    const ip = getClientIpFromNodeHeaders(socket.handshake.headers, socket.handshake.address);
     if (!consumeRateLimitForIp("socket", ip, "handshake").ok) {
       next(new Error("RATE_LIMITED"));
       return;

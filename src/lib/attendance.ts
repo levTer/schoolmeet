@@ -219,3 +219,67 @@ export async function listAttendance(options: ListAttendanceOptions): Promise<{
     })),
   };
 }
+
+/**
+ * Закрывает «зависшие» записи посещаемости по ВСЕМ школам.
+ *
+ * Зачем отдельная функция: `finishStaleAttendance(schoolId)` вызывается лениво
+ * из админских выборок, поэтому после падения сервера записи без `leftAt`
+ * висят в отчётах месяцами, а «кто сейчас на уроке» показывает фантомов.
+ * Вызывается один раз при старте (`runStartupMaintenance`), батчами, чтобы не
+ * держать блокировку на большой таблице.
+ */
+export async function finishAllStaleAttendance(
+  now: Date = new Date(),
+  batchSize = 500,
+): Promise<number> {
+  let total = 0;
+  try {
+    const cutoff = new Date(now.getTime() - STALE_AFTER_MS);
+    for (let guard = 0; guard < 100; guard += 1) {
+      const stale = await prisma.attendanceRecord.findMany({
+        where: { leftAt: null, joinedAt: { lt: cutoff } },
+        select: { id: true },
+        take: batchSize,
+      });
+      if (stale.length === 0) break;
+
+      const result = await prisma.attendanceRecord.updateMany({
+        where: { id: { in: stale.map((row) => row.id) }, leftAt: null },
+        data: { leftAt: now, durationMinutes: 0 },
+      });
+      total += result.count;
+      if (stale.length < batchSize) break;
+    }
+    if (total > 0) console.warn(`[attendance] Закрыто зависших записей при старте: ${total}`);
+  } catch (error) {
+    console.error("[attendance] Не удалось закрыть зависшие записи при старте:", error);
+  }
+  return total;
+}
+
+/**
+ * Возвращает «забытые» активные уроки в `idle`.
+ *
+ * После падения/редеплоя в БД остаётся `status = "active"` без единого сокета:
+ * лобби и админ-панель показывают уроки, которых нет. Освобождаем только
+ * комнаты, которые считаются активными дольше `STALE_AFTER_MS`, — занятия,
+ * реально идущие на другом инстансе, не затрагиваются.
+ */
+export async function releaseStaleMeetings(now: Date = new Date()): Promise<number> {
+  try {
+    const cutoff = new Date(now.getTime() - STALE_AFTER_MS);
+    const result = await prisma.meeting.updateMany({
+      where: {
+        status: "active",
+        OR: [{ callStartedAt: null }, { callStartedAt: { lt: cutoff } }, { startTime: { lt: cutoff } }],
+      },
+      data: { status: "idle", isActive: false, callStartedAt: null },
+    });
+    if (result.count > 0) console.warn(`[startup] Забытых активных уроков переведено в idle: ${result.count}`);
+    return result.count;
+  } catch (error) {
+    console.error("[startup] Не удалось освободить зависшие уроки:", error);
+    return 0;
+  }
+}

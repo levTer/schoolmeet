@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import bcryptjs from "bcryptjs";
 import { generateClassCode } from "@/lib/class-code";
+import { BCRYPT_SALT_ROUNDS } from "@/lib/password";
 import { INTERACTIVE_TRANSACTION_OPTIONS, prisma } from "@/lib/prisma";
 import { GRADES, type GradeCode } from "@/lib/schedule-rules";
 import { canonicalSchoolCode, gradeFromClassName } from "@/lib/school-rules";
@@ -17,8 +18,8 @@ import {
   LEGACY_DEFAULT_SCHOOL_CODE,
   SINGLE_CLASS_NAME,
   defaultClassNamesForSchool,
-  demoAdminPasswordResetEnabled,
   demoAdminSeedDisabled,
+  generateBootstrapPassword,
   isSingleClassSchool,
 } from "@/lib/school-config";
 
@@ -128,21 +129,23 @@ export async function backfillSchoolInviteTokens(db: PrismaClient = prisma): Pro
 }
 
 /**
- * Гарантирует существование демо-администратора в заданной школе (C-02).
+ * Гарантирует существование bootstrap-администратора школы.
  *
  * Зачем: роль ADMIN нельзя получить через публичную форму регистрации, поэтому
  * пустая база (свежий деплой без сида) осталась бы без администратора — и в
  * админ-панель никто не смог бы войти.
  *
- * Как теперь безопасно:
- *  - аккаунт СОЗДАЁТСЯ, только если его нет (пароль сразу хешируется bcrypt,
- *    в открытом виде никуда не пишется и не логируется);
- *  - у уже существующего аккаунта пароль НЕ перетирается: иначе смена пароля
- *    через админ-панель отменялась бы следующим стартом сервера. Обновляются
- *    только имя, роль, школа и снятие блокировки;
- *  - принудительный возврат демо-пароля — только по явному флагу оператора
- *    `SCHOOLMEET_RESET_DEMO_ADMIN_PASSWORDS=true` (разовая процедура);
- *  - всю инициализацию можно выключить: `SCHOOLMEET_DISABLE_DEMO_ADMIN_SEED=true`.
+ * Безопасные правила (C-01/C-02):
+ *  - аккаунт только СОЗДАЁТСЯ. Существующий аккаунт не изменяется вообще:
+ *    рестарт не снимает бан, не возвращает понижённую роль и не перетирает
+ *    сменённый пароль;
+ *  - если в школе уже есть хотя бы один ADMIN, bootstrap-аккаунт не создаётся —
+ *    после первого входа оператора приложение больше не плодит «известные»
+ *    аккаунты;
+ *  - пароль берётся из `SCHOOLMEET_BOOTSTRAP_ADMIN_PASSWORDS`; если переменной
+ *    нет, выпускается КРИПТОСЛУЧАЙНЫЙ одноразовый пароль, который печатается
+ *    в лог ровно один раз — при создании. Вечных паролей в репозитории нет;
+ *  - всю инициализацию можно выключить: `SCHOOLMEET_DISABLE_BOOTSTRAP_ADMIN=true`.
  */
 async function ensureGuaranteedAdmin(
   db: PrismaClient,
@@ -152,36 +155,50 @@ async function ensureGuaranteedAdmin(
   if (demoAdminSeedDisabled()) return;
 
   const email = admin.email.toLowerCase().trim();
-  const profile = {
-    name: admin.name,
-    role: admin.role,
-    schoolId,
-    classId: null,
-    grade: null,
-    isBanned: false,
-  } as const;
 
   // Ищем без учёта регистра: аккаунт мог быть создан до нормализации email
-  // («admin@schoolmeet.ru») — его надо обновить, а не дублировать второй строкой.
+  // («admin@schoolmeet.ru») — второй строки быть не должно.
   const existing = await db.user.findFirst({
     where: { email: { equals: email, mode: "insensitive" } },
-    select: { id: true },
+    select: { id: true, schoolId: true },
   });
 
+  // Аккаунт есть — не трогаем: бан, роль и пароль остаются как установил оператор.
+  if (existing) return;
+
+  // Школа уже имеет администратора — bootstrap не нужен.
+  const activeAdmins = await db.user.count({
+    where: { schoolId, role: "ADMIN", isBanned: false },
+  });
+  if (activeAdmins > 0) return;
+
+  const issuedPassword = admin.password ?? generateBootstrapPassword();
+  const passwordFromEnv = Boolean(admin.password);
+
   try {
-    if (!existing) {
-      await db.user.create({
-        data: { email, password: bcryptjs.hashSync(admin.password, 10), ...profile },
-      });
-      console.warn(`[schools] Создан гарантированный администратор ${email} для школы ${admin.schoolCode}.`);
-      return;
+    await db.user.create({
+      data: {
+        email,
+        password: bcryptjs.hashSync(issuedPassword, BCRYPT_SALT_ROUNDS),
+        name: admin.name,
+        role: admin.role,
+        schoolId,
+        classId: null,
+        grade: null,
+        isBanned: false,
+      },
+    });
+
+    // Одноразовый пароль печатаем ОДИН раз — иначе оператор не сможет войти.
+    if (!passwordFromEnv) {
+      console.warn(
+        `[schools] Создан bootstrap-администратор ${email} (школа ${admin.schoolCode}).\n` +
+          `          Одноразовый пароль: ${issuedPassword}\n` +
+          `          Смените его после первого входа: переменная SCHOOLMEET_BOOTSTRAP_ADMIN_PASSWORDS не задана.`,
+      );
+    } else {
+      console.warn(`[schools] Создан bootstrap-администратор ${email} (школа ${admin.schoolCode}) с паролем из окружения.`);
     }
-
-    const data = demoAdminPasswordResetEnabled()
-      ? { ...profile, password: bcryptjs.hashSync(admin.password, 10) }
-      : { ...profile };
-
-    await db.user.update({ where: { id: existing.id }, data });
   } catch (error) {
     // Параллельный инстанс успел создать аккаунт первым — уникальный индекс
     // победил, для нас это не ошибка.

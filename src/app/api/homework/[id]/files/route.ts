@@ -2,19 +2,31 @@ import { NextResponse } from "next/server";
 
 import { DomainError, handleRouteError, jsonError, jsonOk } from "@/lib/api";
 import { attachFileToDraft } from "@/lib/homework";
-import { HOMEWORK_LIMITS } from "@/lib/homework-rules";
+import { HOMEWORK_LIMITS, isUploadLengthAllowed } from "@/lib/homework-rules";
 import { requireRole, requireViewer } from "@/lib/session-viewer";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST /api/homework/[id]/files — прикрепить файл к черновику (multipart, поле `file`).
- * Размер проверяем до чтения тела, чтобы не держать в памяти лишнее.
+ *
+ * Размер проверяется ДВАЖДЫ и оба раза до обработки содержимого:
+ *  1. `Content-Length` — до `request.formData()`, иначе multipart уже
+ *     разобран и всё тело лежит в памяти (защита от OOM на 512 МБ процесса);
+ *  2. фактический `file.size` — после разбора, для честных клиентов и
+ *     chunked-запросов без заголовка.
  */
 export async function POST(request: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
   try {
     const viewer = await requireViewer();
     requireRole(viewer, ["STUDENT"], "Прикреплять файлы могут только ученики");
+
+    // 1. Гейт по Content-Length: отсекаем заведомо большие тело ДО буферизации.
+    if (!isUploadLengthAllowed(request.headers.get("content-length"))) {
+      return jsonError(413, "FILE_TOO_LARGE", "Файл больше 10 МБ", {
+        fields: { file: "Не больше 10 МБ" },
+      });
+    }
 
     let form: FormData;
     try {
