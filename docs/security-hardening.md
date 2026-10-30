@@ -198,7 +198,9 @@ npx prisma migrate resolve --applied 0001_baseline
 npx prisma migrate deploy
 ```
 
-`db:push` оставить для локальной разработки.
+`db:push` оставить только для локальной песочницы: в репозитории теперь есть
+полная история миграций (`prisma/migrations`), а CI применяет её к чистому
+Postgres и падает, если `schema.prisma` разошёлся с миграциями.
 
 ### 2.6. Артефакты в git (96 МБ `.exe`)
 

@@ -173,7 +173,9 @@ HTTP endpoint выдаёт `encryptionKey`, проверив школу, но н
 **Рекомендация:** убрать изменение production-схемы из build; добавить проверяемые Prisma migrations, отдельный контролируемый deploy step, backup/restore procedure и staging migration test. В этом аудите `npm run build` не запускался по прямому указанию.
 **Статус [FIXED] (2026-10-17):**
 - `"build"` больше не накатывает схему: `"build": "prisma generate && next build"`. Флаг `--accept-data-loss` из пайплайна удалён полностью.
-- Добавлен отдельный контролируемый шаг `"db:deploy": "prisma db push --skip-generate"`; `DEPLOYMENT.md` теперь описывает его как осознанный этап после бэкапа (а `npm run db:push` остался для локальной разработки).
+- Добавлен отдельный контролируемый шаг `"db:deploy"`; `DEPLOYMENT.md` описывает его как осознанный этап после бэкапа.
+  **Обновление (PR #81):** `db:deploy` теперь `prisma migrate deploy`, в репозитории есть история миграций,
+  а CI применяет их к чистому Postgres и проверяет расхождение со схемой.
 - Регрессионный тест: `scripts/security-rules.test.ts` проверяет, что в `scripts.build` нет ни `db push`, ни `--accept-data-loss`.
 - **Не сделано здесь (нужен отдельный PR):** переход с `db push` на версионируемые миграции (`prisma migrate`) и процедура backup/restore — это изменение процесса деплоя, требующее согласования и прогона на staging.
 

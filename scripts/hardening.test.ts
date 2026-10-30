@@ -383,6 +383,13 @@ describe("CI проверяет веб-приложение", () => {
     assert.match(ci, /npm audit --audit-level=high/, "аудит зависимостей не блокирует сборку");
   });
 
+  it("применяет миграции и сверяет их со схемой на чистом Postgres", () => {
+    assert.match(ci, /prisma migrate deploy/, "миграции не применяются в CI");
+    assert.match(ci, /prisma migrate diff/, "нет проверки расхождения схемы и миграций");
+    assert.match(ci, /--exit-code/, "расхождение не роняет сборку");
+    assert.match(ci, /image: postgres:16/, "нет базы для проверки миграций");
+  });
+
   it("поднимает сервер и проверяет ответы (runtime smoke)", () => {
     assert.match(ci, /npm run start/, "сборка не проверяется в реальном запуске");
     assert.match(ci, /localhost:3000\/login/, "smoke не открывает страницу входа");
@@ -398,6 +405,24 @@ describe("CI проверяет веб-приложение", () => {
       const source = readSource(`.github/workflows/${workflow}`);
       assert.ok(!/continue-on-error/.test(source), `${workflow}: continue-on-error скрывает падение`);
     }
+  });
+});
+
+describe("миграции вместо ручного SQL", () => {
+  const pkg = JSON.parse(readSource("package.json")) as { scripts: Record<string, string> };
+
+  it("db:deploy применяет историю миграций, а не push схемы", () => {
+    assert.equal(pkg.scripts["db:deploy"].trim(), "prisma migrate deploy");
+    assert.equal(pkg.scripts["db:migrate"].trim(), "prisma migrate dev");
+  });
+
+  it("baseline-миграция и backfill аудита лежат в истории", () => {
+    const init = readSource("prisma/migrations/20261030120000_init/migration.sql");
+    assert.match(init, /CREATE TABLE "schools"/);
+    assert.match(init, /CREATE TABLE "audit_logs"/);
+    const backfill = readSource("prisma/migrations/20261030120001_backfill_audit_log_school/migration.sql");
+    assert.match(backfill, /UPDATE "audit_logs"/);
+    assert.doesNotMatch(backfill, /ADD COLUMN/, "структуру меняет только baseline");
   });
 });
 

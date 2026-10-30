@@ -184,16 +184,16 @@ HTTP-запросы работают идеально, а постоянные W
 Socket.IO поднимаются на одном порту (`server.ts`):
 
 ```bash
-npm run db:deploy    # ОТДЕЛЬНЫЙ шаг: накатить схему БД (было внутри build — см. ниже)
+npm run db:deploy    # ОТДЕЛЬНЫЙ шаг: применить миграции (prisma migrate deploy)
 npm run build        # prisma generate + next build: схему БД больше НЕ меняет
 npm run start        # PORT=3000 HOST=0.0.0.0 — Next.js + Socket.IO на одном порту
 ```
 
 > ⚠️ **Сборка больше не меняет схему БД.** Раньше `npm run build` выполнял
 > `prisma db push --accept-data-loss`, то есть любой деплой мог разрушительно
-> изменить боевую базу. Теперь schema push вынесен в отдельный шаг
-> `npm run db:deploy` (без `--accept-data-loss`): запускайте его осознанно и
-> только после бэкапа (находка H-05 аудита).
+> изменить боевую базу. Теперь схему накатывают только миграции в отдельном
+> шаге `npm run db:deploy` (`prisma migrate deploy`), а CI проверяет, что
+> `schema.prisma` и история миграций не разошлись.
 
 Бесплатные/дешёвые варианты: VPS за ~300 ₽/мес (Timeweb, Beget, Aeza — полный функционал),
 Render/Railway/Fly.io (бесплатные или триальные тарифы). Переменные окружения — те же,
@@ -242,12 +242,12 @@ ICE пересоздаётся автоматически. В сигналинг
 - Сервер пишет `Meeting.status = ended`, рассылает `CALL_ENDED`, очищает signaling-комнату
   и записи посещаемости. Клиенты останавливают треки, закрывают PC и через 2.5 с идут в лобби.
 - Обычный участник может только «Покинуть» — это не завершает звонок для остальных.
-- После изменений схемы выполните `npm run db:deploy` (prisma db push), чтобы добавить
-  `Meeting.status` и `Meeting.callStartedAt`.
+- После изменений схемы создайте миграцию (`npm run db:migrate`) и примените её
+  на сервере через `npm run db:deploy`.
 
 ---
 
-## Шаг 4. Миграции и начальные данные (prisma db push + db seed)
+## Шаг 4. Миграции и начальные данные (prisma migrate + db seed)
 
 Схему БД и демо-данные нужно залить **один раз** в облачную базу из шага 1. Удобнее всего
 выполнить это со своего компьютера (Vercel shell для этого не нужен):
@@ -262,8 +262,8 @@ npm install
 cp .env.example .env
 #    DATABASE_URL="postgresql://...neon.tech/neondb?sslmode=require"
 
-# 3. Создайте таблицы в облачной базе (без папки миграций — идеально для старта)
-npx prisma db push        # == npm run db:push / npm run db:deploy
+# 3. Примените миграции в облачной базе (история в prisma/migrations)
+npx prisma migrate deploy # == npm run db:deploy
 
 # 4. Залейте начальные данные: демо-аккаунты, предметы, расписание, ДЗ
 npx prisma db seed        # == npm run db:seed
@@ -281,11 +281,17 @@ npx prisma db seed        # == npm run db:seed
 
 ### Изоляция админ-панели по школам
 
-Перед развёртыванием новой админ-панели примените tenant-колонку журнала аудита
-и досыпьте школу существующих записей: `npm run db:deploy`, затем
-`psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/sql/20261029_admin_audit_tenancy.sql`.
-SQL идемпотентен; записи без определяемой школы остаются скрытыми. Подробности и
-проверки безопасности: [docs/admin-tenancy.md](docs/admin-tenancy.md).
+Tenant-колонка журнала аудита и перенос старых записей оформлены миграциями:
+`npm run db:deploy` применяет и схему, и backfill. Для базы, которая уже
+существовала до появления `prisma/migrations`, один раз отметьте baseline:
+
+```bash
+npx prisma migrate resolve --applied 20261030120000_init
+npm run db:deploy   # применит оставшиеся миграции (backfill)
+```
+
+Записи без определяемой школы остаются скрытыми. Подробности и проверки
+безопасности: [docs/admin-tenancy.md](docs/admin-tenancy.md).
 
 Независимо от сида приложение само создаёт и при каждом старте обновляет **гарантированных
 администраторов** всех трёх школ. Конфигурация — `GUARANTEED_ADMINS` в

@@ -26,12 +26,18 @@ Apply the schema and backfill **before deploying the new application code**:
 
 ```sh
 npm run db:deploy
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f prisma/sql/20261029_admin_audit_tenancy.sql
 ```
 
-The SQL is idempotent and compatible with the repository's existing `db push`
-workflow. It attributes legacy audit rows to their author's current school.
+Schema and backfill ship as migrations (`20261030120000_init`,
+`20261030120001_backfill_audit_log_school`). A database created before the
+migration history existed needs a one-time baseline:
+
+```sh
+npx prisma migrate resolve --applied 20261030120000_init
+npm run db:deploy
+```
+
+The backfill attributes legacy audit rows to their author's current school.
 Rows without an attributable school remain hidden; they are not guessed into a
 default tenant. New audit writes always persist the verified tenant. Back up the
 database before rollout and verify the row counts after the backfill.

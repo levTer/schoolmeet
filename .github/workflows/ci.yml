@@ -15,7 +15,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -27,9 +26,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
+    services:
+      # Нужен только для проверки миграций: `prisma migrate deploy` применяет их
+      # к пустой базе, а `migrate diff` подтверждает, что схема не разошлась с
+      # историей миграций.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: schoolmeet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     env:
-      # Заглушки: сборка Next.js не должна требовать реальную БД и секреты.
-      DATABASE_URL: "postgresql://user:password@localhost:5432/schoolmeet?schema=public"
+      # Postgres поднят сервисом ниже: миграции применяются по-настоящему,
+      # а сборка по-прежнему не требует внешней БД.
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/schoolmeet?schema=public"
       NEXTAUTH_SECRET: "ci-only-secret-not-used-in-production"
       NEXTAUTH_URL: "http://localhost:3000"
       NEXT_TELEMETRY_DISABLED: "1"
@@ -51,20 +69,18 @@ jobs:
       - name: Prisma client
         run: npx prisma generate
 
-      - name: TMP baseline SQL
-        run: npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > /tmp/init.sql && wc -l /tmp/init.sql
+      - name: Migrations apply cleanly
+        run: npx prisma migrate deploy
 
-      - name: TMP publish baseline
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const sql = fs.readFileSync('/tmp/init.sql', 'utf8');
-            await github.rest.issues.createComment({
-              owner: context.repo.owner, repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: 'TMP-BASELINE-SQL\n```sql\n' + sql + '\n```',
-            });
+      - name: Schema matches migrations
+        # Любое изменение `schema.prisma` без миграции валит CI: иначе прод
+        # и репозиторий незаметно расходятся.
+        run: |
+          npx prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "postgresql://postgres:postgres@localhost:5432/postgres?schema=shadow" \
+            --exit-code
 
       - name: Lint
         # `next build` больше не запускает ESLint (в Next.js 16 `next lint`

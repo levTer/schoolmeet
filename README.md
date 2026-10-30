@@ -83,7 +83,9 @@ npm run start      # прод-сервер (server.ts: Next.js + Socket.IO), н�
 npm run lint       # ESLint
 npm run test       # все 12 наборов ниже (сеть и БД не нужны)
 npm run db:seed    # демо-аккаунты (пароль из SEED_PASSWORD)
-npm run db:push    # синхронизация схемы без миграций
+npm run db:deploy  # применить миграции (prisma migrate deploy)
+npm run db:migrate # создать миграцию после изменения schema.prisma
+npm run db:push    # быстрая синхронизация схемы для локальной песочницы
 npm run db:studio  # веб-UI для просмотра данных
 ```
 
