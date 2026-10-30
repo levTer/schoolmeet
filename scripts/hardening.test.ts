@@ -121,7 +121,12 @@ describe("сайт доступен без VPN: сервис не засыпае
   const docs = readFileSync(join(repoRoot, "docs/availability.md"), "utf8");
 
   it("keepalive пингует /api/health по расписанию и проверяет тело ответа", () => {
-    assert.match(workflow, /cron: "\*\/10 \* \* \* \*"/, "инстанс Render засыпает через 15 минут — нужен пинг чаще");
+    const cron = /cron: "\*\/(\d+) \* \* \* \*"/.exec(workflow);
+    assert.ok(cron, "нет расписания пинга");
+    assert.ok(
+      Number(cron[1]) <= 10,
+      `пинг раз в ${cron[1]} минут: Render засыпает через 15, а cron приходит с задержкой`,
+    );
     assert.match(workflow, /\/api\/health/, "пинг должен идти на health-check, а не на тяжёлую страницу");
     assert.match(workflow, /"ok":true/, "200 без проверки тела не отличает здоровый сервис от заглушки");
     assert.match(workflow, /workflow_dispatch/, "нужен ручной запуск: cron работает только из main");
