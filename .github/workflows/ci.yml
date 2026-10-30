@@ -50,6 +50,15 @@ jobs:
       - name: Prisma client
         run: npx prisma generate
 
+      - name: TMP baseline SQL
+        run: npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > /tmp/init.sql && wc -l /tmp/init.sql
+
+      - name: TMP upload baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: prisma-init-sql
+          path: /tmp/init.sql
+
       - name: Lint
         # `next build` больше не запускает ESLint (в Next.js 16 `next lint`
         # удалён), поэтому ошибки линта проверяются отдельным шагом.
