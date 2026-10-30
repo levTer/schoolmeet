@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Copy, Crown, KeyRound, School } from "lucide-react";
 
+import { copyToClipboard } from "@/lib/clipboard";
+
 interface InviteLinksPanelProps {
   school: {
     name: string;
@@ -34,6 +36,9 @@ const NO_TOKEN_HINT = "Токен не выпущен — обновите ст�
 export function InviteLinksPanel({ school }: InviteLinksPanelProps) {
   const [origin, setOrigin] = useState("");
   const [copied, setCopied] = useState<CopyKind>(null);
+  // Автоматическое копирование может отказать (старый WebView, запрет прав) —
+  // тогда просим перенести ссылку вручную: она видна рядом.
+  const [copyFailed, setCopyFailed] = useState<CopyKind>(null);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -50,13 +55,10 @@ export function InviteLinksPanel({ school }: InviteLinksPanelProps) {
   async function handleCopy(kind: Exclude<CopyKind, null>) {
     const link = links[kind];
     if (!link) return;
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(kind);
-      window.setTimeout(() => setCopied(null), 1800);
-    } catch {
-      // Буфер обмена недоступен — ссылку можно выделить вручную.
-    }
+    const done = await copyToClipboard(link);
+    setCopyFailed(done ? null : kind);
+    setCopied(done ? kind : null);
+    if (done) window.setTimeout(() => setCopied(null), 1800);
   }
 
   return (
@@ -104,6 +106,12 @@ export function InviteLinksPanel({ school }: InviteLinksPanelProps) {
             {copied === "teacher" ? "Скопировано!" : "📋 Скопировать ссылку Учителя"}
           </button>
 
+          {copyFailed === "teacher" && (
+            <p className="mt-2 text-xs leading-relaxed text-rose-300">
+              Скопировать автоматически не удалось — выделите ссылку выше и скопируйте вручную.
+            </p>
+          )}
+
           <p className="mt-3 text-xs leading-relaxed text-slate-500">
             Отправьте её учителю: при регистрации по этой ссылке становится доступна роль «Учитель».
           </p>
@@ -137,6 +145,12 @@ export function InviteLinksPanel({ school }: InviteLinksPanelProps) {
             {copied === "admin" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             {copied === "admin" ? "Скопировано!" : "📋 Скопировать ссылку Админа"}
           </button>
+
+          {copyFailed === "admin" && (
+            <p className="mt-2 text-xs leading-relaxed text-rose-300">
+              Скопировать автоматически не удалось — выделите ссылку выше и скопируйте вручную.
+            </p>
+          )}
 
           <p className="mt-3 text-xs leading-relaxed text-slate-500">
             Отправьте эту ссылку учителю или новому сотруднику для получения прав ADMIN.

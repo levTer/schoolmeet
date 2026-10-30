@@ -1,0 +1,29 @@
+EduFlow Desktop — сторонние компоненты
+======================================
+
+Приложение собрано на Electron и Chromium. Полные тексты лицензий сторонних
+компонентов лежат в исходном репозитории Electron/Chromium (файл
+LICENSES.chromium.html в дистрибутиве Electron) и доступны по постоянным
+адресам:
+
+  • Electron (MIT) — https://github.com/electron/electron/blob/main/LICENSE
+  • Chromium и сторонние библиотеки —
+    https://github.com/chromium/chromium/blob/main/LICENSE
+  • Полный список лицензий Chromium —
+    https://source.chromium.org/chromium/chromium/src/+/main:LICENSES.chromium.html
+
+Файл LICENSES.chromium.html (≈9 МБ) намеренно не входит в установщик: с ним
+eduflow-setup.exe перестаёт укладываться в лимит GitHub на размер файла.
+Уведомление об авторских правах и ссылки на полные тексты — этот файл; он
+лежит внутри установленного приложения (resources/app.asar).
+
+EduFlow использует следующие компоненты:
+
+  • Electron (MIT) — среда исполнения окна приложения.
+  • Chromium (BSD-3-Clause и другие) — движок отображения.
+  • Node.js (MIT) — доступ к файловой системе и сети из main-процесса.
+  • Next.js / React (MIT) — веб-интерфейс, который открывается в окне.
+  • Lucide (ISC) — иконки интерфейса.
+
+Дата сборки и версия Electron печатаются в консоли сборки и в окне
+«О программе» приложения.

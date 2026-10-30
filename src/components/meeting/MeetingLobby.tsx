@@ -8,6 +8,7 @@ import { FormAlert } from "@/components/ui/form-alert";
 import { GradientButton } from "@/components/ui/gradient-button";
 import { TextField } from "@/components/ui/field";
 import { isValidRoomCode } from "@/lib/realtime";
+import { copyToClipboard } from "@/lib/clipboard";
 
 interface CreatedMeeting {
   title: string;
@@ -95,13 +96,13 @@ function CreateLessonCard({ onOpen }: { onOpen: (code: string) => void }) {
   const copyLink = async () => {
     if (!created) return;
     const url = `${window.location.origin}/meeting/${created.meetingCode}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
+    const done = await copyToClipboard(url);
+    setCopied(done);
+    if (done) {
       window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setError("Не удалось скопировать. Скопируйте код вручную.");
+      return;
     }
+    setError("Не удалось скопировать. Скопируйте код вручную.");
   };
 
   if (created) {

@@ -36,20 +36,28 @@ export function LoginForm({ compact = false }: { compact?: boolean }) {
 
   const [email, setEmail] = useState(prefilledEmail);
   const [password, setPassword] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; code?: string }>({});
   const [formError, setFormError] = useState<string | null>(
     authError ? resolveLoginErrorMessage(authError) : null,
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /*
+   * Второй шаг входа: NextAuth не различает «неверный пароль» и «не хватает
+   * второго фактора», поэтому перед `signIn` спрашиваем отдельный endpoint,
+   * нужен ли код. Пароль при этом проверяется на сервере, а не в браузере.
+   */
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const normalizedEmail = normalizeEmail(email);
-    const nextErrors: { email?: string; password?: string } = {};
+    const nextErrors: { email?: string; password?: string; code?: string } = {};
 
     if (!normalizedEmail) nextErrors.email = "Укажите email";
     if (!password) nextErrors.password = "Введите пароль";
+    if (needsTwoFactor && !twoFactorCode.trim()) nextErrors.code = "Введите код из приложения";
 
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -58,10 +66,30 @@ export function LoginForm({ compact = false }: { compact?: boolean }) {
     setFormError(null);
 
     try {
+      if (!needsTwoFactor) {
+        const check = await fetch("/api/auth/2fa/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalizedEmail, password }),
+        });
+        const payload = (await check.json()) as { ok: boolean; data?: { twoFactorRequired: boolean }; error?: string };
+
+        if (payload.ok && payload.data?.twoFactorRequired) {
+          setNeedsTwoFactor(true);
+          setFormError(null);
+          return;
+        }
+        if (!payload.ok) {
+          setFormError(resolveLoginErrorMessage("CredentialsSignin"));
+          return;
+        }
+      }
+
       const result = await signIn("credentials", {
         redirect: false,
         email: normalizedEmail,
         password,
+        ...(needsTwoFactor ? { twoFactorCode } : {}),
         callbackUrl: redirectTo,
       });
 
@@ -124,6 +152,24 @@ export function LoginForm({ compact = false }: { compact?: boolean }) {
           if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }));
         }}
       />
+
+      {needsTwoFactor && (
+        <TextField
+          label="Код подтверждения"
+          name="twoFactorCode"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          placeholder="123456 или резервный код"
+          icon={ShieldCheck}
+          value={twoFactorCode}
+          error={fieldErrors.code}
+          autoFocus
+          onChange={(event) => {
+            setTwoFactorCode(event.target.value);
+            if (fieldErrors.code) setFieldErrors((prev) => ({ ...prev, code: undefined }));
+          }}
+        />
+      )}
 
       <GradientButton
         type="submit"

@@ -53,9 +53,26 @@ function isAppUrl(target) {
   }
 }
 
+/**
+ * Ссылки, которые уходят в систему.
+ *
+ * `otpauth://totp/...` — передача секрета приложению-аутентификатору при
+ * включении второго фактора: без неё кнопка «открыть в приложении» в
+ * десктопной сборке молча ничего не делала. Разрешено строго действие `totp`.
+ */
+function isExternalSchemeAllowed(url) {
+  if (/^https?:\/\//i.test(url)) return true;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "otpauth:" && parsed.host.toLowerCase() === "totp";
+  } catch {
+    return false;
+  }
+}
+
 function openExternal(url) {
-  if (/^https?:\/\//i.test(url)) return shell.openExternal(url);
-  return Promise.resolve();
+  if (!isExternalSchemeAllowed(url)) return Promise.resolve();
+  return shell.openExternal(url);
 }
 
 /** Разрешения выдаём только для домена EduFlow — уроки требуют камеру и микрофон. */

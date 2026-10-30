@@ -33,12 +33,13 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "test": "npm run test:ai && npm run test:rules && npm run test:school && npm run test:ui && npm run test:pwa && npm run test:chat && npm run test:security && npm run test:calls && npm run test:bridge && npm run test:android && npm run test:hardening && npm run test:landing",
+    "test": "npm run test:ai && npm run test:rules && npm run test:school && npm run test:ui && npm run test:pwa && npm run test:chat && npm run test:security && npm run test:calls && npm run test:bridge && npm run test:android && npm run test:2fa && npm run test:hardening && npm run test:landing",
     "test:bridge": "tsx --test scripts/whiteboard-bridge.test.ts",
     "test:android": "tsx --test scripts/android-apk.test.ts",
     "test:landing": "tsx --test scripts/landing-auth.test.ts",
     "test:school": "tsx --test scripts/single-class.test.ts",
-    "test:hardening": "tsx --test scripts/hardening.test.ts"
+    "test:hardening": "tsx --test scripts/hardening.test.ts",
+    "test:2fa": "tsx --test scripts/two-factor.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

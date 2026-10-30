@@ -115,6 +115,68 @@ workspace only. Back them up to secure release-key storage immediately; losing
 this key prevents future updates to installations made with this APK. They are
 never committed or sent in the PR.
 
+## Второй фактор: ссылка `otpauth://totp/…` (нужна пересборка APK)
+
+`/account/security` отдаёт ссылку `otpauth://totp/…`, чтобы приложение-аутентификатор
+получило секрет одним касанием. В нынешнем подписанном APK этой схемы нет:
+`WebWorkspace.openExternal` пропускает только `http(s)`, `mailto` и `tel`, а WebView
+не умеет открывать неизвестные схемы сам. Поэтому веб определяет такую сборку
+(`window.AndroidApp` есть, метода `openExternal` нет) и **не показывает мёртвую
+ссылку**: вместо неё — подсказка ввести секрет вручную и кнопка «Скопировать
+секрет». Вход, подтверждение кода и резервные коды в APK работают полностью.
+
+Java-исходники входят в отпечаток `assets/native-build.json`, а
+`scripts/android-apk.test.py` падает на устаревшем бинаре. Значит, менять
+`android/**` можно только вместе с пересборкой и подписью релизным ключом —
+локально в этом репозитории ключа нет, поэтому правка не сделана «вслепую».
+
+Когда ключ доступен (локальная сборка или секреты `EDUFLOW_KEYSTORE_B64` /
+`EDUFLOW_KS_PASS` в GitHub Actions), примените патч и пересоберите APK
+(`scripts/build-android.sh` или workflow `Build Android APK`):
+
+```java
+// android/app/src/main/java/ru/eduflow/app/WebWorkspace.java
+private static boolean isExternalSchemeAllowed(Uri uri) {
+    String scheme = uri.getScheme();
+    if (scheme == null) return false;
+    if (scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("http")
+            || scheme.equalsIgnoreCase("mailto") || scheme.equalsIgnoreCase("tel")) return true;
+    // Строго totp: произвольные otpauth-адреса (hotp и др.) в систему не уходят.
+    return scheme.equalsIgnoreCase("otpauth") && "totp".equalsIgnoreCase(uri.getHost());
+}
+
+private void openExternal(Uri uri) {
+    if (!isExternalSchemeAllowed(uri)) return;
+    // ... остальное без изменений
+}
+
+/** Мост для веба: window.AndroidApp.openExternal("otpauth://totp/…"). */
+boolean openExternalFromBridge(String url) {
+    Uri uri = Uri.parse(url);
+    if (!isExternalSchemeAllowed(uri)) return false;
+    openExternal(uri);
+    return true;
+}
+```
+
+```java
+// android/app/src/main/java/ru/eduflow/app/MainActivity.java, внутри AndroidBridge
+@JavascriptInterface
+public boolean openExternal(final String url) {
+    // Мост вызывается не в UI-потоке: startActivity — только из главного.
+    activity.runOnUiThread(new Runnable() {
+        @Override public void run() { activity.workspace.openExternalFromBridge(url); }
+    });
+    return true;
+}
+```
+
+Веб уже готов: `src/lib/clipboard.ts` вызывает `AndroidApp.openExternal`, если
+метод есть, и `canOpenExternalLink()` включает ссылку в интерфейсе только тогда,
+когда оболочка действительно умеет её открыть. После пересборки APK новые
+установки получают кнопку автоматически, а старые продолжают работать по
+ручному вводу.
+
 ## Tests
 
 `npm test` includes `npm run test:android`; `npm run lint` checks the web code.

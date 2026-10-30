@@ -7,6 +7,7 @@ import { useState, type FormEvent } from "react";
 import { FormAlert } from "@/components/ui/form-alert";
 import { TextField } from "@/components/ui/field";
 import { apiRequest } from "@/lib/client-api";
+import { copyToClipboard } from "@/lib/clipboard";
 import type { GradeCode } from "@/lib/schedule-rules";
 
 interface SchoolSettings {
@@ -38,13 +39,13 @@ export function SchoolSettingsPanel({
   const [copied, setCopied] = useState(false);
 
   async function handleCopyCode() {
-    try {
-      await navigator.clipboard.writeText(school.code);
-      setCopied(true);
+    const done = await copyToClipboard(school.code);
+    setCopied(done);
+    if (done) {
       window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setError("Не удалось скопировать код. Выделите его и скопируйте вручную.");
+      return;
     }
+    setError("Не удалось скопировать код. Выделите его и скопируйте вручную.");
   }
 
   async function handleCreateClass(event: FormEvent<HTMLFormElement>) {

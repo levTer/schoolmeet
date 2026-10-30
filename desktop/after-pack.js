@@ -6,18 +6,39 @@
  * виде экономит ~30% веса установщика:
  *   • `locales/*.pak` кроме русской и английской — ≈40 МБ;
  *   • `swiftshader/` + `vk_swiftshader*.dll` — ≈15 МБ;
- *   • `LICENSES.chromium.html` — ≈9 МБ.
+ *   • `dxcompiler.dll` + `dxil.dll` — ≈25 МБ: это компилятор шейдеров WebGPU,
+ *     а он приложению не нужен. EduFlow рисует доску на canvas 2D, видео идёт
+ *     через WebRTC, а текстуры — через ANGLE (`d3dcompiler_47.dll`, его
+ *     оставляем). Проверено поиском по коду: `navigator.gpu`,
+ *     `requestAdapter` и `three` не используются ни на одной странице.
  *
- * Итоговый `eduflow-setup.exe` остаётся полноценным Electron-приложением, но
- * укладывается в ~80–100 МБ и не превышает лимит GitHub на размер файла.
+ * `LICENSES.chromium.html` (≈9 МБ) не входит в установщик — иначе он не
+ * укладывается в лимит GitHub на размер файла. Вместо него внутрь приложения
+ * кладётся `THIRD_PARTY_NOTICES.txt` со ссылками на полные тексты лицензий
+ * Electron и Chromium: уведомление распространяется, а 9 МБ не теряются.
+ *
+ * Итоговый `eduflow-setup.exe` остаётся полноценным Electron-приложением:
+ * Chromium (≈230 МБ) сжимается LZMA примерно втрое.
  */
 const { readdirSync, rmSync, statSync } = require("node:fs");
 const path = require("node:path");
 
 /** Локали, которые остаются в сборке (остальные удаляются). */
 const KEEP_LOCALES = new Set(["ru.pak", "en-US.pak"]);
-/** Файлы Chromium, не нужные приложению. */
-const DROP_FILES = ["LICENSES.chromium.html", "vk_swiftshader.dll", "vk_swiftshader_icd.json"];
+/**
+ * Файлы Chromium, не нужные приложению.
+ *
+ * `dxcompiler.dll`/`dxil.dll` обслуживают только WebGPU: в интерфейсе нет ни
+ * `navigator.gpu`, ни 3D-сцен. Chromium без них работает, `navigator.gpu`
+ * просто недоступен — этим и объясняется экономия.
+ */
+const DROP_FILES = [
+  "LICENSES.chromium.html",
+  "vk_swiftshader.dll",
+  "vk_swiftshader_icd.json",
+  "dxcompiler.dll",
+  "dxil.dll",
+];
 /** Каталоги Chromium, не нужные приложению. */
 const DROP_DIRS = ["swiftshader"];
 

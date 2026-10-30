@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, UserRound } from "lucide-react";
+import { KeyRound, ShieldOff, UserPlus, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 import { TextField } from "@/components/ui/field";
@@ -57,6 +57,10 @@ export function UserModal({ mode, user, actor, onClose, onSaved }: UserModalProp
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Сброс второго фактора — отдельное действие: админ не должен менять роль
+  // или пароль, чтобы «разморозить» ребёнка, потерявшего телефон.
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(user?.twoFactorEnabled ?? false);
+  const [resetting, setResetting] = useState(false);
 
   const capabilities = adminCapabilities(actor, user ? { id: user.id, role: user.role } : undefined);
   const isEdit = mode === "edit" && Boolean(user);
@@ -74,6 +78,31 @@ export function UserModal({ mode, user, actor, onClose, onSaved }: UserModalProp
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
+
+  /**
+   * Снять второй фактор с аккаунта.
+   *
+   * Нужно, когда ребёнок потерял телефон и резервные коды: без этой кнопки
+   * администратору пришлось бы править базу руками. Пароль не меняется,
+   * блокировка не снимается — только второй фактор.
+   */
+  const resetTwoFactor = async () => {
+    if (!isEdit || !user) return;
+    setError(null);
+    setResetting(true);
+    try {
+      const result = await apiRequest(`/api/admin/users/${user.id}/2fa`, { method: "DELETE" });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setTwoFactorEnabled(false);
+      toast.success("Второй фактор снят: вход снова по паролю");
+      onSaved();
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const submit = async () => {
     setError(null);
@@ -236,6 +265,28 @@ export function UserModal({ mode, user, actor, onClose, onSaved }: UserModalProp
                 className="h-4 w-4 shrink-0 accent-rose-500"
               />
             </label>
+          )}
+
+          {isEdit && twoFactorEnabled && (
+            <div className="flex flex-col gap-2 rounded-xl border border-amber-400/25 bg-amber-500/[0.07] px-4 py-3">
+              <span className="flex items-center gap-2 text-sm font-medium text-amber-100">
+                <KeyRound className="h-4 w-4" />
+                Второй фактор включён
+              </span>
+              <span className="text-[11px] leading-relaxed text-amber-200/70">
+                Если ученик или учитель потерял телефон и резервные коды — снимите защиту:
+                вход снова будет по паролю. Действие попадёт в журнал аудита.
+              </span>
+              <button
+                type="button"
+                disabled={resetting || !capabilities["users.password.reset"]}
+                onClick={() => void resetTwoFactor()}
+                className="inline-flex w-fit items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ShieldOff className="h-3.5 w-3.5" />
+                {resetting ? "Снимаем…" : "Снять второй фактор"}
+              </button>
+            </div>
           )}
 
           <div className="flex flex-col gap-2 pt-2 sm:flex-row-reverse">

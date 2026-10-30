@@ -79,10 +79,27 @@ function isTrustedUrl(rawUrl) {
   return rawUrl === 'about:blank' || isLoadingPage(rawUrl) || isAppUrl(rawUrl);
 }
 
-function openExternal(rawUrl) {
-  if (/^(https?|mailto|tel):/i.test(rawUrl)) {
-    shell.openExternal(rawUrl).catch(() => {});
+/**
+ * Ссылки, которые уходят в систему.
+ *
+ * `otpauth://totp/...` — передача секрета приложению-аутентификатору при
+ * включении второго фактора. Схема не выполняет код и не открывает страницы,
+ * поэтому она безопасна, но разрешаем строго действие `totp`: произвольные
+ * `otpauth://`-адреса (например, с чужим алгоритмом) в систему не уходят.
+ */
+function isExternalSchemeAllowed(rawUrl) {
+  if (/^(https?|mailto|tel):/i.test(rawUrl)) return true;
+  try {
+    const url = new URL(rawUrl);
+    return url.protocol === 'otpauth:' && url.host.toLowerCase() === 'totp';
+  } catch {
+    return false;
   }
+}
+
+function openExternal(rawUrl) {
+  if (!isExternalSchemeAllowed(rawUrl)) return;
+  shell.openExternal(rawUrl).catch(() => {});
 }
 
 /**
@@ -374,6 +391,10 @@ if (!hasSingleInstanceLock) {
 
       buildAppMenu();
       setupSession();
+      // Тот же мост, что в desktop/: веб может открыть внешнюю ссылку
+      // (в том числе otpauth://totp/…) напрямую, не полагаясь на навигацию.
+      ipcMain.handle('eduflow:open-external', (_event, url) => openExternal(String(url)));
+
       ipcMain.on('update-titlebar-theme', (_event, { backgroundColor, symbolColor } = {}) => {
         if (mainWindow && !mainWindow.isDestroyed() && process.platform !== 'darwin') {
           try {

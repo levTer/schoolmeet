@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 import { inflateSync } from "node:zlib";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -970,6 +970,25 @@ describe("полноценный установщик EduFlow для Windows (El
     assert.ok(sizeMb <= MAX_SIZE_MB, `установщик разросся до ${sizeMb.toFixed(1)} МБ`);
   });
 
+  it("установщик облегчён без потери функций: WebGPU-компилятор убран, видео и WebGL остались", () => {
+    const afterPack = readSource("desktop/after-pack.js");
+    // dxcompiler/dxil обслуживают только WebGPU (navigator.gpu) — в интерфейсе
+    // его нет; удаление экономит ~25 МБ распакованного Chromium.
+    assert.match(afterPack, /"dxcompiler\.dll"/, "WebGPU-компилятор не убран — установщик не влезет в лимит GitHub");
+    assert.match(afterPack, /"dxil\.dll"/);
+    // А это выкидывать нельзя: без них не работают видео и текстуры WebGL.
+    assert.doesNotMatch(afterPack, /"ffmpeg\.dll"/, "ffmpeg.dll нужен для видео");
+    assert.doesNotMatch(afterPack, /"d3dcompiler_47\.dll"/, "d3dcompiler_47.dll нужен ANGLE/WebGL");
+    assert.doesNotMatch(afterPack, /"icudtl\.dat"/, "icudtl.dat нужен для Intl/русских дат");
+    // Уведомление о лицензиях не теряется: тексты заменены ссылками внутри приложения.
+    assert.match(readSource("desktop/THIRD_PARTY_NOTICES.txt"), /LICENSES\.chromium\.html/);
+
+    const workflow = readSource(".github/workflows/build-windows-installer.yml");
+    // Жёсткий лимит GitHub — 100 МиБ (104 857 600 байт); порог не должен его превышать.
+    const threshold = Number(/size" -gt (\d+)/.exec(workflow)?.[1]);
+    assert.equal(threshold, 104857600, "порог должен совпадать с жёстким лимитом git-файла GitHub (100 МиБ)");
+  });
+
   it("микро-архивы и MSIX удалены из public/", () => {
     for (const file of [
       "eduflow-windows.zip",
@@ -1784,3 +1803,39 @@ describe("завершение активного урока с баннера �
   });
 });
 
+describe("Буфер обмена и внешние ссылки: сайт, Mac/Windows и APK", () => {
+  /** Все .tsx/.ts компоненты — рекурсивно, чтобы новый файл не остался без проверки. */
+  function componentFiles(dir: string): string[] {
+    return readdirSync(dir).flatMap((entry) => {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) return componentFiles(full);
+      return /\.tsx?$/.test(entry) ? [full] : [];
+    });
+  }
+
+  it("ни один компонент не зовёт navigator.clipboard напрямую", () => {
+    // Прямой вызов молча отказывает в Android-WebView и в части сборок
+    // Electron: кнопка «Скопировать» перестаёт работать только в приложении.
+    // Комментарии не считаем: в них прямой вызов как раз и объясняется.
+    const withoutComments = (source: string) =>
+      source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const offenders = componentFiles(join(REPO_ROOT, "src/components"))
+      .filter((file) => !file.endsWith("clipboard.ts"))
+      .filter((file) => /navigator\.clipboard/.test(withoutComments(readFileSync(file, "utf8"))))
+      .map((file) => file.replace(`${REPO_ROOT}/`, ""));
+    assert.deepEqual(offenders, [], "используйте copyToClipboard из src/lib/clipboard.ts");
+  });
+
+  it("copyToClipboard пробует современный API, затем execCommand и честно возвращает false", () => {
+    const clipboard = readSource("src/lib/clipboard.ts");
+    assert.match(clipboard, /navigator\.clipboard\?\.writeText/);
+    assert.match(clipboard, /execCommand\("copy"\)/);
+    assert.match(clipboard, /return false;/, "при отказе обоих путей нужен явный false");
+  });
+
+  it("панель безопасности предлагает ручной перенос, если копирование не удалось", () => {
+    const panel = readSource("src/components/account/security-panel.tsx");
+    assert.match(panel, /Скопировать автоматически не удалось/);
+    assert.match(panel, /Открыть в приложении-аутентификаторе/);
+  });
+});

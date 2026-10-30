@@ -36,7 +36,9 @@ const PROTECTED_PREFIXES = [
   "/schedule",
   "/homework",
   "/admin",
+  "/account",
   "/api/admin",
+  "/api/account",
 ] as const;
 
 /** Раздел админ-панели: страницы `/admin`, `/admin/*` и API `/api/admin/*`. */
