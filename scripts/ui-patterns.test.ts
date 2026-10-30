@@ -986,7 +986,7 @@ describe("полноценный установщик EduFlow для Windows (El
     const workflow = readSource(".github/workflows/build-windows-installer.yml");
     // Жёсткий лимит GitHub — 100 МиБ (104 857 600 байт); порог не должен его превышать.
     const threshold = Number(/size" -gt (\d+)/.exec(workflow)?.[1]);
-    assert.ok(threshold > 0 && threshold <= 104857600, `порог публикации ${threshold} выше лимита GitHub`);
+    assert.equal(threshold, 104857600, "порог должен совпадать с жёстким лимитом git-файла GitHub (100 МиБ)");
   });
 
   it("микро-архивы и MSIX удалены из public/", () => {
