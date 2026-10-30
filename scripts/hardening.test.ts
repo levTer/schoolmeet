@@ -21,6 +21,13 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  AI_IMAGE_MAX_PROMPT,
+  AI_IMAGE_ROUTE,
+  buildUpstreamImageUrl,
+  parseAiImageRequest,
+  toSameOriginImageUrl,
+} from "../src/lib/ai-image";
+import {
   HOMEWORK_LIMITS,
   isUploadLengthAllowed,
 } from "../src/lib/homework-rules";
@@ -54,6 +61,59 @@ function sourceWithoutComments(source: string): string {
 /* -------------------------------------------------------------------------- */
 /* 1. P0: секретов администратора в репозитории нет                            */
 /* -------------------------------------------------------------------------- */
+
+describe("иллюстрации ИИ отдаются со своего origin (CSP и внешние сети)", () => {
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+  it("ссылка генератора переписывается на прокси, чужие адреса не трогаются", () => {
+    const pollinations =
+      "https://image.pollinations.ai/prompt/a%20cat?width=512&height=512&nologo=true&seed=42";
+    const proxied = toSameOriginImageUrl(pollinations);
+    assert.equal(proxied, `${AI_IMAGE_ROUTE}?prompt=a%20cat&seed=42`);
+
+    for (const untouched of [
+      "data:image/png;base64,AAAA",
+      "blob:https://schoolmeet.ru/123",
+      "/icon.svg",
+      "https://example.com/image.png",
+      "",
+    ]) {
+      assert.equal(toSameOriginImageUrl(untouched), untouched, `изменён посторонний адрес: ${untouched}`);
+    }
+  });
+
+  it("параметры прокси валидируются, адрес генератора собирается на сервере", () => {
+    assert.equal(parseAiImageRequest(new URLSearchParams("prompt=&seed=1")), null);
+    assert.equal(parseAiImageRequest(new URLSearchParams(`prompt=${"a".repeat(AI_IMAGE_MAX_PROMPT + 1)}`)), null);
+    assert.equal(parseAiImageRequest(new URLSearchParams("prompt=кот&seed=-5")), null);
+    assert.deepEqual(parseAiImageRequest(new URLSearchParams("prompt=кот&seed=7")), { prompt: "кот", seed: 7 });
+
+    const upstream = buildUpstreamImageUrl({ prompt: "кот & пёс", seed: 7 });
+    assert.ok(upstream.startsWith("https://image.pollinations.ai/prompt/"), upstream);
+    assert.ok(!/\s/.test(upstream), "пробелы должны быть закодированы");
+  });
+
+  it("маршрут закрыт сессией, ограничивает размер и кэширует ответ", () => {
+    const routePath = join(repoRoot, "src/app/api/ai/image/route.ts");
+    const route = readFileSync(routePath, "utf8");
+    assert.match(route, /getServerSession\(authOptions\)/, "картинки доступны без входа");
+    assert.match(route, /status: 401/, "без сессии нужен 401");
+    assert.match(route, /AI_IMAGE_MAX_BYTES/, "нет потолка размера картинки");
+    assert.match(route, /Cache-Control/, "нет кэширования: генератор будет дёргаться на каждый показ");
+    assert.match(route, /buildUpstreamImageUrl\(/, "адрес генератора должен собираться на сервере, а не приходить из запроса");
+    assert.doesNotMatch(route, /searchParams\.get\("url"\)/, "нельзя принимать произвольный URL (SSRF)");
+  });
+
+  it("рендер и мок-провайдер пользуются прокси, CSP остаётся строгим", () => {
+    const engine = readFileSync(join(repoRoot, "src/lib/drawing-engine.ts"), "utf8");
+    assert.match(engine, /toSameOriginImageUrl\(instruction\.url\)/, "движок грузит внешний URL напрямую");
+    const mock = readFileSync(join(repoRoot, "src/lib/ai-providers/mock.ts"), "utf8");
+    assert.match(mock, /buildAiImageUrl\(/, "мок-провайдер отдаёт внешнюю ссылку");
+    assert.doesNotMatch(mock, /image\.pollinations\.ai\/prompt/, "в ответах остался прямой адрес генератора");
+    const config = readFileSync(join(repoRoot, "next.config.mjs"), "utf8");
+    assert.match(config, /"img-src 'self' data: blob:"/, "CSP ослаблен ради картинок");
+  });
+});
 
 describe("сайт доступен без VPN: сервис не засыпает и есть план на блок сети", () => {
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");

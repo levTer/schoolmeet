@@ -10,6 +10,7 @@
 
 import { Circle, Ellipse, Group, Image, Line, Path, Polygon, Rect, Textbox, type Canvas, type FabricObject } from "fabric";
 
+import { toSameOriginImageUrl } from "@/lib/ai-image";
 import { commandToInstructions, shapesToInstructions } from "@/lib/whiteboard-bridge";
 import type {
   AnyImageInstruction,
@@ -280,7 +281,10 @@ export function buildImageObject(
   const height = "height" in instruction ? instruction.height : instruction.h;
   const opacity = "type" in instruction ? instruction.opacity : undefined;
 
-  return Image.fromURL(instruction.url, { crossOrigin: "anonymous" }, {
+  // Ссылки на генератор ИИ переписываем на свой прокси: CSP разрешает картинки
+  // только со своего origin, а сохранённые уроки содержат прямые внешние URL.
+  const url = toSameOriginImageUrl(instruction.url);
+  return Image.fromURL(url, { crossOrigin: "anonymous" }, {
     left: instruction.x + offset.x,
     top: instruction.y + offset.y,
     width,
@@ -296,7 +300,7 @@ export function buildImageObject(
       return image as unknown as FabricObject;
     })
     .catch((error) => {
-      console.warn("[drawing-engine] не удалось загрузить картинку:", instruction.url, error);
+      console.warn("[drawing-engine] не удалось загрузить картинку:", url, error);
       return null;
     });
 }

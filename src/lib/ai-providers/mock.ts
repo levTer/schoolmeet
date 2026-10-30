@@ -10,6 +10,7 @@
  * Модуль не зависит ни от Next.js, ни от DOM.
  */
 
+import { buildAiImageUrl } from "@/lib/ai-image";
 import { isBoardAnalysisRequest, isDrawRequest } from "../whiteboard-bridge";
 import type {
   AIProvider,
@@ -302,10 +303,17 @@ function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** Динамический URL Pollinations AI: https://image.pollinations.ai/prompt/… */
+/**
+ * Динамическая ссылка на иллюстрацию.
+ *
+ * Отдаём не внешний адрес генератора, а свой прокси `/api/ai/image`: CSP сайта
+ * разрешает изображения только со своего origin, а сервер достаёт картинку
+ * там, где браузер пользователя может не иметь доступа. Формат совместим со
+ * старыми ответами — `drawing-engine` переписывает и их.
+ */
 function pollinationsImageUrl(prompt: string): string {
   const seed = Math.floor(Math.random() * 100_000);
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true&seed=${seed}`;
+  return buildAiImageUrl({ prompt, seed });
 }
 
 function homeworkGeneration(prompt: string): AIResponse {
