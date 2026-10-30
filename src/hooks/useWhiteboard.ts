@@ -185,7 +185,8 @@ export interface WhiteboardApi {
   cursors: WhiteboardCursor[];
   selectionPreview: SelectionPreview | null;
   formulaPreview: FormulaPreview | null;
-  canvasRef: RefObject<HTMLCanvasElement>;
+  /** React 19: `useRef<T | null>(null)` даёт `RefObject<T | null>` — current всегда может быть null. */
+  canvasRef: RefObject<HTMLCanvasElement | null>;
 }
 
 /* -------------------------------------------------------------------------- */
