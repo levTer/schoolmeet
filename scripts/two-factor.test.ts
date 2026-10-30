@@ -297,6 +297,48 @@ describe("второй фактор встроен во вход и не обх�
     assert.match(proxy, /"\/api\/account"/);
   });
 
+  it("администратор может снять второй фактор кнопкой в карточке пользователя", () => {
+    // Требование владельца: если ребёнок потерял телефон, аккаунт обязан
+    // размораживаться действием администратора, а не правкой БД.
+    const modal = readSource("src/components/admin/user-modal.tsx");
+    assert.match(modal, /\/api\/admin\/users\/\$\{user\.id\}\/2fa/);
+    assert.match(modal, /method: "DELETE"/);
+    assert.match(modal, /Снять второй фактор/);
+    assert.match(modal, /capabilities\["users\.password\.reset"\]/);
+
+    // И администратор видит, включён ли второй фактор.
+    const users = readSource("src/lib/admin-users.ts");
+    assert.match(users, /twoFactorEnabled: boolean/);
+    assert.match(users, /twoFactorEnabled: Boolean\(row\.twoFactorEnabledAt\)/);
+  });
+
+  it("второй фактор включён только у тех, кто его сам включил", () => {
+    // Дети не страдают: по умолчанию защита выключена, вход не меняется.
+    const schema = readSource("prisma/schema.prisma");
+    assert.match(schema, /twoFactorEnabledAt\s+DateTime\?/, "у нового аккаунта не должно быть включённой 2FA");
+    const login = readSource("src/lib/auth.ts");
+    assert.match(login, /if \(isTwoFactorEnabled\(user\)\)/, "код требуется у всех подряд");
+  });
+
+  it("включить защиту нельзя, не подтвердив код из приложения", () => {
+    // Защита от детской ошибки: случайно нажать «включить» и потерять доступ
+    // невозможно — без верного кода настройка не завершается.
+    const service = readSource("src/lib/two-factor.ts");
+    const confirm = service.slice(service.indexOf("export async function confirmTwoFactorEnrollment"));
+    const update = confirm.indexOf("twoFactorEnabledAt: new Date()");
+    const verify = confirm.indexOf("verifyTotp(secret, code)");
+    assert.ok(verify > -1, "код не проверяется");
+    assert.ok(verify < update, "включение происходит до проверки кода");
+    assert.match(service, /if \(step === null\) \{\s*throw new Error\("TWO_FACTOR_INVALID_CODE"\)/);
+  });
+
+  it("резервные коды показываются один раз и копируются кнопкой", () => {
+    const panel = readSource("src/components/account/security-panel.tsx");
+    assert.match(panel, /Резервн/i);
+    assert.match(panel, /navigator\.clipboard\.writeText/);
+    assert.match(panel, /показываются один раз/);
+  });
+
   it("миграция добавляет колонки 2FA и не трогает существующие данные", () => {
     const sql = readSource("prisma/migrations/20261030130000_user_two_factor/migration.sql");
     assert.match(sql, /ADD COLUMN "twoFactorSecret" TEXT/);

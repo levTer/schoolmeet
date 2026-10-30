@@ -44,6 +44,8 @@ export interface AdminUserRow {
   updatedAt: string;
   /** Открытая запись посещаемости: пользователь сейчас в уроке. */
   isOnline: boolean;
+  /** Включён ли второй фактор — иначе админ не поймёт, зачем жать «сбросить». */
+  twoFactorEnabled: boolean;
 }
 
 export interface ListUsersOptions {
@@ -113,6 +115,7 @@ export async function listUsersForAdmin(schoolId: string, options: ListUsersOpti
       role: true,
       grade: true,
       isBanned: true,
+      twoFactorEnabledAt: true,
       createdAt: true,
       updatedAt: true,
       attendance: {
@@ -138,6 +141,7 @@ export async function listUsersForAdmin(schoolId: string, options: ListUsersOpti
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
       isOnline: row.attendance.length > 0,
+      twoFactorEnabled: Boolean(row.twoFactorEnabledAt),
     })),
   };
 }
@@ -152,6 +156,7 @@ export async function getUserForAdmin(id: string, schoolId: string): Promise<Adm
       role: true,
       grade: true,
       isBanned: true,
+      twoFactorEnabledAt: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -168,6 +173,7 @@ export async function getUserForAdmin(id: string, schoolId: string): Promise<Adm
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     isOnline: false,
+    twoFactorEnabled: Boolean(row.twoFactorEnabledAt),
   };
 }
 
@@ -359,6 +365,7 @@ export async function createUserAsAdmin(
       role: true,
       grade: true,
       isBanned: true,
+      twoFactorEnabledAt: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -374,6 +381,7 @@ export async function createUserAsAdmin(
     createdAt: created.createdAt.toISOString(),
     updatedAt: created.updatedAt.toISOString(),
     isOnline: false,
+    twoFactorEnabled: Boolean(created.twoFactorEnabledAt),
   };
 }
 
@@ -449,6 +457,7 @@ export async function updateUserAsAdmin(targetId: string, schoolId: string, patc
         grade: true,
         isBanned: true,
         sessionVersion: true,
+        twoFactorEnabledAt: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -482,6 +491,7 @@ export async function updateUserAsAdmin(targetId: string, schoolId: string, patc
         createdAt: updated.createdAt.toISOString(),
         updatedAt: updated.updatedAt.toISOString(),
         isOnline: false,
+        twoFactorEnabled: Boolean(updated.twoFactorEnabledAt),
       },
       changes,
       /** Сессии отозваны — вызывающий маршрут рвёт живые сокеты. */
