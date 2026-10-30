@@ -970,6 +970,25 @@ describe("полноценный установщик EduFlow для Windows (El
     assert.ok(sizeMb <= MAX_SIZE_MB, `установщик разросся до ${sizeMb.toFixed(1)} МБ`);
   });
 
+  it("установщик облегчён без потери функций: WebGPU-компилятор убран, видео и WebGL остались", () => {
+    const afterPack = readSource("desktop/after-pack.js");
+    // dxcompiler/dxil обслуживают только WebGPU (navigator.gpu) — в интерфейсе
+    // его нет; удаление экономит ~25 МБ распакованного Chromium.
+    assert.match(afterPack, /"dxcompiler\.dll"/, "WebGPU-компилятор не убран — установщик не влезет в лимит GitHub");
+    assert.match(afterPack, /"dxil\.dll"/);
+    // А это выкидывать нельзя: без них не работают видео и текстуры WebGL.
+    assert.doesNotMatch(afterPack, /"ffmpeg\.dll"/, "ffmpeg.dll нужен для видео");
+    assert.doesNotMatch(afterPack, /"d3dcompiler_47\.dll"/, "d3dcompiler_47.dll нужен ANGLE/WebGL");
+    assert.doesNotMatch(afterPack, /"icudtl\.dat"/, "icudtl.dat нужен для Intl/русских дат");
+    // Уведомление о лицензиях не теряется: тексты заменены ссылками внутри приложения.
+    assert.match(readSource("desktop/THIRD_PARTY_NOTICES.txt"), /LICENSES\.chromium\.html/);
+
+    const workflow = readSource(".github/workflows/build-windows-installer.yml");
+    // Жёсткий лимит GitHub — 100 МиБ (104 857 600 байт); порог не должен его превышать.
+    const threshold = Number(/size" -gt (\d+)/.exec(workflow)?.[1]);
+    assert.ok(threshold > 0 && threshold <= 104857600, `порог публикации ${threshold} выше лимита GitHub`);
+  });
+
   it("микро-архивы и MSIX удалены из public/", () => {
     for (const file of [
       "eduflow-windows.zip",

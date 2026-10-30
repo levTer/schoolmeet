@@ -21,6 +21,7 @@ files:
   - main.js
   - preload.js
   - offline.html
+  - THIRD_PARTY_NOTICES.txt
   - assets/icon.png
   # Внутрь установщика не должны попадать зависимости сайта: Electron-оболочке
   # они не нужны, а корневой node_modules (Next.js, Prisma, sharp) раздувает

@@ -74,11 +74,12 @@ jobs:
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # GitHub отклоняет файлы больше 100 МБ — такой установщик не опубликовать.
+          # Жёсткий лимит GitHub — 100 МиБ (104 857 600 байт) на файл; берём 104 МБ,
+          # чтобы 1% запаса оставался на рост установщика между пересборками.
           size=$(stat -c%s public/eduflow-setup.exe 2>/dev/null || wc -c < public/eduflow-setup.exe)
           echo "eduflow-setup.exe: $size bytes ($((size / 1024 / 1024)) MB)" | tee -a windows-build.log
-          if [ "$size" -gt 97500000 ]; then
-            echo "Установщик больше лимита GitHub (100 МБ) — публикация пропущена" | tee -a windows-build.log
+          if [ "$size" -gt 104000000 ]; then
+            echo "Установщик больше лимита GitHub (100 МиБ) — публикация пропущена" | tee -a windows-build.log
             exit 1
           fi
           git add public/eduflow-setup.exe

@@ -23,7 +23,14 @@ import { fileURLToPath } from "node:url";
 import { renderIco } from "./lib/ico";
 
 /** Имя файла приложения внутри установщика. */
-const APP_FILES = ["main.js", "preload.js", "offline.html", "package.json"];
+/**
+ * Файлы оболочки, которые попадают внутрь установщика.
+ *
+ * `THIRD_PARTY_NOTICES.txt` — уведомление о лицензиях: сам
+ * `LICENSES.chromium.html` (≈9 МБ) в установщик не влезает, его полные тексты
+ * доступны по ссылкам из этого файла.
+ */
+const APP_FILES = ["main.js", "preload.js", "offline.html", "THIRD_PARTY_NOTICES.txt", "package.json"];
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DESKTOP_DIR = path.join(ROOT, "desktop");
