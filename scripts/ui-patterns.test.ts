@@ -1492,6 +1492,7 @@ describe("динамическая тема окна Electron и перетас�
   const electronPreload = readSource("electron-app/preload.js");
   const navbar = readSource("src/components/layout/Navbar.tsx");
   const siteHeader = readSource("src/components/landing/site-header.tsx");
+  const desktopTitlebar = readSource("src/hooks/useDesktopTitlebar.ts");
 
   it("оба preload безопасно передают тему через update-titlebar-theme", () => {
     for (const [name, source] of [
@@ -1531,11 +1532,15 @@ describe("динамическая тема окна Electron и перетас�
       assert.match(source, /window\.eduflowDesktop\?\.setTheme\?\.\(/, `${name}: не отправляет тему в Electron`);
       assert.match(source, /backgroundColor:\s*currentTheme\.titlebar/, `${name}: не передаёт цвет title bar темы`);
       assert.match(source, /symbolColor:\s*currentTheme\.symbol/, `${name}: не передаёт цвет символов темы`);
-      assert.match(source, /paddingRight:\s*["']env\(titlebar-area-width, 140px\)["']/, `${name}: нет отступа для кнопок окна`);
+      assert.match(source, /useDesktopTitlebar\(\)/, `${name}: нет безопасной области для кнопок окна`);
+      assert.match(source, /style=\{titlebarStyle\}/, `${name}: не применяет размер безопасной области`);
       assert.match(source, /WebkitAppRegion:\s*["']drag["']/, `${name}: область шапки не перетаскивается`);
       const noDragCount = (source.match(/WebkitAppRegion:\s*["']no-drag["']/g) ?? []).length + (source.match(/style=\{NO_DRAG_STYLE\}/g) ?? []).length;
       assert.ok(noDragCount >= 5, `${name}: интерактивные элементы не исключены из drag-region`);
     }
+    assert.match(desktopTitlebar, /width:\s*["']env\(titlebar-area-width, calc\(100% - 140px\)\)["']/);
+    assert.match(desktopTitlebar, /marginLeft:\s*["']env\(titlebar-area-x, 0px\)["']/);
+    assert.match(desktopTitlebar, /desktop\.platform === ["']win32["']/);
   });
 });
 

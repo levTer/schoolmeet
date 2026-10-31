@@ -8,6 +8,7 @@ import { LayoutDashboard, Menu, X } from "lucide-react";
 import { AppearanceSettingsMenu } from "@/components/theme/AppearanceSettingsMenu";
 import { PwaInstallButton } from "@/components/pwa-install-button";
 import { useTheme } from "@/components/theme/theme-provider";
+import { useDesktopTitlebar } from "@/hooks/useDesktopTitlebar";
 import { useIsApp } from "@/hooks/useIsApp";
 import { getThemeOption } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -32,17 +33,13 @@ const NAV_LINKS = [
  */
 export function SiteHeader() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(false);
+  const { isWindowsDesktop, titlebarStyle } = useDesktopTitlebar();
   const { theme } = useTheme();
   const isApp = useIsApp();
   const currentTheme = getThemeOption(theme);
   // Гость видит «Войти», авторизованный — переход в кабинет.
   const { data: session, status } = useSession();
   const isAuthenticated = status === "authenticated";
-
-  useEffect(() => {
-    setIsDesktop(Boolean(window.eduflowDesktop?.isDesktop));
-  }, []);
 
   /* Нативный хром: Electron titleBarOverlay + Android status bar. */
   useEffect(() => {
@@ -61,21 +58,30 @@ export function SiteHeader() {
       className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl"
     >
       <div
-        className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-5"
-        style={isDesktop ? { paddingRight: "env(titlebar-area-width, 140px)" } : undefined}
+        className={cn(
+          "mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-5",
+          isWindowsDesktop && "max-w-none",
+        )}
+        style={titlebarStyle}
       >
         <div className="flex min-w-0 items-center" style={NO_DRAG_STYLE}>
           <Logo size="sm" schoolName={session?.user?.schoolName || "EduFlow"} />
         </div>
 
         {/* Десктопная навигация */}
-        <nav className="ml-3 hidden items-center gap-0.5 md:flex" style={NO_DRAG_STYLE}>
+        <nav
+          className={cn("ml-3 hidden items-center gap-0.5 md:flex", isWindowsDesktop && "shrink-0")}
+          style={NO_DRAG_STYLE}
+        >
           {NAV_LINKS.map((link) => (
             <a
               style={NO_DRAG_STYLE}
               key={link.href}
               href={link.href}
-              className="inline-flex h-9 items-center rounded-lg px-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-white/[0.05] hover:text-white"
+              className={cn(
+                "inline-flex h-9 items-center rounded-lg px-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-white/[0.05] hover:text-white",
+                isWindowsDesktop && "max-[850px]:px-1.5",
+              )}
             >
               {link.label}
             </a>

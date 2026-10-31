@@ -20,6 +20,7 @@ import { PwaInstallButton } from "@/components/pwa-install-button";
 import { ClassSwitcher } from "@/components/layout/ClassSwitcher";
 import { AppearanceSettingsMenu } from "@/components/theme/AppearanceSettingsMenu";
 import { useTheme } from "@/components/theme/theme-provider";
+import { useDesktopTitlebar } from "@/hooks/useDesktopTitlebar";
 import { useIsApp } from "@/hooks/useIsApp";
 import { getThemeOption } from "@/lib/theme";
 import { ROLE_LABELS, type Role } from "@/types";
@@ -72,7 +73,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
   const pathname = usePathname();
   const { theme } = useTheme();
   const isApp = useIsApp();
-  const [isDesktop, setIsDesktop] = useState(false);
+  const { isWindowsDesktop, titlebarStyle } = useDesktopTitlebar();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileProfileOpen, setIsMobileProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -88,10 +89,6 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
     if (item.href === "/admin") return role === "ADMIN";
     return role !== null && item.roles.includes(role);
   });
-
-  useEffect(() => {
-    setIsDesktop(Boolean(window.eduflowDesktop?.isDesktop));
-  }, []);
 
   /* Нативный хром: Electron titleBarOverlay + Android status bar. */
   useEffect(() => {
@@ -161,12 +158,11 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
       style={DRAG_STYLE}
     >
       <div
-        className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-5"
-        style={
-          isDesktop
-            ? { paddingRight: "env(titlebar-area-width, 140px)" }
-            : undefined
-        }
+        className={cn(
+          "mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-5",
+          isWindowsDesktop && "max-w-none",
+        )}
+        style={titlebarStyle}
       >
         {/* Логотип + название школы: аккуратно, без крупного зелёного текста. */}
         <div className="flex min-w-0 items-center" style={NO_DRAG_STYLE}>
@@ -174,7 +170,10 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
         </div>
 
         {/* Навигация (десктоп) */}
-        <nav className="ml-2 hidden items-center gap-0.5 md:flex" style={NO_DRAG_STYLE}>
+        <nav
+          className={cn("ml-2 hidden items-center gap-0.5 md:flex", isWindowsDesktop && "shrink-0")}
+          style={NO_DRAG_STYLE}
+        >
           {visibleItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
@@ -187,6 +186,7 @@ export function Navbar({ user }: { user: Session["user"] | null }) {
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium transition-colors",
+                  isWindowsDesktop && "max-[850px]:px-1.5",
                   isActive
                     ? "bg-brand-500/15 text-white"
                     : "text-slate-400 hover:bg-white/[0.05] hover:text-white",
