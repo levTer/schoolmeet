@@ -226,7 +226,7 @@ function ControlButton({
         "focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/40",
         "disabled:cursor-not-allowed disabled:opacity-40",
         highlight && active
-          ? "border-accent-400/50 bg-brand-gradient text-white shadow-glow"
+          ? "border-accent-400/50 bg-brand-gradient text-brand-contrast shadow-glow"
           : danger
             ? "border-rose-400/25 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25"
             : active

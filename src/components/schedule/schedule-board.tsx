@@ -251,7 +251,7 @@ export function ScheduleBoard({ lessons, subjects, classes, viewer }: ScheduleBo
           {entryLesson ? (
             <Link
               href={`/meeting/${entryLesson.meetingCode}`}
-              className="inline-flex items-center gap-2 rounded-full bg-brand-gradient px-5 py-2 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02]"
+              className="inline-flex items-center gap-2 rounded-full bg-brand-gradient px-5 py-2 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.02]"
             >
               <LogIn className="h-4 w-4" />
               Войти

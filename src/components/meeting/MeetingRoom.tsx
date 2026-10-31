@@ -579,7 +579,7 @@ export function MeetingRoom({ meetingCode, title, hostName, encryptionKey, self,
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
             <Link
               href="/dashboard"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02]"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.02]"
             >
               <LogOut className="h-4 w-4" />
               В кабинет

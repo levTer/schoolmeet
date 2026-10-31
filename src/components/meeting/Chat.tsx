@@ -245,7 +245,7 @@ export function Chat({
             disabled={!draft.trim() || isSending}
             aria-label="Отправить"
             className={cn(
-              "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow-glow transition",
+              "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-gradient text-brand-contrast shadow-glow transition",
               "hover:scale-[1.04] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100",
             )}
           >
@@ -332,7 +332,7 @@ function MessageBubble({
               isPrivate
                 ? "border border-indigo-400/30 bg-indigo-900/40 text-indigo-50"
                 : mine
-                  ? "bg-brand-gradient text-white shadow-glow"
+                  ? "bg-brand-gradient text-brand-contrast shadow-glow"
                   : "border border-white/10 bg-white/[0.05] text-slate-100 backdrop-blur-xl",
             )}
           >

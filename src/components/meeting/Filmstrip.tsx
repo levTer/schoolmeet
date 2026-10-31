@@ -155,7 +155,7 @@ function FilmstripTile({ tile, layout, pinned, onPin }: FilmstripTileProps) {
       {/* Аватар, когда видео выключено. */}
       {!hasVideo && (
         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-ink-800 to-ink-950">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-gradient text-xs font-semibold text-white shadow-glow">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-gradient text-xs font-semibold text-brand-contrast shadow-glow">
             {getInitials(tile.name) || (tile.isLocal ? "Вы" : "?")}
           </div>
         </div>

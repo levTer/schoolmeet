@@ -365,7 +365,7 @@ function SubmissionReview({ homework, submission, review, edit, busy, onEdit, on
             type="button"
             onClick={onApprove}
             disabled={busy !== null || gradeValue === null || submission.status !== "SUBMITTED"}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient px-6 py-3 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.005] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient px-6 py-3 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.005] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Утвердить и отправить

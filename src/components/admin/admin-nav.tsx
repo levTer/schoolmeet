@@ -43,7 +43,7 @@ export function AdminNav() {
             className={cn(
               "inline-flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm transition",
               isActive
-                ? "bg-brand-gradient text-white shadow-glow"
+                ? "bg-brand-gradient text-brand-contrast shadow-glow"
                 : "text-slate-400 hover:bg-white/5 hover:text-white",
             )}
           >

@@ -324,7 +324,7 @@ export function MeetingsBoard({
                     <tr key={row.id} className="border-b border-white/5 transition last:border-0 hover:bg-white/[0.03]">
                       <td className="px-6 py-3">
                         <div className="flex items-center gap-3">
-                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[10px] font-semibold text-white">
+                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[10px] font-semibold text-brand-contrast">
                             {getInitials(row.user.name) || "SM"}
                           </span>
                           <span className="min-w-0">

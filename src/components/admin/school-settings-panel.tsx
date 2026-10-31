@@ -144,7 +144,7 @@ export function SchoolSettingsPanel({
             <button
               type="submit"
               disabled={isCreating || !className.trim()}
-              className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 self-end rounded-xl bg-brand-gradient px-4 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50 sm:mb-0.5"
+              className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 self-end rounded-xl bg-brand-gradient px-4 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50 sm:mb-0.5"
             >
               <Plus className="h-4 w-4" />
               {isCreating ? "Создаём…" : "Добавить"}

@@ -14,7 +14,9 @@ const themeRgb = (variable: string) => `rgb(var(${variable}) / <alpha-value>)`;
  *  • `surface` — карточки (#111827), `surface-raised` — вложенные блоки;
  *  • `line`    — окантовка карточек (border-white/10);
  *  • `fg`      — основной текст (#F9FAFB), `fg-muted` — подписи (#9CA3AF);
- *  • `brand`/`accent` — акцент темы (по умолчанию изумруд #10B981).
+ *  • `brand`/`accent` — акцент темы (по умолчанию изумруд #10B981);
+ *    `brand-contrast` — текст на заливке акцентом, `accent-secondary` —
+ *    вторая краска палитры из референсов.
  */
 const config: Config = {
   darkMode: "class",
@@ -63,6 +65,8 @@ const config: Config = {
           800: themeRgb("--accent-deep-rgb"),
           900: themeRgb("--accent-deep-rgb"),
           950: themeRgb("--accent-deep-rgb"),
+          /** Текст/иконки на заливке акцентом: белый или почти чёрный. */
+          contrast: "var(--accent-contrast)",
         },
         /** Акцентные статусы, подсветки, таймер и индикатор говорящего. */
         accent: {
@@ -72,6 +76,9 @@ const config: Config = {
           400: themeRgb("--accent-rgb"),
           500: themeRgb("--accent-rgb"),
           600: themeRgb("--accent-strong-rgb"),
+          /** Вторая краска палитры из референсов. */
+          secondary: "var(--accent-secondary)",
+          contrast: "var(--accent-contrast)",
         },
         neon: {
           blue: themeRgb("--accent-rgb"),
