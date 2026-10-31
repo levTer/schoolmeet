@@ -22,7 +22,7 @@
     "desktop": "electron desktop",
     "test:ai": "tsx scripts/smoke-ai.ts",
     "test:rules": "tsx --test scripts/rules.test.ts",
-    "test:ui": "tsx --test scripts/ui-patterns.test.ts",
+    "test:ui": "tsx --test scripts/ui-patterns.test.ts scripts/windows-titlebar.test.tsx",
     "test:pwa": "tsx --test scripts/pwa-install.test.tsx",
     "test:chat": "tsx --test scripts/chat-rules.test.ts",
     "test:security": "tsx --test --experimental-test-module-mocks scripts/security-rules.test.ts scripts/admin-tenancy.test.mts",
