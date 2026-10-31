@@ -20,11 +20,14 @@ interface AppearanceSettingsMenuProps {
 }
 
 /**
- * Меню «Внешний вид»: пять тем дизайн-системы и размер текста.
+ * Меню «Внешний вид»: темы дизайн-системы, цветовые палитры с референсов и
+ * размер текста.
  *
- * Каждая тема меняет акцент и цвет системной полосы (Android status bar,
- * Electron title bar). Выбор сохраняется в localStorage и применяется до
- * первой отрисовки bootstrap-скриптом из layout.tsx.
+ * Каждая тема меняет акцент, вторую краску палитры и цвет системной полосы
+ * (Android status bar, Electron title bar). У каждой палитры в списке видны
+ * точные краски с референса — подписи и hex-коды. Выбор сохраняется в
+ * localStorage и применяется до первой отрисовки bootstrap-скриптом из
+ * layout.tsx.
  */
 export function AppearanceSettingsMenu({ className }: AppearanceSettingsMenuProps) {
   const { theme, textSize, setTextSize } = useTheme();
@@ -83,7 +86,7 @@ export function AppearanceSettingsMenu({ className }: AppearanceSettingsMenuProp
           id={menuId}
           role="dialog"
           aria-label="Настройки внешнего вида"
-          className="animate-fade-up absolute right-0 top-full z-[70] mt-2 w-[19rem] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 bg-surface text-left shadow-xl"
+          className="animate-fade-up absolute right-0 top-full z-[70] mt-2 w-[21rem] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 bg-surface text-left shadow-xl"
         >
           <div className="flex items-center justify-between border-b border-white/10 px-3.5 py-2.5">
             <div>
@@ -102,9 +105,12 @@ export function AppearanceSettingsMenu({ className }: AppearanceSettingsMenuProp
             </button>
           </div>
 
-          <section aria-labelledby={`${menuId}-theme`} className="px-3.5 py-3">
+          <section
+            aria-labelledby={`${menuId}-theme`}
+            className="max-h-[60vh] overflow-y-auto px-3.5 py-3"
+          >
             <p id={`${menuId}-theme`} className="mb-2 text-xs font-medium text-slate-400">
-              Тема
+              Тема интерфейса
             </p>
             <ThemeSwitcher />
           </section>

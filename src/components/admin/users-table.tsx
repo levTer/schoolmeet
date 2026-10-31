@@ -294,7 +294,7 @@ export function UsersTable({ initial, actor }: UsersTableProps) {
             <button
               type="button"
               onClick={() => setCreating(true)}
-              className="inline-flex h-[46px] items-center gap-2 rounded-xl bg-brand-gradient px-4 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02]"
+              className="inline-flex h-[46px] items-center gap-2 rounded-xl bg-brand-gradient px-4 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.02]"
             >
               <UserPlus className="h-4 w-4" />
               Добавить
@@ -329,7 +329,7 @@ export function UsersTable({ initial, actor }: UsersTableProps) {
                   className={cn("p-4", user.isBanned && "bg-rose-500/[0.05]")}
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-xs font-semibold text-white">
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-xs font-semibold text-brand-contrast">
                       {getInitials(user.name) || "SM"}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -406,7 +406,7 @@ export function UsersTable({ initial, actor }: UsersTableProps) {
                     >
                       <td className="px-6 py-3.5">
                         <div className="flex items-center gap-3">
-                          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-xs font-semibold text-white">
+                          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-xs font-semibold text-brand-contrast">
                             {getInitials(user.name) || "SM"}
                           </span>
                           <span className="min-w-0">

@@ -278,7 +278,7 @@ export function LessonModal({ open, subjects, classes, defaultDay, onClose, onCr
             <button
               type="submit"
               disabled={submitting || subjects.length === 0 || classes.length === 0}
-              className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Сохраняем…" : "Добавить урок"}
             </button>

@@ -635,7 +635,7 @@ const [summaryCopying, setSummaryCopying] = useState(false);
               type="button"
               onClick={copySummary}
               disabled={summaryCopying}
-              className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition disabled:opacity-60"
+              className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-brand-contrast shadow-glow transition disabled:opacity-60"
             >
               {summaryCopying ? "Скопировано" : "Скопировать конспект"}
             </button>
@@ -914,7 +914,7 @@ const [summaryCopying, setSummaryCopying] = useState(false);
             type="button"
             onClick={() => void send()}
             disabled={loading}
-            className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl bg-brand-gradient px-4 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
+            className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl bg-brand-gradient px-4 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Отправить

@@ -11,8 +11,12 @@
  *    действия, активный пункт навигации, фокус, индикатор «идёт урок»;
  *  • типографика сдержанная: заголовки text-base/text-lg font-semibold,
  *    подзаголовки text-sm font-medium, подписи text-xs text-slate-400;
- *  • темы меняют только акцент и цвет нативной полосы (title bar / status bar),
- *    поэтому вся сетка и контраст остаются одинаковыми на всех платформах.
+ *  • темы меняют только акцент, вторую краску палитры и цвет нативной полосы
+ *    (title bar / status bar), поэтому вся сетка и контраст остаются
+ *    одинаковыми на всех платформах;
+ *  • базовые темы (graphite…slate) — пятёрка дизайн-системы, ниже идут
+ *    цветовые палитры с референсов: тёмная краска палитры задаёт поверхности,
+ *    выразительная — акцент, остальные — `--accent-secondary`.
  *
  * Файл подключается в src/app/layout.tsx ДО globals.css: токены должны быть
  * доступны и Tailwind-утилитам, и инлайн-стилям, и JS-мостам (Android/Electron).
@@ -37,6 +41,13 @@
   --accent-pale-rgb: 209 250 229;
   --accent-strong-rgb: 5 150 105;
   --accent-deep-rgb: 6 95 70;
+  /* Вторая краска палитры: вторичные акценты, градиенты, образцы тем.
+     Если тема не задаёт свою вторую краску, она совпадает с акцентом. */
+  --accent-secondary: var(--accent-primary);
+  --accent-secondary-rgb: var(--accent-primary-rgb);
+  /* Цвет текста/иконок на заливке акцентом (светлый акцент → тёмный текст). */
+  --accent-contrast: #ffffff;
+  --accent-secondary-contrast: #0b0f17;
 
   /* ---------- Текст ------------------------------------------------------ */
   --text-primary: #f9fafb;
@@ -69,8 +80,8 @@
   --bg-surface-raised-rgb: var(--bg-raised-rgb);
   --scrollbar-border: var(--bg-primary);
   --bg-overlay-opacity: 0;
-  --glass-bg: rgb(17 24 39 / 0.82);
-  --glass-bg-strong: rgb(11 15 23 / 0.94);
+  --glass-bg: rgb(var(--bg-card-rgb) / 0.82);
+  --glass-bg-strong: rgb(var(--bg-primary-rgb) / 0.94);
   --glass-border: var(--border-subtle);
   --glass-fill: rgb(255 255 255 / 0.04);
   --brand: var(--accent-primary);
@@ -206,4 +217,472 @@
   --titlebar-color: #0c1117;
   --titlebar-symbol: #f9fafb;
   --scrollbar-border: #0f141b;
+}
+
+/* ------------------------------------------------------------------------- */
+/* ЦВЕТОВЫЕ ПАЛИТРЫ С РЕФЕРЕНСОВ                                              */
+/* ------------------------------------------------------------------------- */
+
+/* 6. Сливово-малиновая — референс: Малиново-красный #CA054D · Тёмный сливовый #3B1C32 · Мятно-зелёный #A4D4B4 · Персиковый #FFCF9C. */
+:root[data-theme="plum-berry"] {
+  color-scheme: dark;
+  --bg-primary: #1a0d16;
+  --bg-primary-rgb: 26 13 22;
+  --bg-card: #271321;
+  --bg-card-rgb: 39 19 33;
+  --bg-raised: #32182a;
+  --bg-raised-rgb: 50 24 42;
+  --bg-panel: #35192d;
+  --bg-panel-rgb: 53 25 45;
+  --bg-panel-strong: #402237;
+  --bg-panel-strong-rgb: 64 34 55;
+  --accent-primary: #ca054d;
+  --accent-primary-rgb: 202 5 77;
+  --accent-rgb: 202 5 77;
+  --accent-light-rgb: 226 118 157;
+  --accent-pale-rgb: 245 210 223;
+  --accent-strong-rgb: 158 4 60;
+  --accent-deep-rgb: 105 3 40;
+  --accent-secondary: #a4d4b4;
+  --accent-secondary-rgb: 164 212 180;
+  --accent-contrast: #ffffff;
+  --accent-secondary-contrast: #0b0f17;
+  --titlebar-color: #150a12;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #1a0d16;
+}
+
+/* 7. Мятно-синяя — референс: Светлая мята #B9E3C6 · Бирюзовый #59C9A5 · Малиново-розовый #D81E5B · Тёмно синий #23395B. */
+:root[data-theme="mint-navy"] {
+  color-scheme: dark;
+  --bg-primary: #0b111c;
+  --bg-primary-rgb: 11 17 28;
+  --bg-card: #101a29;
+  --bg-card-rgb: 16 26 41;
+  --bg-raised: #142134;
+  --bg-raised-rgb: 20 33 52;
+  --bg-panel: #152338;
+  --bg-panel-rgb: 21 35 56;
+  --bg-panel-strong: #1b2c47;
+  --bg-panel-strong-rgb: 27 44 71;
+  --accent-primary: #d81e5b;
+  --accent-primary-rgb: 216 30 91;
+  --accent-rgb: 216 30 91;
+  --accent-light-rgb: 234 131 165;
+  --accent-pale-rgb: 248 214 225;
+  --accent-strong-rgb: 168 23 71;
+  --accent-deep-rgb: 112 16 47;
+  --accent-secondary: #59c9a5;
+  --accent-secondary-rgb: 89 201 165;
+  --accent-contrast: #ffffff;
+  --accent-secondary-contrast: #0b0f17;
+  --titlebar-color: #080e16;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #0b111c;
+}
+
+/* 8. Мшисто-циановая — референс: Мшистый #4F6F3A · Циан #00E5FF. */
+:root[data-theme="moss-cyan"] {
+  color-scheme: dark;
+  --bg-primary: #0d130a;
+  --bg-primary-rgb: 13 19 10;
+  --bg-card: #141c0f;
+  --bg-card-rgb: 20 28 15;
+  --bg-raised: #192312;
+  --bg-raised-rgb: 25 35 18;
+  --bg-panel: #1b2614;
+  --bg-panel-rgb: 27 38 20;
+  --bg-panel-strong: #223019;
+  --bg-panel-strong-rgb: 34 48 25;
+  --accent-primary: #00e5ff;
+  --accent-primary-rgb: 0 229 255;
+  --accent-rgb: 0 229 255;
+  --accent-light-rgb: 115 241 255;
+  --accent-pale-rgb: 209 250 255;
+  --accent-strong-rgb: 0 179 199;
+  --accent-deep-rgb: 0 119 133;
+  --accent-secondary: #4f6f3a;
+  --accent-secondary-rgb: 79 111 58;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #ffffff;
+  --titlebar-color: #0b0f08;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #0d130a;
+}
+
+/* 9. Лесная — референс: Сухой лайм #B8C98A · Лесной #365447 · Пыльно фиолетовый #7650A8. */
+:root[data-theme="forest-lime"] {
+  color-scheme: dark;
+  --bg-primary: #0c1210;
+  --bg-primary-rgb: 12 18 16;
+  --bg-card: #121c17;
+  --bg-card-rgb: 18 28 23;
+  --bg-raised: #17231e;
+  --bg-raised-rgb: 23 35 30;
+  --bg-panel: #182520;
+  --bg-panel-rgb: 24 37 32;
+  --bg-panel-strong: #1e2f28;
+  --bg-panel-strong-rgb: 30 47 40;
+  --accent-primary: #b8c98a;
+  --accent-primary-rgb: 184 201 138;
+  --accent-rgb: 184 201 138;
+  --accent-light-rgb: 216 225 191;
+  --accent-pale-rgb: 242 245 234;
+  --accent-strong-rgb: 144 157 108;
+  --accent-deep-rgb: 96 105 72;
+  --accent-secondary: #7650a8;
+  --accent-secondary-rgb: 118 80 168;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #ffffff;
+  --titlebar-color: #090f0c;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #0c1210;
+}
+
+/* 10. Неоново-мятная — референс: Неоновая мята #00F5D4 · Ново розовый #FF286B · Тёмно серый #171717. */
+:root[data-theme="neon-mint"] {
+  color-scheme: dark;
+  --bg-primary: #111111;
+  --bg-primary-rgb: 17 17 17;
+  --bg-card: #191919;
+  --bg-card-rgb: 25 25 25;
+  --bg-raised: #202020;
+  --bg-raised-rgb: 32 32 32;
+  --bg-panel: #232323;
+  --bg-panel-rgb: 35 35 35;
+  --bg-panel-strong: #2c2c2c;
+  --bg-panel-strong-rgb: 44 44 44;
+  --accent-primary: #00f5d4;
+  --accent-primary-rgb: 0 245 212;
+  --accent-rgb: 0 245 212;
+  --accent-light-rgb: 115 250 231;
+  --accent-pale-rgb: 209 253 247;
+  --accent-strong-rgb: 0 191 165;
+  --accent-deep-rgb: 0 127 110;
+  --accent-secondary: #ff286b;
+  --accent-secondary-rgb: 255 40 107;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #0b0f17;
+  --titlebar-color: #0d0d0d;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #111111;
+}
+
+/* 11. Петрольная — референс: Винтажный жёлтый #F2C14E · Петрольный #28666E · Бумажный #F4EDE0. */
+:root[data-theme="petrol-vintage"] {
+  color-scheme: dark;
+  --bg-primary: #071314;
+  --bg-primary-rgb: 7 19 20;
+  --bg-card: #0b1c1e;
+  --bg-card-rgb: 11 28 30;
+  --bg-raised: #0e2426;
+  --bg-raised-rgb: 14 36 38;
+  --bg-panel: #0f2629;
+  --bg-panel-rgb: 15 38 41;
+  --bg-panel-strong: #133034;
+  --bg-panel-strong-rgb: 19 48 52;
+  --accent-primary: #f2c14e;
+  --accent-primary-rgb: 242 193 78;
+  --accent-rgb: 242 193 78;
+  --accent-light-rgb: 248 221 158;
+  --accent-pale-rgb: 253 244 223;
+  --accent-strong-rgb: 189 151 61;
+  --accent-deep-rgb: 126 100 41;
+  --accent-secondary: #f4ede0;
+  --accent-secondary-rgb: 244 237 224;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #0b0f17;
+  --titlebar-color: #060f10;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #071314;
+}
+
+/* 12. Тёмно-синяя малиновая — референс: Тёмно-синий #1B263B · Малиновый #F72585. */
+:root[data-theme="navy-magenta"] {
+  color-scheme: dark;
+  --bg-primary: #0c111b;
+  --bg-primary-rgb: 12 17 27;
+  --bg-card: #121a28;
+  --bg-card-rgb: 18 26 40;
+  --bg-raised: #172032;
+  --bg-raised-rgb: 23 32 50;
+  --bg-panel: #192336;
+  --bg-panel-rgb: 25 35 54;
+  --bg-panel-strong: #212c40;
+  --bg-panel-strong-rgb: 33 44 64;
+  --accent-primary: #f72585;
+  --accent-primary-rgb: 247 37 133;
+  --accent-rgb: 247 37 133;
+  --accent-light-rgb: 251 135 188;
+  --accent-pale-rgb: 254 216 233;
+  --accent-strong-rgb: 193 29 104;
+  --accent-deep-rgb: 128 19 69;
+  --accent-secondary: #1b263b;
+  --accent-secondary-rgb: 27 38 59;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #ffffff;
+  --titlebar-color: #0a0e15;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #0c111b;
+}
+
+/* 13. Бирюзово-оранжевая — референс: Бирюзовый #2A9D8F · Оранжевый #F4A261. */
+:root[data-theme="teal-orange"] {
+  color-scheme: dark;
+  --bg-primary: #051412;
+  --bg-primary-rgb: 5 20 18;
+  --bg-card: #081d1a;
+  --bg-card-rgb: 8 29 26;
+  --bg-raised: #0a2521;
+  --bg-raised-rgb: 10 37 33;
+  --bg-panel: #0a2724;
+  --bg-panel-rgb: 10 39 36;
+  --bg-panel-strong: #0d312d;
+  --bg-panel-strong-rgb: 13 49 45;
+  --accent-primary: #f4a261;
+  --accent-primary-rgb: 244 162 97;
+  --accent-rgb: 244 162 97;
+  --accent-light-rgb: 249 204 168;
+  --accent-pale-rgb: 253 238 227;
+  --accent-strong-rgb: 190 126 76;
+  --accent-deep-rgb: 127 84 50;
+  --accent-secondary: #2a9d8f;
+  --accent-secondary-rgb: 42 157 143;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #0b0f17;
+  --titlebar-color: #04100e;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #051412;
+}
+
+/* 14. Ядовито-жёлтая — референс: Тёмно-зелёный #123B2A · Ядовито-жёлтый #E5FF00. */
+:root[data-theme="toxic-lime"] {
+  color-scheme: dark;
+  --bg-primary: #06140e;
+  --bg-primary-rgb: 6 20 14;
+  --bg-card: #091d15;
+  --bg-card-rgb: 9 29 21;
+  --bg-raised: #0b251a;
+  --bg-raised-rgb: 11 37 26;
+  --bg-panel: #0c281c;
+  --bg-panel-rgb: 12 40 28;
+  --bg-panel-strong: #0f3224;
+  --bg-panel-strong-rgb: 15 50 36;
+  --accent-primary: #e5ff00;
+  --accent-primary-rgb: 229 255 0;
+  --accent-rgb: 229 255 0;
+  --accent-light-rgb: 241 255 115;
+  --accent-pale-rgb: 250 255 209;
+  --accent-strong-rgb: 179 199 0;
+  --accent-deep-rgb: 119 133 0;
+  --accent-secondary: #123b2a;
+  --accent-secondary-rgb: 18 59 42;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #ffffff;
+  --titlebar-color: #05100b;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #06140e;
+}
+
+/* 15. Индиго-ледяная — референс: Тёмный индиго #19152F · Ледяной голубой #A5E7FF. */
+:root[data-theme="indigo-ice"] {
+  color-scheme: dark;
+  --bg-primary: #110f21;
+  --bg-primary-rgb: 17 15 33;
+  --bg-card: #1a1630;
+  --bg-card-rgb: 26 22 48;
+  --bg-raised: #211d36;
+  --bg-raised-rgb: 33 29 54;
+  --bg-panel: #231f38;
+  --bg-panel-rgb: 35 31 56;
+  --bg-panel-strong: #2d2941;
+  --bg-panel-strong-rgb: 45 41 65;
+  --accent-primary: #a5e7ff;
+  --accent-primary-rgb: 165 231 255;
+  --accent-rgb: 165 231 255;
+  --accent-light-rgb: 206 242 255;
+  --accent-pale-rgb: 239 251 255;
+  --accent-strong-rgb: 129 180 199;
+  --accent-deep-rgb: 86 120 133;
+  --accent-secondary: #19152f;
+  --accent-secondary-rgb: 25 21 47;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #ffffff;
+  --titlebar-color: #0e0c1a;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #110f21;
+}
+
+/* 16. Хвойно-пепельная — референс: Хвойный #1B4332 · Пепельный #D9D9D9. */
+:root[data-theme="pine-ash"] {
+  color-scheme: dark;
+  --bg-primary: #08130e;
+  --bg-primary-rgb: 8 19 14;
+  --bg-card: #0c1d15;
+  --bg-card-rgb: 12 29 21;
+  --bg-raised: #0f241b;
+  --bg-raised-rgb: 15 36 27;
+  --bg-panel: #10271d;
+  --bg-panel-rgb: 16 39 29;
+  --bg-panel-strong: #143125;
+  --bg-panel-strong-rgb: 20 49 37;
+  --accent-primary: #d9d9d9;
+  --accent-primary-rgb: 217 217 217;
+  --accent-rgb: 217 217 217;
+  --accent-light-rgb: 234 234 234;
+  --accent-pale-rgb: 248 248 248;
+  --accent-strong-rgb: 169 169 169;
+  --accent-deep-rgb: 113 113 113;
+  --accent-secondary: #1b4332;
+  --accent-secondary-rgb: 27 67 50;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #ffffff;
+  --titlebar-color: #060f0c;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #08130e;
+}
+
+/* 17. Оливково-кремовая — референс: Оливковый #606C38 · Кремовый #FEFAE0. */
+:root[data-theme="olive-cream"] {
+  color-scheme: dark;
+  --bg-primary: #101209;
+  --bg-primary-rgb: 16 18 9;
+  --bg-card: #181b0e;
+  --bg-card-rgb: 24 27 14;
+  --bg-raised: #1e2212;
+  --bg-raised-rgb: 30 34 18;
+  --bg-panel: #202413;
+  --bg-panel-rgb: 32 36 19;
+  --bg-panel-strong: #292e18;
+  --bg-panel-strong-rgb: 41 46 24;
+  --accent-primary: #fefae0;
+  --accent-primary-rgb: 254 250 224;
+  --accent-rgb: 254 250 224;
+  --accent-light-rgb: 254 252 238;
+  --accent-pale-rgb: 255 254 249;
+  --accent-strong-rgb: 198 195 175;
+  --accent-deep-rgb: 132 130 116;
+  --accent-secondary: #606c38;
+  --accent-secondary-rgb: 96 108 56;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #ffffff;
+  --titlebar-color: #0d0e07;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #101209;
+}
+
+/* 18. Пурпурно-голубая — референс: Пурпурный #7209B7 · Голубой #4CC9F0. */
+:root[data-theme="purple-sky"] {
+  color-scheme: dark;
+  --bg-primary: #1f0231;
+  --bg-primary-rgb: 31 2 49;
+  --bg-card: #2b0344;
+  --bg-card-rgb: 43 3 68;
+  --bg-raised: #340454;
+  --bg-raised-rgb: 52 4 84;
+  --bg-panel: #380459;
+  --bg-panel-rgb: 56 4 89;
+  --bg-panel-strong: #45056e;
+  --bg-panel-strong-rgb: 69 5 110;
+  --accent-primary: #4cc9f0;
+  --accent-primary-rgb: 76 201 240;
+  --accent-rgb: 76 201 240;
+  --accent-light-rgb: 157 225 247;
+  --accent-pale-rgb: 223 245 252;
+  --accent-strong-rgb: 59 157 187;
+  --accent-deep-rgb: 40 105 125;
+  --accent-secondary: #7209b7;
+  --accent-secondary-rgb: 114 9 183;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #ffffff;
+  --titlebar-color: #1a0229;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #1f0231;
+}
+
+/* 19. Сиреневo-жёлтая — референс: Сиреневый #8338EC · Жёлтый #FFBE0B. */
+:root[data-theme="lilac-yellow"] {
+  color-scheme: dark;
+  --bg-primary: #170a2a;
+  --bg-primary-rgb: 23 10 42;
+  --bg-card: #220e3d;
+  --bg-card-rgb: 34 14 61;
+  --bg-raised: #2a124d;
+  --bg-raised-rgb: 42 18 77;
+  --bg-panel: #2d1352;
+  --bg-panel-rgb: 45 19 82;
+  --bg-panel-strong: #391866;
+  --bg-panel-strong-rgb: 57 24 102;
+  --accent-primary: #ffbe0b;
+  --accent-primary-rgb: 255 190 11;
+  --accent-rgb: 255 190 11;
+  --accent-light-rgb: 255 219 121;
+  --accent-pale-rgb: 255 243 211;
+  --accent-strong-rgb: 199 148 9;
+  --accent-deep-rgb: 133 99 6;
+  --accent-secondary: #8338ec;
+  --accent-secondary-rgb: 131 56 236;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #ffffff;
+  --titlebar-color: #130822;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #170a2a;
+}
+
+/* 20. Лимонно-угольная — референс: Лимонный #FFF44F · Угольный #1C1C1E. */
+:root[data-theme="lemon-charcoal"] {
+  color-scheme: dark;
+  --bg-primary: #111112;
+  --bg-primary-rgb: 17 17 18;
+  --bg-card: #19191b;
+  --bg-card-rgb: 25 25 27;
+  --bg-raised: #202022;
+  --bg-raised-rgb: 32 32 34;
+  --bg-panel: #222224;
+  --bg-panel-rgb: 34 34 36;
+  --bg-panel-strong: #2c2c2e;
+  --bg-panel-strong-rgb: 44 44 46;
+  --accent-primary: #fff44f;
+  --accent-primary-rgb: 255 244 79;
+  --accent-rgb: 255 244 79;
+  --accent-light-rgb: 255 249 158;
+  --accent-pale-rgb: 255 253 223;
+  --accent-strong-rgb: 199 190 62;
+  --accent-deep-rgb: 133 127 41;
+  --accent-secondary: #1c1c1e;
+  --accent-secondary-rgb: 28 28 30;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #ffffff;
+  --titlebar-color: #0d0d0e;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #111112;
+}
+
+/* 21. Лазурно-белая — референс: Лазурный #00B4D8 · Белый #FFFFFF. */
+:root[data-theme="azure-white"] {
+  color-scheme: dark;
+  --bg-primary: #001418;
+  --bg-primary-rgb: 0 20 24;
+  --bg-card: #001d23;
+  --bg-card-rgb: 0 29 35;
+  --bg-raised: #00242c;
+  --bg-raised-rgb: 0 36 44;
+  --bg-panel: #00272f;
+  --bg-panel-rgb: 0 39 47;
+  --bg-panel-strong: #00313b;
+  --bg-panel-strong-rgb: 0 49 59;
+  --accent-primary: #ffffff;
+  --accent-primary-rgb: 255 255 255;
+  --accent-rgb: 255 255 255;
+  --accent-light-rgb: 255 255 255;
+  --accent-pale-rgb: 255 255 255;
+  --accent-strong-rgb: 199 199 199;
+  --accent-deep-rgb: 133 133 133;
+  --accent-secondary: #00b4d8;
+  --accent-secondary-rgb: 0 180 216;
+  --accent-contrast: #0b0f17;
+  --accent-secondary-contrast: #0b0f17;
+  --titlebar-color: #001013;
+  --titlebar-symbol: #f9fafb;
+  --scrollbar-border: #001418;
 }

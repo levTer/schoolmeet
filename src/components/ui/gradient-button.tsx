@@ -29,7 +29,7 @@ export function GradientButton({
       disabled={disabled || loading}
       aria-busy={loading}
       className={cn(
-        "group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-brand-gradient px-6 py-3 text-sm font-semibold text-white shadow-glow transition",
+        "group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-brand-gradient px-6 py-3 text-sm font-semibold text-brand-contrast shadow-glow transition",
         "hover:scale-[1.01] hover:shadow-glow-accent focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/30",
         "disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100",
         fullWidth && "w-full",

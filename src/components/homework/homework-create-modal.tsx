@@ -65,7 +65,7 @@ export function HomeworkCreateButton({ subjects, classes }: { subjects: Subject[
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.02]"
+        className="inline-flex items-center gap-2 rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.02]"
       >
         <Plus className="h-4 w-4" />
         Новое задание
@@ -313,7 +313,7 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
                 type="button"
                 onClick={generateHomeworkWithAI}
                 disabled={aiGenerating || !aiPrompt.trim()}
-                className="ml-auto rounded-xl bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition disabled:opacity-60 disabled:cursor-not-allowed"
+                className="ml-auto rounded-xl bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-brand-contrast shadow-glow transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {aiGenerating ? "Генерация…" : "Сгенерировать"}
               </button>
@@ -427,7 +427,7 @@ export function HomeworkCreateModal({ open, subjects, classes, onClose }: Homewo
           type="submit"
           form="homework-create-form"
           disabled={submitting || subjects.length === 0 || classes.length === 0}
-          className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? "Создание..." : "Выдать задание"}
         </button>

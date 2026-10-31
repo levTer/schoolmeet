@@ -44,7 +44,7 @@ export function LobbyCallCard({ call, isHost, ending, onEnd }: LobbyCallCardProp
         <Link
           href={`/meeting/${encodeURIComponent(call.meetingCode)}`}
           prefetch={false}
-          className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/40"
+          className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-brand-contrast transition hover:opacity-90 focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/40"
         >
           <Video className="h-4 w-4" />
           Подключиться

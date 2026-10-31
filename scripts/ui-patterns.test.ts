@@ -15,6 +15,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
+import { PALETTE_THEME_OPTIONS, THEME_OPTIONS } from "../src/lib/theme";
+
 import { renderIco } from "./lib/ico";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1626,6 +1628,143 @@ describe("единая дизайн-система Telegram × Twitch Dark", () 
     assert.match(nativeChrome, /window\.eduflowDesktop\?\.setTheme\?\.\(/, "нет Electron-моста темы");
 
     assert.match(switcher, /THEME_OPTIONS\.map/, "переключатель не показывает все темы");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Цветовые палитры с референсов                                              */
+/* -------------------------------------------------------------------------- */
+
+/** Подписи и hex-коды красок ровно как на референсах пользователя. */
+const REFERENCE_PALETTES: Record<string, Array<[string, string]>> = {
+  "plum-berry": [
+    ["Малиново-красный", "#CA054D"],
+    ["Тёмный сливовый", "#3B1C32"],
+    ["Мятно-зелёный", "#A4D4B4"],
+    ["Персиковый", "#FFCF9C"],
+  ],
+  "mint-navy": [
+    ["Светлая мята", "#B9E3C6"],
+    ["Бирюзовый", "#59C9A5"],
+    ["Малиново-розовый", "#D81E5B"],
+    ["Тёмно синий", "#23395B"],
+  ],
+  "moss-cyan": [
+    ["Мшистый", "#4F6F3A"],
+    ["Циан", "#00E5FF"],
+  ],
+  "forest-lime": [
+    ["Сухой лайм", "#B8C98A"],
+    ["Лесной", "#365447"],
+    ["Пыльно фиолетовый", "#7650A8"],
+  ],
+  "neon-mint": [
+    ["Неоновая мята", "#00F5D4"],
+    ["Ново розовый", "#FF286B"],
+    ["Тёмно серый", "#171717"],
+  ],
+  "petrol-vintage": [
+    ["Винтажный жёлтый", "#F2C14E"],
+    ["Петрольный", "#28666E"],
+    ["Бумажный", "#F4EDE0"],
+  ],
+  "navy-magenta": [
+    ["Тёмно-синий", "#1B263B"],
+    ["Малиновый", "#F72585"],
+  ],
+  "teal-orange": [
+    ["Бирюзовый", "#2A9D8F"],
+    ["Оранжевый", "#F4A261"],
+  ],
+  "toxic-lime": [
+    ["Тёмно-зелёный", "#123B2A"],
+    ["Ядовито-жёлтый", "#E5FF00"],
+  ],
+  "indigo-ice": [
+    ["Тёмный индиго", "#19152F"],
+    ["Ледяной голубой", "#A5E7FF"],
+  ],
+  "pine-ash": [
+    ["Хвойный", "#1B4332"],
+    ["Пепельный", "#D9D9D9"],
+  ],
+  "olive-cream": [
+    ["Оливковый", "#606C38"],
+    ["Кремовый", "#FEFAE0"],
+  ],
+  "purple-sky": [
+    ["Пурпурный", "#7209B7"],
+    ["Голубой", "#4CC9F0"],
+  ],
+  "lilac-yellow": [
+    ["Сиреневый", "#8338EC"],
+    ["Жёлтый", "#FFBE0B"],
+  ],
+  "lemon-charcoal": [
+    ["Лимонный", "#FFF44F"],
+    ["Угольный", "#1C1C1E"],
+  ],
+  "azure-white": [
+    ["Лазурный", "#00B4D8"],
+    ["Белый", "#FFFFFF"],
+  ],
+};
+
+describe("цветовые палитры с референсов", () => {
+  const tokens = readSource("src/styles/design-tokens.css");
+  const switcher = readSource("src/components/theme/ThemeSwitcher.tsx");
+
+  it("добавлены 16 новых палитр, старые пять тем остались на месте", () => {
+    assert.equal(PALETTE_THEME_OPTIONS.length, 16, "палитр должно быть 16 — по одной на референс");
+    assert.equal(THEME_OPTIONS.length, 21, "всего тем: 5 базовых + 16 палитр");
+    assert.deepEqual(
+      THEME_OPTIONS.filter((option) => option.group === "core").map((option) => option.id),
+      ["graphite", "indigo", "emerald", "violet", "slate"],
+      "изменён состав базовых тем",
+    );
+    assert.equal(
+      new Set(THEME_OPTIONS.map((option) => option.id)).size,
+      THEME_OPTIONS.length,
+      "id тем повторяются",
+    );
+  });
+
+  it("каждая палитра хранит точные подписи и hex с референса", () => {
+    for (const [id, expected] of Object.entries(REFERENCE_PALETTES)) {
+      const option = PALETTE_THEME_OPTIONS.find((theme) => theme.id === id);
+      assert.ok(option, `нет палитры ${id}`);
+      assert.deepEqual(
+        option.palette.map((swatch) => [swatch.name, swatch.hex]),
+        expected,
+        `палитра ${id} не совпадает с референсом`,
+      );
+      assert.ok(
+        option.palette.some((swatch) => swatch.hex.toUpperCase() === option.accent.toUpperCase()),
+        `акцент темы ${id} отсутствует в её палитре`,
+      );
+    }
+  });
+
+  it("каждая палитра описана в design-tokens.css и переключатель показывает её краски", () => {
+    for (const option of PALETTE_THEME_OPTIONS) {
+      const block = themeBlock(tokens, option.id);
+      assert.match(
+        block,
+        new RegExp(`--accent-primary:\\s*${option.accent}`, "i"),
+        `тема ${option.id}: акцент не ${option.accent}`,
+      );
+      assert.match(block, /--accent-secondary:\s*#[0-9a-f]{6}/i, `тема ${option.id}: нет второй краски`);
+      assert.match(
+        block,
+        /--accent-contrast:\s*#[0-9a-f]{6}/i,
+        `тема ${option.id}: не задан цвет текста на акценте`,
+      );
+      assert.match(block, /--titlebar-color:\s*#[0-9a-f]{6}/i, `тема ${option.id}: не задан --titlebar-color`);
+    }
+
+    assert.match(switcher, /PaletteStrip/, "переключатель не рисует образцы палитры");
+    assert.match(switcher, /option\.palette\.map/, "переключатель не перечисляет краски палитры");
+    assert.match(switcher, /THEME_SECTIONS/, "нет разделения на базовые темы и палитры");
   });
 });
 

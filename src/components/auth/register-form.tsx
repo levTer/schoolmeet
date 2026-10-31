@@ -494,7 +494,7 @@ export function RegisterForm({
 
         {inviteRole === "ADMIN" ? (
           <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 p-1">
-            <div className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 text-xs font-medium text-white shadow-glow">
+            <div className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 text-xs font-medium text-brand-contrast shadow-glow">
               <Crown className="h-4 w-4" />
               {ROLE_LABELS.ADMIN}
             </div>
@@ -516,7 +516,7 @@ export function RegisterForm({
                   aria-pressed={isActive}
                   className={
                     isActive
-                      ? "relative inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 py-2.5 text-sm font-semibold text-white shadow-glow transition max-md:h-9 max-md:px-2 max-md:py-0 max-md:text-xs max-md:font-medium"
+                      ? "relative inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 py-2.5 text-sm font-semibold text-brand-contrast shadow-glow transition max-md:h-9 max-md:px-2 max-md:py-0 max-md:text-xs max-md:font-medium"
                       : "relative inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white max-md:h-9 max-md:px-2 max-md:py-0 max-md:text-xs max-md:font-medium"
                   }
                 >

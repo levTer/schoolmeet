@@ -359,7 +359,7 @@ export function SecurityPanel() {
             <button
               type="button"
               onClick={() => setStage("password")}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-400"
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-sm font-medium text-brand-contrast transition hover:bg-brand-400"
             >
               <KeyRound className="h-4 w-4" />
               Включить защиту

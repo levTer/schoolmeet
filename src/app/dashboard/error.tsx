@@ -53,7 +53,7 @@ export default function DashboardError({
           <button
             type="button"
             onClick={reset}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-6 py-3 text-sm font-semibold text-white shadow-glow transition hover:scale-[1.03]"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient px-6 py-3 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.03]"
           >
             {/* `reset()` перезапускает рендер сегмента без перезагрузки страницы. */}
             🔄 Обновить страницу

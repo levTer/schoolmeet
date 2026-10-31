@@ -230,7 +230,7 @@ function VideoTileView({ tile, stage, compact, single, pinned, onPin, muted }: V
         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-ink-800 to-ink-950">
           <div
             className={cn(
-              "flex items-center justify-center rounded-full bg-brand-gradient font-semibold text-white shadow-glow",
+              "flex items-center justify-center rounded-full bg-brand-gradient font-semibold text-brand-contrast shadow-glow",
               compact ? "h-9 w-9 text-xs" : "h-20 w-20 text-2xl sm:h-24 sm:w-24",
             )}
           >
