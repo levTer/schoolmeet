@@ -25,14 +25,16 @@ export function StatCard({ label, value, hint, icon: Icon, tone = "brand", index
   return (
     <div
       style={{ animationDelay: `${80 + index * 70}ms` }}
-      className="ring-gradient animate-fade-up glass-card p-5"
+      className="ring-gradient animate-fade-up glass-card min-w-0 p-3.5 sm:p-5"
     >
       <span className={cn("inline-flex h-9 w-9 items-center justify-center rounded-xl border", TONES[tone])}>
         <Icon className="h-4 w-4" />
       </span>
       <p className="mt-4 text-2xl font-semibold tabular-nums text-white">{value}</p>
-      <p className="mt-1 text-xs uppercase tracking-wider text-slate-500">{label}</p>
-      {hint && <p className="mt-2 text-xs leading-relaxed text-slate-500">{hint}</p>}
+      <p className="mt-1 break-words text-[10px] uppercase leading-snug tracking-[0.08em] text-slate-500 sm:text-xs sm:tracking-wider">
+        {label}
+      </p>
+      {hint && <p className="mt-2 break-words text-[11px] leading-relaxed text-slate-500 sm:text-xs">{hint}</p>}
     </div>
   );
 }

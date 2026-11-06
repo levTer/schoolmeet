@@ -50,7 +50,7 @@ export async function AppShell({ children, className, flush = false }: AppShellP
   return (
     <div
       className={cn(
-        "relative flex min-h-[100dvh] flex-col",
+        "relative flex min-h-[100dvh] min-w-0 w-full flex-col",
         /* Однoэкранный кабинет: ровно 100dvh, прокрутка — только внутри контента. */
         flush && "h-[100dvh] overflow-hidden md:h-auto md:min-h-[100dvh] md:overflow-visible",
       )}
@@ -60,8 +60,8 @@ export async function AppShell({ children, className, flush = false }: AppShellP
       <main
         className={cn(
           flush
-            ? "flex min-h-0 flex-1 flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0"
-            : "mx-auto w-full max-w-7xl flex-1 px-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:pt-4 md:pb-6",
+            ? "flex min-h-0 min-w-0 flex-1 flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0"
+            : "mx-auto w-full min-w-0 max-w-7xl flex-1 px-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:pt-4 md:pb-6",
           className,
         )}
       >
