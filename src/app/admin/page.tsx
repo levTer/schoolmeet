@@ -160,7 +160,7 @@ export default async function AdminPage() {
   const databaseError = metricsResult.unavailable;
 
   return (
-    <div className="space-y-8">
+    <div className="w-full min-w-0 space-y-6 sm:space-y-8">
       {databaseError && (
         <FormAlert variant="info">
           Не удалось загрузить актуальную статистику. Показаны пустые значения; попробуйте обновить страницу позже.
@@ -179,7 +179,7 @@ export default async function AdminPage() {
       ) : null}
 
       {/* Метрики */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         {overview.metrics.map((metric, index) => {
           const key = metric.key as keyof typeof METRIC_ICONS;
           return (
@@ -197,49 +197,51 @@ export default async function AdminPage() {
       </section>
 
       {/* Вторичные метрики + быстрые действия */}
-      <section className="animate-fade-up grid gap-4 lg:grid-cols-3">
-        <div className="glass-card flex flex-col justify-between gap-4 p-5 lg:col-span-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-slate-300">
-              <Ban className="h-3.5 w-3.5 text-rose-300" />
-              Заблокировано: {secondary.banned}
+      <section className="animate-fade-up grid min-w-0 gap-4 lg:grid-cols-3">
+        <div className="glass-card flex min-w-0 flex-col justify-between gap-4 p-4 sm:p-5 lg:col-span-2">
+          <div className="grid min-w-0 grid-cols-2 gap-2 xl:grid-cols-4">
+            <span className="flex min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-2 text-[11px] leading-snug text-slate-300 sm:rounded-full sm:px-3.5 sm:py-1.5 sm:text-xs">
+              <Ban className="h-3.5 w-3.5 shrink-0 text-rose-300" />
+              <span className="min-w-0 break-words">Заблокировано: {secondary.banned}</span>
             </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-slate-300">
-              <ClipboardCheck className="h-3.5 w-3.5 text-amber-300" />
-              Ждут проверки: {secondary.pendingReview}
+            <span className="flex min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-2 text-[11px] leading-snug text-slate-300 sm:rounded-full sm:px-3.5 sm:py-1.5 sm:text-xs">
+              <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+              <span className="min-w-0 break-words">Ждут проверки: {secondary.pendingReview}</span>
             </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-slate-300">
-              <Users className="h-3.5 w-3.5 text-accent-300" />
-              Входов в уроки сегодня: {secondary.todayJoins}
+            <span className="flex min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-2 text-[11px] leading-snug text-slate-300 sm:rounded-full sm:px-3.5 sm:py-1.5 sm:text-xs">
+              <Users className="h-3.5 w-3.5 shrink-0 text-accent-300" />
+              <span className="min-w-0 break-words">Входов в уроки сегодня: {secondary.todayJoins}</span>
             </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-medium text-emerald-200">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Всего аккаунтов: {overview.totals.users}
+            <span className="flex min-w-0 items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-2 text-[11px] font-medium leading-snug text-emerald-200 sm:rounded-full sm:px-3.5 sm:py-1.5 sm:text-xs">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 break-words">Всего аккаунтов: {overview.totals.users}</span>
             </span>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <AnnouncementModalButton />
+          <div className="grid min-w-0 grid-cols-2 gap-2">
+            <AnnouncementModalButton
+              triggerClassName="col-span-2 inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-xl bg-brand-gradient px-3 py-2.5 text-sm font-semibold text-brand-contrast shadow-glow transition hover:scale-[1.01]"
+            />
             <Link
               href="/admin/users"
-              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+              className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-2.5 text-center text-xs font-medium leading-tight text-slate-200 transition hover:bg-white/10 sm:gap-2 sm:px-4 sm:text-sm"
             >
-              <Users className="h-4 w-4" />
-              Пользователи
-              <ArrowRight className="h-3.5 w-3.5" />
+              <Users className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 break-words">Пользователи</span>
+              <ArrowRight className="hidden h-3.5 w-3.5 shrink-0 sm:block" />
             </Link>
             <Link
               href="/admin/meetings"
-              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+              className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-2.5 text-center text-xs font-medium leading-tight text-slate-200 transition hover:bg-white/10 sm:gap-2 sm:px-4 sm:text-sm"
             >
-              <CalendarClock className="h-4 w-4" />
-              Активные уроки
-              <ArrowRight className="h-3.5 w-3.5" />
+              <CalendarClock className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 break-words">Активные уроки</span>
+              <ArrowRight className="hidden h-3.5 w-3.5 shrink-0 sm:block" />
             </Link>
           </div>
         </div>
 
-        <div className="ring-gradient glass-card p-5">
+        <div className="ring-gradient glass-card min-w-0 p-4 sm:p-5">
           <div className="flex items-center gap-2">
             <History className="h-4 w-4 text-brand-300" />
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">Последние действия</h2>
@@ -284,8 +286,8 @@ export default async function AdminPage() {
       </section>
 
       {/* Графики */}
-      <section className="grid gap-4 xl:grid-cols-2">
-        <div className="animate-fade-up glass-card p-5 sm:p-6">
+      <section className="grid min-w-0 gap-4 xl:grid-cols-2">
+        <div className="animate-fade-up glass-card min-w-0 p-4 sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
@@ -307,7 +309,7 @@ export default async function AdminPage() {
           </div>
         </div>
 
-        <div className="animate-fade-up glass-card p-5 sm:p-6">
+        <div className="animate-fade-up glass-card min-w-0 p-4 sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">

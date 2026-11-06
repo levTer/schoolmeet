@@ -56,7 +56,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <AppShell>
-      <header className="animate-fade-up flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="animate-fade-up flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Управление школой</p>
           <h1 className="mt-2 text-lg font-semibold tracking-tight sm:text-xl">Админ-панель</h1>
@@ -67,11 +67,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </header>
 
-      <div className="mt-6">
+      <div className="mt-6 min-w-0 w-full">
         <AdminNav />
       </div>
 
-      <div className="mt-6">{children}</div>
+      <div className="mt-6 min-w-0 w-full">{children}</div>
     </AppShell>
   );
 }
