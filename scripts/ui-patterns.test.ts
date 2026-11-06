@@ -1448,13 +1448,23 @@ describe("десктопный интерфейс Windows без верхнег�
     );
   });
 
-  it("хук useIsApp определяет Electron (EduFlowDesktop) и standalone PWA без поломки гидрации", () => {
+  it("хук useIsApp определяет APK (мост AndroidApp), Electron (EduFlowDesktop) и standalone PWA без поломки гидрации", () => {
     assert.match(isAppHook, /"use client";/, "хук должен быть клиентским модулем");
     assert.match(isAppHook, /useState\(false\)/, "первый рендер должен возвращать false для SSR-гидрации");
     assert.match(
       isAppHook,
       /navigator\.userAgent\.includes\(["']EduFlowDesktop["']\)/,
       "useIsApp не проверяет метку EduFlowDesktop в navigator.userAgent",
+    );
+    assert.match(
+      isAppHook,
+      /window\.eduflowDesktop\?\.isDesktop/,
+      "useIsApp не проверяет preload-мост eduflowDesktop.isDesktop",
+    );
+    assert.match(
+      isAppHook,
+      /window\.AndroidApp/,
+      "useIsApp не проверяет мост AndroidApp — в APK кнопки скачивания останутся видимыми",
     );
     assert.match(
       isAppHook,
