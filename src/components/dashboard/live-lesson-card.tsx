@@ -15,6 +15,7 @@ const LESSON_ENDED_DOM_EVENT = "eduflow:lesson-ended";
 
 export interface LiveLessonCardProps {
   lesson: LiveLesson;
+  compact?: boolean;
   currentUser?: { id: string; role: Role } | null;
 }
 
@@ -30,7 +31,7 @@ export interface LiveLessonCardProps {
  * (`currentUser.role === "ADMIN"`) дополнительно видят кнопку «🔴 Завершить урок»,
  * чтобы закрыть зависший или внеплановый урок прямо из кабинета.
  */
-export function LiveLessonCard({ lesson, currentUser }: LiveLessonCardProps) {
+export function LiveLessonCard({ lesson, currentUser, compact = false }: LiveLessonCardProps) {
   const router = useRouter();
   const dialogId = useId();
   const titleId = `${dialogId}-end-lesson-title`;
@@ -103,7 +104,7 @@ export function LiveLessonCard({ lesson, currentUser }: LiveLessonCardProps) {
     <>
       <section
         aria-labelledby="live-lesson-title"
-        className="live-lesson-card ring-gradient relative overflow-hidden rounded-2xl border border-emerald-400/40 bg-emerald-500/[0.12] p-3.5 shadow-glow animate-fade-up md:p-4"
+        className={`live-lesson-card ring-gradient relative shrink-0 overflow-hidden rounded-2xl border border-emerald-400/40 bg-emerald-500/[0.12] shadow-glow animate-fade-up ${compact ? "p-2.5" : "p-3.5 md:p-4"}`}
       >
         {/* Мягкое свечение под карточкой: «яркая» плашка, но без кислотного фона. */}
         <span
@@ -117,7 +118,7 @@ export function LiveLessonCard({ lesson, currentUser }: LiveLessonCardProps) {
             <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.9)]" />
           </span>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-200">
-            🔴 Прямо сейчас идёт урок
+            {compact ? "Идёт урок" : "🔴 Прямо сейчас идёт урок"}
           </p>
           <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-emerald-300/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-200">
             <Radio className="h-3 w-3" />
@@ -127,27 +128,27 @@ export function LiveLessonCard({ lesson, currentUser }: LiveLessonCardProps) {
 
         <h2
           id="live-lesson-title"
-          className="mt-1.5 flex items-baseline gap-2 text-lg font-bold leading-tight text-white md:text-xl"
+          className={`mt-1.5 flex items-baseline gap-2 font-bold leading-tight text-white ${compact ? "text-sm" : "text-lg md:text-xl"}`}
         >
           <span aria-hidden className="text-base md:text-lg">
             {lesson.subjectEmoji ?? "🎓"}
           </span>
-          <span className="min-w-0">
-            🔴 ПРЯМО СЕЙЧАС ИДЁТ УРОК: <span className="text-emerald-200">{lesson.subjectName}</span>
+          <span className={compact ? "min-w-0 truncate" : "min-w-0"}>
+            {!compact && "🔴 ПРЯМО СЕЙЧАС ИДЁТ УРОК: "} <span className="text-emerald-200">{lesson.subjectName}</span>
           </span>
         </h2>
 
         {details ? <p className="mt-1 truncate text-xs text-emerald-100/80">{details}</p> : null}
 
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
+        <div className={`flex gap-2 ${compact ? "mt-2 items-stretch" : "mt-3 flex-col sm:flex-row sm:items-stretch"}`}>
           <Link
             href={`/meeting?room=${encodeURIComponent(lesson.meetingCode)}`}
             prefetch={false}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 py-3.5 text-sm font-bold uppercase tracking-wide text-emerald-950 shadow-[0_8px_30px_rgba(16,185,129,0.35)] transition hover:bg-emerald-300 active:scale-[0.99] md:text-base"
+            className={`inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-400 text-sm font-bold text-emerald-950 transition hover:bg-emerald-300 active:scale-[0.99] ${compact ? "px-2 py-2" : "px-4 py-3.5 uppercase tracking-wide md:text-base"}`}
           >
             <Video className="h-5 w-5" />
-            ВОЙТИ В УРОК ПРЯМО СЕЙЧАС
-            <ArrowRight className="h-5 w-5" />
+            {compact ? "Войти в урок" : "ВОЙТИ В УРОК ПРЯМО СЕЙЧАС"}
+            {!compact && <ArrowRight className="h-5 w-5" />}
           </Link>
 
           {canEnd ? (
@@ -156,10 +157,10 @@ export function LiveLessonCard({ lesson, currentUser }: LiveLessonCardProps) {
               onClick={() => setConfirmOpen(true)}
               disabled={ending}
               aria-label="Завершить урок"
-              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-rose-400/40 bg-rose-600 px-4 py-3.5 text-sm font-bold text-white shadow-[0_8px_24px_rgba(225,29,72,0.35)] transition hover:bg-rose-500 focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-500/40 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 md:text-base"
+              className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-rose-400/40 bg-rose-600 text-sm font-bold text-white transition hover:bg-rose-500 focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-500/40 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 ${compact ? "px-2 py-2" : "px-4 py-3.5 md:text-base"}`}
             >
               {ending ? <Loader2 className="h-5 w-5 animate-spin" /> : <PhoneOff className="h-5 w-5" />}
-              <span>{ending ? "Завершаем…" : "🔴 Завершить урок"}</span>
+              <span>{ending ? "Завершаем…" : compact ? "Завершить" : "🔴 Завершить урок"}</span>
             </button>
           ) : null}
         </div>

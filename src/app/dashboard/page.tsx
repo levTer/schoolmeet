@@ -169,9 +169,9 @@ export default async function DashboardPage({
           Один экран 100dvh без прокрутки страницы: приветствие, следующий
           урок, статистика, дедлайны (внутренняя прокрутка) и быстрые ссылки.
           Нижняя навигация прижата к низу и учитывает safe-area.           */}
-      <div className="no-scrollbar flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto px-3 pb-1 pt-2.5 md:hidden">
+      <div className="no-scrollbar flex h-full min-h-0 flex-col gap-2.5 overflow-hidden px-3 pb-1 pt-2.5 md:hidden">
         {/* Самый верх кабинета: урок идёт прямо сейчас → вход в 1 клик. */}
-        {liveLesson ? <LiveLessonCard lesson={liveLesson} currentUser={currentViewer} /> : null}
+        {liveLesson ? <LiveLessonCard lesson={liveLesson} currentUser={currentViewer} compact /> : null}
 
         <header
           id="profile"

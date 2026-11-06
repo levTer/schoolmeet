@@ -1928,6 +1928,14 @@ describe("завершение активного урока с баннера �
   const endService = readSource("src/lib/end-meeting.ts");
   const endRoute = readSource("src/app/api/meetings/[code]/end/route.ts");
 
+  it("мобильный баннер компактен, кнопки не обрезаются, экран не прокручивается", () => {
+    assert.match(banner, /live-lesson-card[^\n]*shrink-0/, "баннер не должен сжиматься");
+    assert.match(dashboard, /flex h-full min-h-0 flex-col[^"\n]*overflow-hidden/, "кабинет не должен прокручиваться");
+    assert.match(dashboard, /currentUser=\{currentViewer\} compact/, "на мобильном нужен компактный баннер");
+    assert.match(banner, /compact \? "Войти в урок"/, "на мобильном нужна короткая кнопка");
+    assert.match(banner, /compact \? "Идёт урок"/, "на мобильном нужен короткий статус");
+  });
+
   it("баннер кабинета рендерит «🔴 Завершить урок» для организатора/ADMIN и использует общий <Modal>", () => {
     assert.match(dashboard, /LiveLessonCard lesson=\{liveLesson\} currentUser=\{currentViewer\}/);
     assert.match(banner, /import \{ Modal \} from "@\/components\/ui\/modal"/);
